@@ -19,7 +19,7 @@ const DISTRICTS = {
             center: [83.25, 17.93],
             zoom: 11,
             featureServer: "https://services5.arcgis.com/73n8CSGpSSyHr1T9/arcgis/rest/services/final_visakhapatnam/FeatureServer",
-            imageServer: "https://tiledimageservices5.arcgis.com/73n8CSGpSSyHr1T9/arcgis/rest/services/visakhapatnam_mask/ImageServer",
+            imageServer: "https://tiledimageservices5.arcgis.com/73n8CSGpSSyHr1T9/arcgis/rest/services/VISAKHA_RASTER/ImageServer",
             hasMask: true,
             layers: [
                 { id: 0, name: "boundary", label: "Boundary", color: "#7B2D8E", isBoundary: true },
