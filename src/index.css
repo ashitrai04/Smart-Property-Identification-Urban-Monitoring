@@ -1,0 +1,61 @@
+@import "tailwindcss";
+
+/* ── Mapbox popup styles ── */
+.mapboxgl-popup-content {
+  background: #0B1E3E !important;
+  color: #fff !important;
+  border-radius: 8px !important;
+  padding: 12px 16px !important;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3) !important;
+}
+
+.mapboxgl-popup-tip {
+  border-top-color: #0B1E3E !important;
+}
+
+.mapboxgl-popup-close-button {
+  color: #fff !important;
+  font-size: 18px !important;
+}
+
+.popup-title {
+  font-weight: 600;
+  font-size: 13px;
+  margin-bottom: 6px;
+  color: #0EA5E9;
+}
+
+.popup-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 11px;
+  padding: 2px 0;
+}
+
+.popup-key {
+  color: #94a3b8;
+}
+
+.popup-value {
+  color: #fff;
+  font-weight: 500;
+}
+
+/* ── Marquee ── */
+@keyframes app_home_marquee {
+  0% {
+    transform: translateX(100%);
+  }
+
+  100% {
+    transform: translateX(-100%);
+  }
+}
+
+.app-home-marquee {
+  display: inline-block;
+  white-space: nowrap;
+  will-change: transform;
+  animation: app_home_marquee 18s linear infinite;
+}
