@@ -1,4 +1,5 @@
 import React, { useState, useRef } from "react";
+import { fromBlob } from "geotiff";
 
 const SEGMENTATION_API = "https://amrender-unified-cartographer-api.hf.space/predict";
 const MAX_FILE_SIZE = 4.5 * 1024 * 1024; // 4.5 MB
@@ -17,7 +18,55 @@ const MASK_LEGEND = [
     { label: "Open Plots / Barren", color: "#9CA3AF" },
 ];
 
-const ACCEPTED = ".shp,.shx,.dbf,.prj,.tif,.tiff,.geojson,.json,.zip,.jpg,.jpeg,.png";
+const ACCEPTED = ".shp,.shx,.dbf,.prj,.tif,.tiff,.geojson,.json,.zip,.jpg,.jpeg,.png,.bmp,.webp";
+
+// ── Convert any image file to a displayable data URL ──
+async function fileToPreviewUrl(file) {
+    const name = file.name.toLowerCase();
+    // Browser-native formats → fast blob URL
+    if (/\.(jpg|jpeg|png|gif|webp|bmp|svg)$/.test(name)) {
+        return URL.createObjectURL(file);
+    }
+    // TIFF → decode with geotiff and render to canvas
+    if (/\.(tif|tiff)$/.test(name)) {
+        try {
+            const tiff = await fromBlob(file);
+            const image = await tiff.getImage();
+            const width = image.getWidth();
+            const height = image.getHeight();
+            const rasters = await image.readRasters();
+            const canvas = document.createElement("canvas");
+            canvas.width = width;
+            canvas.height = height;
+            const ctx = canvas.getContext("2d");
+            const imgData = ctx.createImageData(width, height);
+            const numBands = rasters.length;
+            for (let i = 0; i < width * height; i++) {
+                if (numBands >= 3) {
+                    // RGB or RGBA
+                    imgData.data[i * 4] = rasters[0][i];
+                    imgData.data[i * 4 + 1] = rasters[1][i];
+                    imgData.data[i * 4 + 2] = rasters[2][i];
+                    imgData.data[i * 4 + 3] = numBands >= 4 ? rasters[3][i] : 255;
+                } else {
+                    // Grayscale
+                    const v = rasters[0][i];
+                    imgData.data[i * 4] = v;
+                    imgData.data[i * 4 + 1] = v;
+                    imgData.data[i * 4 + 2] = v;
+                    imgData.data[i * 4 + 3] = 255;
+                }
+            }
+            ctx.putImageData(imgData, 0, 0);
+            return canvas.toDataURL("image/png");
+        } catch (e) {
+            console.warn("TIFF decode failed, using fallback:", e);
+            return null;
+        }
+    }
+    // Unknown format — try blob URL anyway
+    return URL.createObjectURL(file);
+}
 
 export default function Upload() {
     const [files, setFiles] = useState([]);
@@ -57,9 +106,9 @@ export default function Upload() {
 
     // ── Process multiple images sequentially ──
     const runSegmentation = async () => {
-        const imageFiles = files.filter(f => /\.(jpg|jpeg|png|tif|tiff)$/i.test(f.name));
+        const imageFiles = files.filter(f => /\.(jpg|jpeg|png|tif|tiff|webp|bmp)$/i.test(f.name));
         if (imageFiles.length === 0) {
-            setError("Please upload at least one image (.jpg, .png, or .tif) for segmentation.");
+            setError("Please upload at least one image (.jpg, .png, .tif, .webp, .bmp) for segmentation.");
             return;
         }
 
@@ -77,7 +126,8 @@ export default function Upload() {
             const file = imageFiles[i];
             setProgress(`Processing ${i + 1} of ${imageFiles.length}: ${file.name}...`);
 
-            const inputUrl = URL.createObjectURL(file);
+            // Convert to displayable preview (handles TIFF conversion)
+            const inputUrl = await fileToPreviewUrl(file);
             // Add a "loading" placeholder
             setSegResults(prev => [...prev, { inputName: file.name, inputUrl, maskUrl: null, status: "processing" }]);
 
@@ -268,10 +318,17 @@ export default function Upload() {
                                     </div>
 
                                     <div className="grid grid-cols-2 gap-3">
-                                        {/* Input */}
                                         <div>
                                             <p className="text-[10px] text-gray-400 mb-1 font-medium">INPUT — Satellite Image</p>
-                                            <img src={r.inputUrl} alt={`Input: ${r.inputName}`} className="rounded-lg border border-gray-200 w-full object-contain max-h-[350px] bg-gray-100" />
+                                            {r.inputUrl ? (
+                                                <img src={r.inputUrl} alt={`Input: ${r.inputName}`} className="rounded-lg border border-gray-200 w-full object-contain max-h-[350px] bg-gray-100" />
+                                            ) : (
+                                                <div className="rounded-lg border border-gray-200 w-full h-[200px] bg-gray-50 flex flex-col items-center justify-center gap-1">
+                                                    <span className="text-3xl">🖼️</span>
+                                                    <span className="text-xs text-gray-500 font-medium">{r.inputName}</span>
+                                                    <span className="text-[10px] text-gray-400">Preview not available for this format</span>
+                                                </div>
+                                            )}
                                         </div>
                                         {/* Output */}
                                         <div>
