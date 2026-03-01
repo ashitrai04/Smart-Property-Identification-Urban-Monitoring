@@ -76,6 +76,54 @@ export function addArcGISTileLayer(map, { id, tiles, tileSize = 256, attribution
     }
 }
 
+// ── Helper: add visual map layers for a GeoJSON source ──
+function _addLayersForGeojson(map, id, geojson, paintOverrides = {}, labelField = null) {
+    const types = new Set((geojson.features || []).map(f => f.geometry && f.geometry.type));
+
+    if ((types.has("Polygon") || types.has("MultiPolygon")) && !map.getLayer(`${id}-fill`)) {
+        map.addLayer({
+            id: `${id}-fill`, type: "fill", source: id,
+            filter: ["match", ["geometry-type"], ["Polygon", "MultiPolygon"], true, false],
+            paint: { "fill-color": "#0EA5E9", "fill-opacity": 0.2, ...(paintOverrides.fill || {}) },
+        });
+    }
+    if ((types.has("Polygon") || types.has("MultiPolygon")) && !map.getLayer(`${id}-outline`)) {
+        map.addLayer({
+            id: `${id}-outline`, type: "line", source: id,
+            filter: ["match", ["geometry-type"], ["Polygon", "MultiPolygon"], true, false],
+            paint: { "line-color": "#0EA5E9", "line-width": 1.5, ...(paintOverrides.outline || {}) },
+        });
+    }
+    if ((types.has("LineString") || types.has("MultiLineString")) && !map.getLayer(`${id}-line`)) {
+        map.addLayer({
+            id: `${id}-line`, type: "line", source: id,
+            filter: ["match", ["geometry-type"], ["LineString", "MultiLineString"], true, false],
+            paint: { "line-color": "#0B1E3E", "line-width": 2, ...(paintOverrides.line || {}) },
+        });
+    }
+    if ((types.has("Point") || types.has("MultiPoint")) && !map.getLayer(`${id}-circle`)) {
+        map.addLayer({
+            id: `${id}-circle`, type: "circle", source: id,
+            filter: ["match", ["geometry-type"], ["Point", "MultiPoint"], true, false],
+            paint: {
+                "circle-radius": 5, "circle-color": "#0B1E3E",
+                "circle-stroke-color": "#ffffff", "circle-stroke-width": 1,
+                ...(paintOverrides.circle || {}),
+            },
+        });
+    }
+    if (labelField && !map.getLayer(`${id}-label`)) {
+        map.addLayer({
+            id: `${id}-label`, type: "symbol", source: id,
+            layout: { "text-field": ["get", labelField], "text-size": 11, "text-allow-overlap": false },
+            paint: {
+                "text-color": "#0B1E3E", "text-halo-color": "#ffffff", "text-halo-width": 1,
+                ...(paintOverrides.label || {}),
+            },
+        });
+    }
+}
+
 // ══════════════════════════════════════════════════════════════════
 // Load ArcGIS FeatureServer as GeoJSON — with PARALLEL pagination
 // for large datasets (buildings etc.).
@@ -128,6 +176,7 @@ export async function addArcGISFeatureLayer(
             // ── Parallel batch pagination ──
             const totalPages = Math.ceil(totalCount / PAGE_SIZE);
             let allFeatures = [];
+            let layersAdded = false;
 
             // Process in batches of CONCURRENCY
             for (let batch = 0; batch < totalPages; batch += CONCURRENCY) {
@@ -153,6 +202,12 @@ export async function addArcGISFeatureLayer(
                     map.addSource(id, { type: "geojson", data: partialGeojson });
                 } else {
                     map.getSource(id).setData(partialGeojson);
+                }
+
+                // Add visual layers on FIRST batch so features render immediately
+                if (!layersAdded) {
+                    _addLayersForGeojson(map, id, partialGeojson, paintOverrides, labelField);
+                    layersAdded = true;
                 }
             }
             geojson = { type: 'FeatureCollection', features: allFeatures };
@@ -183,58 +238,8 @@ export async function addArcGISFeatureLayer(
         map.getSource(id).setData(geojson);
     }
 
-    // ── Add layers based on geometry types ──
-    const types = new Set((geojson.features || []).map(f => f.geometry && f.geometry.type));
-
-    // Polygons
-    if ((types.has("Polygon") || types.has("MultiPolygon")) && !map.getLayer(`${id}-fill`)) {
-        map.addLayer({
-            id: `${id}-fill`, type: "fill", source: id,
-            filter: ["match", ["geometry-type"], ["Polygon", "MultiPolygon"], true, false],
-            paint: { "fill-color": "#0EA5E9", "fill-opacity": 0.2, ...(paintOverrides.fill || {}) },
-        });
-    }
-    if ((types.has("Polygon") || types.has("MultiPolygon")) && !map.getLayer(`${id}-outline`)) {
-        map.addLayer({
-            id: `${id}-outline`, type: "line", source: id,
-            filter: ["match", ["geometry-type"], ["Polygon", "MultiPolygon"], true, false],
-            paint: { "line-color": "#0EA5E9", "line-width": 1.5, ...(paintOverrides.outline || {}) },
-        });
-    }
-
-    // Lines
-    if ((types.has("LineString") || types.has("MultiLineString")) && !map.getLayer(`${id}-line`)) {
-        map.addLayer({
-            id: `${id}-line`, type: "line", source: id,
-            filter: ["match", ["geometry-type"], ["LineString", "MultiLineString"], true, false],
-            paint: { "line-color": "#0B1E3E", "line-width": 2, ...(paintOverrides.line || {}) },
-        });
-    }
-
-    // Points
-    if ((types.has("Point") || types.has("MultiPoint")) && !map.getLayer(`${id}-circle`)) {
-        map.addLayer({
-            id: `${id}-circle`, type: "circle", source: id,
-            filter: ["match", ["geometry-type"], ["Point", "MultiPoint"], true, false],
-            paint: {
-                "circle-radius": 5, "circle-color": "#0B1E3E",
-                "circle-stroke-color": "#ffffff", "circle-stroke-width": 1,
-                ...(paintOverrides.circle || {}),
-            },
-        });
-    }
-
-    // Labels
-    if (labelField && !map.getLayer(`${id}-label`)) {
-        map.addLayer({
-            id: `${id}-label`, type: "symbol", source: id,
-            layout: { "text-field": ["get", labelField], "text-size": 11, "text-allow-overlap": false },
-            paint: {
-                "text-color": "#0B1E3E", "text-halo-color": "#ffffff", "text-halo-width": 1,
-                ...(paintOverrides.label || {}),
-            },
-        });
-    }
+    // Add visual layers (skip if already added by progressive path)
+    _addLayersForGeojson(map, id, geojson, paintOverrides, labelField);
 
     // Fit bounds
     if (fit) {
