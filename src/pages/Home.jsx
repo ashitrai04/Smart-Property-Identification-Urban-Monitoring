@@ -85,7 +85,7 @@ export default function Home() {
         mapboxgl.accessToken = MAPBOX_TOKEN;
         const map = new mapboxgl.Map({
             container: mapContainerRef.current,
-            style: "mapbox://styles/mapbox/light-v11",
+            style: "mapbox://styles/mapbox/satellite-streets-v12",
             center: [80.0, 15.9],
             zoom: 6.2,
             interactive: true,
