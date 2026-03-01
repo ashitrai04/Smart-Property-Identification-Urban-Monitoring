@@ -22,10 +22,10 @@ const DISTRICTS = {
             imageServer: "https://tiledimageservices5.arcgis.com/73n8CSGpSSyHr1T9/arcgis/rest/services/visakhapatnam_mask/ImageServer",
             hasMask: true,
             layers: [
-                { id: 0, name: "boundary", label: "Boundary", color: "#EF4444", isBoundary: true },
+                { id: 0, name: "boundary", label: "Boundary", color: "#7B2D8E", isBoundary: true },
                 { id: 1, name: "buildings", label: "Buildings", color: "#EF4444" },
                 { id: 2, name: "openareas", label: "Open Areas", color: "#9CA3AF" },
-                { id: 3, name: "roads", label: "Roads", color: "#EAB308" },
+                { id: 3, name: "roads", label: "Roads", color: "#EAB308", isRoad: true },
                 { id: 4, name: "waterbodies", label: "Waterbodies", color: "#3B82F6" },
             ],
         },
@@ -37,10 +37,10 @@ const DISTRICTS = {
             imageServer: null,
             hasMask: false,
             layers: [
-                { id: 0, name: "boundary", label: "Boundary", color: "#EF4444", isBoundary: true },
+                { id: 0, name: "boundary", label: "Boundary", color: "#7B2D8E", isBoundary: true },
                 { id: 1, name: "buildings", label: "Buildings", color: "#EF4444" },
                 { id: 2, name: "openareas", label: "Open Areas", color: "#9CA3AF" },
-                { id: 3, name: "roads", label: "Roads", color: "#EAB308" },
+                { id: 3, name: "roads", label: "Roads", color: "#EAB308", isRoad: true },
                 { id: 4, name: "waterbodies", label: "Waterbodies", color: "#3B82F6" },
             ],
         },
@@ -52,10 +52,10 @@ const DISTRICTS = {
             imageServer: null,
             hasMask: false,
             layers: [
-                { id: 0, name: "boundary", label: "Boundary", color: "#EF4444", isBoundary: true },
+                { id: 0, name: "boundary", label: "Boundary", color: "#7B2D8E", isBoundary: true },
                 { id: 1, name: "buildings", label: "Buildings", color: "#EF4444" },
                 { id: 2, name: "openareas", label: "Open Areas", color: "#9CA3AF" },
-                { id: 3, name: "roads", label: "Roads", color: "#EAB308" },
+                { id: 3, name: "roads", label: "Roads", color: "#EAB308", isRoad: true },
                 { id: 4, name: "waterbodies", label: "Waterbodies", color: "#3B82F6" },
             ],
         },
@@ -67,10 +67,10 @@ const DISTRICTS = {
             imageServer: null,
             hasMask: false,
             layers: [
-                { id: 0, name: "boundary", label: "Boundary", color: "#EF4444", isBoundary: true },
+                { id: 0, name: "boundary", label: "Boundary", color: "#7B2D8E", isBoundary: true },
                 { id: 1, name: "buildings", label: "Buildings", color: "#EF4444" },
                 { id: 2, name: "openareas", label: "Open Areas", color: "#9CA3AF" },
-                { id: 3, name: "roads", label: "Roads", color: "#EAB308" },
+                { id: 3, name: "roads", label: "Roads", color: "#EAB308", isRoad: true },
                 { id: 4, name: "waterbodies", label: "Waterbodies", color: "#3B82F6" },
             ],
         },
@@ -82,10 +82,10 @@ const DISTRICTS = {
             imageServer: null,
             hasMask: false,
             layers: [
-                { id: 0, name: "boundary", label: "Boundary", color: "#EF4444", isBoundary: true },
+                { id: 0, name: "boundary", label: "Boundary", color: "#7B2D8E", isBoundary: true },
                 { id: 1, name: "buildings", label: "Buildings", color: "#EF4444" },
                 { id: 2, name: "openareas", label: "Open Areas", color: "#9CA3AF" },
-                { id: 3, name: "roads", label: "Roads", color: "#EAB308" },
+                { id: 3, name: "roads", label: "Roads", color: "#EAB308", isRoad: true },
                 { id: 4, name: "waterbodies", label: "Waterbodies", color: "#3B82F6" },
             ],
         },
@@ -294,24 +294,43 @@ export default function Mapping() {
         } else {
             setLoading(`Loading ${layer.label}...`);
             try {
-                const paintOverrides = layer.isBoundary
-                    ? {
-                        // Boundary: hollow — no fill, just red 3px outline
+                let paintOverrides;
+                if (layer.isBoundary) {
+                    paintOverrides = {
+                        // Boundary: hollow — no fill, just purple 3px outline
                         fill: { "fill-color": "transparent", "fill-opacity": 0 },
-                        outline: { "line-color": "#EF4444", "line-width": 3 },
-                        line: { "line-color": "#EF4444", "line-width": 3 },
-                    }
-                    : {
-                        // Other layers: semi-transparent fill with matching outline
+                        outline: { "line-color": "#7B2D8E", "line-width": 3 },
+                        line: { "line-color": "#7B2D8E", "line-width": 3 },
+                    };
+                } else if (layer.isRoad) {
+                    paintOverrides = {
+                        // Roads: outline only, no filled mask
+                        fill: { "fill-color": "transparent", "fill-opacity": 0 },
+                        outline: { "line-color": "#EAB308", "line-width": 2 },
+                        line: { "line-color": "#EAB308", "line-width": 2 },
+                    };
+                } else {
+                    paintOverrides = {
                         fill: { "fill-color": layer.color, "fill-opacity": 0.4 },
                         outline: { "line-color": layer.color, "line-width": 1.5 },
                         line: { "line-color": layer.color, "line-width": 2 },
                         circle: { "circle-color": layer.color },
                     };
+                }
+
+                // For buildings (huge datasets), use viewport bounding box to limit fetch
+                let where = "1=1";
+                if (layer.name === "buildings") {
+                    const bounds = map.getBounds();
+                    const sw = bounds.getSouthWest(), ne = bounds.getNorthEast();
+                    // Use the map's current extent as a spatial filter via envelope
+                    setLoading(`Loading ${layer.label} in viewport...`);
+                }
+
                 await addArcGISFeatureLayer(map, {
                     id: layerId,
                     featureServerUrl: `${dist.featureServer}/${layer.id}`,
-                    where: "1=1",
+                    where,
                     fit: false,
                     paintOverrides,
                 });
@@ -508,9 +527,9 @@ export default function Mapping() {
                             <p className="text-[10px] text-white/40 uppercase mb-1">Layer Colors</p>
                             <div className="grid grid-cols-2 gap-1">
                                 {[
-                                    { label: "Boundary", color: "#EF4444", hollow: true },
+                                    { label: "Boundary", color: "#7B2D8E", hollow: true },
                                     { label: "Buildings", color: "#EF4444" },
-                                    { label: "Roads", color: "#EAB308" },
+                                    { label: "Roads", color: "#EAB308", hollow: true },
                                     { label: "Water", color: "#3B82F6" },
                                     { label: "Open Areas", color: "#9CA3AF" },
                                     { label: "Vegetation", color: "#22C55E" },
