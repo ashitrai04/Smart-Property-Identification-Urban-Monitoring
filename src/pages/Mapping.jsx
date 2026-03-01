@@ -22,38 +22,82 @@ const DISTRICTS = {
             imageServer: "https://tiledimageservices5.arcgis.com/73n8CSGpSSyHr1T9/arcgis/rest/services/visakhapatnam_mask/ImageServer",
             hasMask: true,
             layers: [
-                { id: 0, name: "boundary", label: "Boundary", color: "#3B82F6" },
-                { id: 1, name: "buildings", label: "Buildings", color: "#F59E0B" },
-                { id: 2, name: "openareas", label: "Open Areas", color: "#22C55E" },
-                { id: 3, name: "roads", label: "Roads", color: "#94A3B8" },
-                { id: 4, name: "waterbodies", label: "Waterbodies", color: "#06B6D4" },
+                { id: 0, name: "boundary", label: "Boundary", color: "#EF4444", isBoundary: true },
+                { id: 1, name: "buildings", label: "Buildings", color: "#EF4444" },
+                { id: 2, name: "openareas", label: "Open Areas", color: "#9CA3AF" },
+                { id: 3, name: "roads", label: "Roads", color: "#EAB308" },
+                { id: 4, name: "waterbodies", label: "Waterbodies", color: "#3B82F6" },
             ],
         },
-        { name: "Vijayawada", center: [80.62, 16.51], zoom: 11, featureServer: null, hasMask: false, layers: [] },
+        {
+            name: "Vijayawada",
+            center: [80.62, 16.51],
+            zoom: 11,
+            featureServer: "https://services5.arcgis.com/73n8CSGpSSyHr1T9/arcgis/rest/services/vijayawada_layers/FeatureServer",
+            imageServer: null,
+            hasMask: false,
+            layers: [
+                { id: 0, name: "boundary", label: "Boundary", color: "#EF4444", isBoundary: true },
+                { id: 1, name: "buildings", label: "Buildings", color: "#EF4444" },
+                { id: 2, name: "openareas", label: "Open Areas", color: "#9CA3AF" },
+                { id: 3, name: "roads", label: "Roads", color: "#EAB308" },
+                { id: 4, name: "waterbodies", label: "Waterbodies", color: "#3B82F6" },
+            ],
+        },
         {
             name: "Guntur",
             center: [80.45, 16.30],
             zoom: 11,
             featureServer: "https://services5.arcgis.com/73n8CSGpSSyHr1T9/arcgis/rest/services/guntur_layer/FeatureServer",
+            imageServer: null,
             hasMask: false,
             layers: [
-                { id: 0, name: "boundary", label: "Boundary", color: "#3B82F6" },
-                { id: 1, name: "buildings", label: "Buildings", color: "#F59E0B" },
-                { id: 2, name: "openareas", label: "Open Areas", color: "#22C55E" },
-                { id: 3, name: "roads", label: "Roads", color: "#94A3B8" },
-                { id: 4, name: "waterbodies", label: "Waterbodies", color: "#06B6D4" },
+                { id: 0, name: "boundary", label: "Boundary", color: "#EF4444", isBoundary: true },
+                { id: 1, name: "buildings", label: "Buildings", color: "#EF4444" },
+                { id: 2, name: "openareas", label: "Open Areas", color: "#9CA3AF" },
+                { id: 3, name: "roads", label: "Roads", color: "#EAB308" },
+                { id: 4, name: "waterbodies", label: "Waterbodies", color: "#3B82F6" },
             ],
         },
-        { name: "Anantapur", center: [77.60, 14.68], zoom: 10, featureServer: null, hasMask: false, layers: [] },
-        { name: "Nellore", center: [79.99, 14.44], zoom: 10, featureServer: null, hasMask: false, layers: [] },
+        {
+            name: "Anantapur",
+            center: [77.60, 14.68],
+            zoom: 10,
+            featureServer: "https://services5.arcgis.com/73n8CSGpSSyHr1T9/arcgis/rest/services/anantapur_layers/FeatureServer",
+            imageServer: null,
+            hasMask: false,
+            layers: [
+                { id: 0, name: "boundary", label: "Boundary", color: "#EF4444", isBoundary: true },
+                { id: 1, name: "buildings", label: "Buildings", color: "#EF4444" },
+                { id: 2, name: "openareas", label: "Open Areas", color: "#9CA3AF" },
+                { id: 3, name: "roads", label: "Roads", color: "#EAB308" },
+                { id: 4, name: "waterbodies", label: "Waterbodies", color: "#3B82F6" },
+            ],
+        },
+        {
+            name: "Nellore",
+            center: [79.99, 14.44],
+            zoom: 10,
+            featureServer: "https://services5.arcgis.com/73n8CSGpSSyHr1T9/arcgis/rest/services/nellore_shpfiles/FeatureServer",
+            imageServer: null,
+            hasMask: false,
+            layers: [
+                { id: 0, name: "boundary", label: "Boundary", color: "#EF4444", isBoundary: true },
+                { id: 1, name: "buildings", label: "Buildings", color: "#EF4444" },
+                { id: 2, name: "openareas", label: "Open Areas", color: "#9CA3AF" },
+                { id: 3, name: "roads", label: "Roads", color: "#EAB308" },
+                { id: 4, name: "waterbodies", label: "Waterbodies", color: "#3B82F6" },
+            ],
+        },
     ],
 };
 
+// Mask colors — matching segmentation legend
 const MASK_COLORS = {
-    1: [34, 197, 94, 200],    // Green — vegetation
-    2: [245, 158, 11, 200],   // Orange — buildings
-    3: [59, 130, 246, 200],   // Blue — water
-    4: [148, 163, 184, 200],  // Gray — roads/barren
+    1: [34, 197, 94, 200],     // Green — vegetation
+    2: [239, 68, 68, 200],     // Red — buildings
+    3: [59, 130, 246, 200],    // Blue — water
+    4: [234, 179, 8, 200],     // Yellow — roads/barren
 };
 
 const BASE_MAPS = [
@@ -250,17 +294,26 @@ export default function Mapping() {
         } else {
             setLoading(`Loading ${layer.label}...`);
             try {
+                const paintOverrides = layer.isBoundary
+                    ? {
+                        // Boundary: hollow — no fill, just red 3px outline
+                        fill: { "fill-color": "transparent", "fill-opacity": 0 },
+                        outline: { "line-color": "#EF4444", "line-width": 3 },
+                        line: { "line-color": "#EF4444", "line-width": 3 },
+                    }
+                    : {
+                        // Other layers: semi-transparent fill with matching outline
+                        fill: { "fill-color": layer.color, "fill-opacity": 0.4 },
+                        outline: { "line-color": layer.color, "line-width": 1.5 },
+                        line: { "line-color": layer.color, "line-width": 2 },
+                        circle: { "circle-color": layer.color },
+                    };
                 await addArcGISFeatureLayer(map, {
                     id: layerId,
                     featureServerUrl: `${dist.featureServer}/${layer.id}`,
                     where: "1=1",
                     fit: false,
-                    paintOverrides: {
-                        fill: { "fill-color": layer.color, "fill-opacity": 0.35 },
-                        outline: { "line-color": layer.color, "line-width": 1.5 },
-                        line: { "line-color": layer.color },
-                        circle: { "circle-color": layer.color },
-                    },
+                    paintOverrides,
                 });
                 activeLayerIdsRef.current.add(layerId);
                 setActiveLayers(prev => ({ ...prev, [layerId]: true }));
@@ -449,20 +502,24 @@ export default function Mapping() {
                         </div>
                     )}
 
-                    {/* Legend */}
                     <div className="p-3">
                         <p className="text-[10px] uppercase tracking-wider text-white/50 mb-2">Legend</p>
                         <div className="space-y-1">
-                            <p className="text-[10px] text-white/40 uppercase mb-1">Mask Classification</p>
+                            <p className="text-[10px] text-white/40 uppercase mb-1">Layer Colors</p>
                             <div className="grid grid-cols-2 gap-1">
                                 {[
-                                    { label: "Vegetation", color: "#22C55E" },
-                                    { label: "Built-up", color: "#F59E0B" },
+                                    { label: "Boundary", color: "#EF4444", hollow: true },
+                                    { label: "Buildings", color: "#EF4444" },
+                                    { label: "Roads", color: "#EAB308" },
                                     { label: "Water", color: "#3B82F6" },
-                                    { label: "Barren", color: "#94A3B8" },
+                                    { label: "Open Areas", color: "#9CA3AF" },
+                                    { label: "Vegetation", color: "#22C55E" },
                                 ].map(l => (
                                     <div key={l.label} className="flex items-center gap-1.5">
-                                        <span className="w-2.5 h-2.5 rounded-sm shrink-0" style={{ background: l.color }} />
+                                        <span className="w-2.5 h-2.5 rounded-sm shrink-0" style={{
+                                            background: l.hollow ? "transparent" : l.color,
+                                            border: l.hollow ? `2px solid ${l.color}` : `1px solid ${l.color}80`,
+                                        }} />
                                         <span className="text-[10px] text-white/60">{l.label}</span>
                                     </div>
                                 ))}
