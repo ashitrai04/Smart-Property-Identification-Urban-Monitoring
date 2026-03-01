@@ -5,10 +5,8 @@ export default function BrandingHeader() {
         <header className="bg-white border-b">
             <div className="max-w-7xl mx-auto px-3 sm:px-4 py-3 md:py-4 flex items-center justify-between gap-4">
                 <div className="flex items-center gap-3 sm:gap-4">
-                    {/* Yi Logo — mimicking gov emblem style */}
-                    <div className="h-16 w-16 sm:h-20 sm:w-20 md:h-24 md:w-24 rounded-xl bg-[#1a1a40] flex items-center justify-center shrink-0">
-                        <span className="text-white font-extrabold text-2xl sm:text-3xl md:text-4xl" style={{ fontFamily: 'Georgia, serif' }}>Yi</span>
-                    </div>
+                    {/* Yi Logo */}
+                    <img src="/yi.png" alt="Yantrikaran Innovations" className="h-16 w-16 sm:h-20 sm:w-20 md:h-24 md:w-24 rounded-xl shrink-0 object-cover" />
                     <div>
                         <h1 className="text-sm sm:text-base md:text-lg font-bold text-gray-900 leading-tight">
                             Yantrikaran Innovations Pvt. Ltd.
