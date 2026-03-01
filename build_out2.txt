@@ -1,0 +1,109 @@
+﻿
+> map-app@1.0.0 build
+> vite build
+
+[36mvite v7.3.1 [32mbuilding client environment for production...[36m[39m
+transforming...
+[32mΓ£ô[39m 33 modules transformed.
+node.exe : 
+[31mΓ£ù[39m Build 
+failed in 579ms
+At C:\nvm4w\nodejs\npm.
+ps1:29 char:3
++   & $NODE_EXE 
+$NPM_CLI_JS $args
++   ~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~
+    + CategoryInfo     
+         : NotSpecifi  
+  ed: ([31mΓ£ù[39m   
+  Build failed in 5    
+79ms:String) [], R    
+emoteException
+    + FullyQualifiedEr 
+   rorId : NativeComm  
+  andError
+ 
+[31merror during 
+build:
+[31m[vite]: Rollup 
+failed to resolve 
+import "jspdf" from "D:
+/projects/Smart-Propert
+y-Identification-Urban-
+Monitoring/src/pages/DS
+S.jsx".
+This is most likely 
+unintended because it 
+can break your 
+application at runtime.
+If you do want to 
+externalize this 
+module explicitly add 
+it to
+`build.rollupOptions.ex
+ternal`[31m
+    at viteLog (file://
+/D:/projects/Smart-Prop
+erty-Identification-Urb
+an-Monitoring/node_modu
+les/vite/dist/node/chun
+ks/config.js:33635:57)
+    at file:///D:/proje
+cts/Smart-Property-Iden
+tification-Urban-Monito
+ring/node_modules/vite/
+dist/node/chunks/config
+.js:33669:73
+    at onwarn (file:///
+D:/projects/Smart-Prope
+rty-Identification-Urba
+n-Monitoring/node_modul
+es/@vitejs/plugin-react
+/dist/index.js:76:7)
+    at file:///D:/proje
+cts/Smart-Property-Iden
+tification-Urban-Monito
+ring/node_modules/vite/
+dist/node/chunks/config
+.js:33669:28
+    at onRollupLog (fil
+e:///D:/projects/Smart-
+Property-Identification
+-Urban-Monitoring/node_
+modules/vite/dist/node/
+chunks/config.js:33664:
+63)
+    at onLog (file:///D
+:/projects/Smart-Proper
+ty-Identification-Urban
+-Monitoring/node_module
+s/vite/dist/node/chunks
+/config.js:33467:4)
+    at file:///D:/proje
+cts/Smart-Property-Iden
+tification-Urban-Monito
+ring/node_modules/rollu
+p/dist/es/shared/node-e
+ntry.js:20981:32
+    at Object.logger 
+[as onLog] (file:///D:/
+projects/Smart-Property
+-Identification-Urban-M
+onitoring/node_modules/
+rollup/dist/es/shared/n
+ode-entry.js:22968:9)
+    at ModuleLoader.han
+dleInvalidResolvedId (f
+ile:///D:/projects/Smar
+t-Property-Identificati
+on-Urban-Monitoring/nod
+e_modules/rollup/dist/e
+s/shared/node-entry.js:
+21712:26)
+    at file:///D:/proje
+cts/Smart-Property-Iden
+tification-Urban-Monito
+ring/node_modules/rollu
+p/dist/es/shared/node-e
+ntry.js:21670:26[39m

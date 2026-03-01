@@ -1,0 +1,59 @@
+﻿
+> map-app@1.0.0 build
+> vite build
+
+[36mvite v7.3.1 [32mbuilding client environment for production...[36m[39m
+transforming...
+[32mΓ£ô[39m 1105 modules transformed.
+rendering chunks...
+computing gzip size...
+[2mdist/[22m[32mindex.html                          [39m[1m[2m    1.01 kB[22m[1m[22m[2m Γöé gzip:   0.55 kB[22m
+[2mdist/[22m[32massets/lerc-wasm-BgCuHQhu.wasm      [39m[1m[2m  117.56 kB[22m[1m[22m[2m Γöé gzip:  33.53 kB[22m
+[2mdist/[22m[35massets/index-hdKQPcYO.css           [39m[1m[2m   75.97 kB[22m[1m[22m[2m Γöé gzip:  12.04 kB[22m
+[2mdist/[22m[36massets/raw-C7pr-op4.js              [39m[1m[2m    0.11 kB[22m[1m[22m[2m Γöé gzip:   0.12 kB[22m
+[2mdist/[22m[36massets/deflate-BrwAIIYm.js          [39m[1m[2m    0.18 kB[22m[1m[22m[2m Γöé gzip:   0.16 kB[22m
+[2mdist/[22m[36massets/packbits-DaciKhf5.js         [39m[1m[2m    0.35 kB[22m[1m[22m[2m Γöé gzip:   0.26 kB[22m
+[2mdist/[22m[36massets/webimage-5RL2Wd5F.js         [39m[1m[2m    0.96 kB[22m[1m[22m[2m Γöé gzip:   0.54 kB[22m
+[2mdist/[22m[36massets/basedecoder-mEJI0nVf.js      [39m[1m[2m    1.26 kB[22m[1m[22m[2m Γöé gzip:   0.68 kB[22m
+[2mdist/[22m[36massets/lzw-DdPIOlWq.js              [39m[1m[2m    1.41 kB[22m[1m[22m[2m Γöé gzip:   0.80 kB[22m
+[2mdist/[22m[36massets/jpeg-DbeGilwF.js             [39m[1m[2m    9.72 kB[22m[1m[22m[2m Γöé gzip:   3.98 kB[22m
+[2mdist/[22m[36massets/purify.es-Bzr520pe.js        [39m[1m[2m   22.45 kB[22m[1m[22m[2m Γöé gzip:   8.63 kB[22m
+[2mdist/[22m[36massets/zstd-SOnP4VuX.js             [39m[1m[2m   81.09 kB[22m[1m[22m[2m Γöé gzip:  32.27 kB[22m
+[2mdist/[22m[36massets/lerc-BG7ekxx_.js             [39m[1m[2m   97.06 kB[22m[1m[22m[2m Γöé gzip:  37.53 kB[22m
+[2mdist/[22m[36massets/index.es-2EAZVZg0.js         [39m[1m[2m  158.58 kB[22m[1m[22m[2m Γöé gzip:  52.93 kB[22m
+[2mdist/[22m[36massets/html2canvas.esm-DXEQVQnt.js  [39m[1m[2m  201.04 kB[22m[1m[22m[2m Γöé gzip:  47.43 kB[22m
+[2mdist/[22m[36massets/index-DUOhGIHN.js            [39m[1m[33m3,034.32 kB[39m[22m[2m Γöé gzip: 889.51 kB[22m
+node.exe : [33m
+At C:\nvm4w\nodejs\npm.
+ps1:29 char:3
++   & $NODE_EXE 
+$NPM_CLI_JS $args
++   ~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~
+    + CategoryInfo     
+         : NotSpecifi  
+  ed: ([33m:String)   
+  [], RemoteExcepti    
+on
+    + FullyQualifiedEr 
+   rorId : NativeComm  
+  andError
+ 
+(!) Some chunks are 
+larger than 500 kB 
+after minification. 
+Consider:
+- Using dynamic 
+import() to code-split 
+the application
+- Use build.rollupOptio
+ns.output.manualChunks 
+to improve chunking: ht
+tps://rollupjs.org/conf
+iguration-options/#outp
+ut-manualchunks
+- Adjust chunk size 
+limit for this warning 
+via build.chunkSizeWarn
+ingLimit.[39m
+[32mΓ£ô built in 22.90s[39m
