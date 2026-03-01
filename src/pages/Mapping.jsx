@@ -297,14 +297,12 @@ export default function Mapping() {
                 let paintOverrides;
                 if (layer.isBoundary) {
                     paintOverrides = {
-                        // Boundary: hollow — no fill, just purple 3px outline
                         fill: { "fill-color": "transparent", "fill-opacity": 0 },
                         outline: { "line-color": "#7B2D8E", "line-width": 3 },
                         line: { "line-color": "#7B2D8E", "line-width": 3 },
                     };
                 } else if (layer.isRoad) {
                     paintOverrides = {
-                        // Roads: outline only, no filled mask
                         fill: { "fill-color": "transparent", "fill-opacity": 0 },
                         outline: { "line-color": "#EAB308", "line-width": 2 },
                         line: { "line-color": "#EAB308", "line-width": 2 },
@@ -318,21 +316,17 @@ export default function Mapping() {
                     };
                 }
 
-                // For buildings (huge datasets), use viewport bounding box to limit fetch
-                let where = "1=1";
-                if (layer.name === "buildings") {
-                    const bounds = map.getBounds();
-                    const sw = bounds.getSouthWest(), ne = bounds.getNorthEast();
-                    // Use the map's current extent as a spatial filter via envelope
-                    setLoading(`Loading ${layer.label} in viewport...`);
-                }
-
                 await addArcGISFeatureLayer(map, {
                     id: layerId,
                     featureServerUrl: `${dist.featureServer}/${layer.id}`,
-                    where,
+                    where: "1=1",
                     fit: false,
                     paintOverrides,
+                    onProgress: (loaded, total) => {
+                        if (total > 2000) {
+                            setLoading(`Loading ${layer.label}: ${loaded.toLocaleString()} / ${total.toLocaleString()} features...`);
+                        }
+                    },
                 });
                 activeLayerIdsRef.current.add(layerId);
                 setActiveLayers(prev => ({ ...prev, [layerId]: true }));
