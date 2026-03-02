@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState, useCallback } from "react";
 import mapboxgl from "mapbox-gl";
 import "mapbox-gl/dist/mapbox-gl.css";
+import Draggable from "react-draggable";
 import { addArcGISFeatureLayer, removeLayerGroup } from "../utils/mapLayers";
 import { load as lercLoad, decode as lercDecode } from "lerc";
 import proj4 from "proj4";
@@ -23,7 +24,7 @@ const DISTRICTS = {
             hasMask: true,
             layers: [
                 { id: 0, name: "boundary", label: "Boundary", color: "#7B2D8E", isBoundary: true },
-                { id: 1, name: "buildings", label: "Buildings", color: "#EF4444" },
+                { id: 1, name: "buildings", label: "Buildings", isBuilding: true },
                 { id: 2, name: "openareas", label: "Open Areas", color: "#9CA3AF" },
                 { id: 3, name: "roads", label: "Roads", color: "#EAB308", isRoad: true },
                 { id: 4, name: "waterbodies", label: "Waterbodies", color: "#3B82F6" },
@@ -94,10 +95,12 @@ const DISTRICTS = {
 
 // Mask colors — matching segmentation legend
 const MASK_COLORS = {
-    1: [34, 197, 94, 200],     // Green — vegetation
-    2: [239, 68, 68, 200],     // Red — buildings
-    3: [59, 130, 246, 200],    // Blue — water
-    4: [234, 179, 8, 200],     // Yellow — roads/barren
+    1: [220, 38, 38, 200],     // Dark Red — Buildings (High Confidence ≥0.75)
+    2: [249, 115, 22, 200],    // Orange  — Buildings (Medium Confidence ≥0.70)
+    3: [251, 191, 36, 200],    // Amber   — Buildings (Low Confidence ≥0.65)
+    4: [234, 179, 8, 200],     // Yellow  — Roads
+    5: [59, 130, 246, 200],    // Blue    — Waterbodies
+    6: [156, 163, 175, 200],   // Gray    — Open Areas
 };
 
 const BASE_MAPS = [
@@ -223,6 +226,7 @@ export default function Mapping() {
     const [loading, setLoading] = useState(null);
     const [coords, setCoords] = useState(null);
     const [panelOpen, setPanelOpen] = useState(true);
+    const panelRef = useRef(null); // Ref for Draggable
 
     // Track which layers are toggled on
     const [activeLayers, setActiveLayers] = useState({});
@@ -307,6 +311,20 @@ export default function Mapping() {
                         outline: { "line-color": "#EAB308", "line-width": 2 },
                         line: { "line-color": "#EAB308", "line-width": 2 },
                     };
+                } else if (layer.isBuilding) {
+                    const bldgColorExpr = [
+                        "case",
+                        [">=", ["get", "conf"], 0.75], "#DC2626",
+                        [">=", ["get", "conf"], 0.7], "#F97316",
+                        [">=", ["get", "conf"], 0.65], "#FBBF24",
+                        "#EF4444" // Default
+                    ];
+                    paintOverrides = {
+                        fill: { "fill-color": bldgColorExpr, "fill-opacity": 0.4 },
+                        outline: { "line-color": bldgColorExpr, "line-width": 1.5 },
+                        line: { "line-color": bldgColorExpr, "line-width": 2 },
+                        circle: { "circle-color": bldgColorExpr },
+                    };
                 } else {
                     paintOverrides = {
                         fill: { "fill-color": layer.color, "fill-opacity": 0.4 },
@@ -319,7 +337,7 @@ export default function Mapping() {
                 await addArcGISFeatureLayer(map, {
                     id: layerId,
                     featureServerUrl: `${dist.featureServer}/${layer.id}`,
-                    where: "1=1",
+                    where: layer.where || "1=1",
                     fit: false,
                     paintOverrides,
                     onProgress: (loaded, total) => {
@@ -375,7 +393,7 @@ export default function Mapping() {
             if (source) source.updateImage({ url: result.dataUrl, coordinates: result.coordinates });
             else {
                 map.addSource("vizag-mask-source", { type: "image", url: result.dataUrl, coordinates: result.coordinates });
-                map.addLayer({ id: "vizag-mask-layer", type: "raster", source: "vizag-mask-source", paint: { "raster-opacity": 0.8 } });
+                map.addLayer({ id: "vizag-mask-layer", type: "raster", source: "vizag-mask-source", paint: { "raster-opacity": 0.8, "raster-resampling": "nearest" } });
             }
             maskLoadedRef.current = true;
             maskLevelRef.current = newLevel;
@@ -416,130 +434,168 @@ export default function Mapping() {
 
             {/* Layer Panel */}
             {panelOpen && (
-                <div className="absolute top-3 left-14 z-10 w-72 max-h-[calc(100%-24px)] overflow-y-auto bg-[#0B1E3E]/95 backdrop-blur-md text-white rounded-xl shadow-2xl border border-white/10">
-                    <div className="p-4 border-b border-white/10">
-                        <h3 className="text-sm font-bold tracking-wide">🗺️ Map Layers</h3>
-                    </div>
-
-                    {/* Base Map */}
-                    <div className="p-3 border-b border-white/10">
-                        <p className="text-[10px] uppercase tracking-wider text-white/50 mb-2">Base Map</p>
-                        <div className="flex flex-wrap gap-1.5">
-                            {BASE_MAPS.map(bm => (
-                                <button
-                                    key={bm.id}
-                                    onClick={() => setBaseMap(bm.id)}
-                                    className={`px-2 py-1.5 text-[10px] rounded-md flex flex-col items-center gap-0.5 transition-colors ${baseMap === bm.id ? "bg-[#0EA5E9] text-white" : "bg-white/10 text-white/70 hover:bg-white/20"
-                                        }`}
-                                >
-                                    <span>{bm.icon}</span>
-                                    <span>{bm.label}</span>
-                                </button>
-                            ))}
-                        </div>
-                    </div>
-
-                    {/* State selector */}
-                    <div className="p-3 border-b border-white/10">
-                        <p className="text-[10px] uppercase tracking-wider text-white/50 mb-2">State</p>
-                        <select
-                            value={selectedState}
-                            onChange={e => { setSelectedState(e.target.value); setSelectedDistrict(null); }}
-                            className="w-full bg-white/10 text-white text-xs rounded-md px-2 py-1.5 border border-white/20 focus:outline-none focus:ring-1 focus:ring-[#0EA5E9]"
-                        >
-                            {STATES.map(s => <option key={s.name} value={s.name} className="bg-[#0B1E3E]">{s.name}</option>)}
-                        </select>
-                    </div>
-
-                    {/* District selector */}
-                    <div className="p-3 border-b border-white/10">
-                        <p className="text-[10px] uppercase tracking-wider text-white/50 mb-2">District</p>
-                        <select
-                            value={selectedDistrict || ""}
-                            onChange={e => handleDistrictSelect(e.target.value)}
-                            className="w-full bg-white/10 text-white text-xs rounded-md px-2 py-1.5 border border-white/20 focus:outline-none focus:ring-1 focus:ring-[#0EA5E9]"
-                        >
-                            <option value="" className="bg-[#0B1E3E]">Select District...</option>
-                            {(DISTRICTS[selectedState] || []).map(d => (
-                                <option key={d.name} value={d.name} className="bg-[#0B1E3E]">{d.name}</option>
-                            ))}
-                        </select>
-                    </div>
-
-                    {/* District layers */}
-                    {currentDist && (
-                        <div className="p-3 border-b border-white/10">
-                            <div className="flex items-center justify-between mb-2">
-                                <p className="text-[10px] uppercase tracking-wider text-white/50">{currentDist.name} Layers</p>
-                                <button
-                                    onClick={() => mapRef.current?.flyTo({ center: currentDist.center, zoom: currentDist.zoom, duration: 1500 })}
-                                    className="text-[10px] text-[#0EA5E9] hover:text-white transition-colors"
-                                >
-                                    ↗ Fly To
-                                </button>
+                <Draggable nodeRef={panelRef} handle=".drag-handle" bounds="parent">
+                    <div ref={panelRef} className="absolute top-3 left-14 z-10 w-72 max-h-[calc(100%-24px)] overflow-y-auto bg-[#0B1E3E]/95 backdrop-blur-md text-white rounded-xl shadow-2xl border border-white/10 flex flex-col">
+                        <div className="p-4 border-b border-white/10 drag-handle cursor-move flex items-center justify-between bg-white/5 hover:bg-white/10 transition-colors">
+                            <h3 className="text-sm font-bold tracking-wide select-none">🗺️ Map Layers</h3>
+                            <div className="flex gap-1">
+                                <span className="w-1.5 h-1.5 rounded-full bg-white/30" />
+                                <span className="w-1.5 h-1.5 rounded-full bg-white/30" />
+                                <span className="w-1.5 h-1.5 rounded-full bg-white/30" />
                             </div>
+                        </div>
 
-                            {/* Mask toggle */}
-                            {currentDist.hasMask && (
-                                <label className="flex items-center gap-2.5 py-1.5 px-2 rounded-md hover:bg-white/5 cursor-pointer mb-1">
-                                    <div className={`w-8 h-4 rounded-full relative transition-colors ${maskOn ? "bg-[#0EA5E9]" : "bg-white/20"}`}
-                                        onClick={toggleMask}
-                                    >
-                                        <div className={`absolute top-0.5 w-3 h-3 rounded-full bg-white shadow transition-all ${maskOn ? "left-4.5" : "left-0.5"}`} />
-                                    </div>
-                                    <span className="text-xs">🎭 Land Use Mask</span>
-                                </label>
-                            )}
-
-                            {/* Feature layers */}
-                            {currentDist.layers.map(layer => {
-                                const layerId = `${currentDist.name.toLowerCase()}-${layer.name}`;
-                                const isOn = activeLayers[layerId];
-                                return (
-                                    <label key={layer.id} className="flex items-center gap-2.5 py-1.5 px-2 rounded-md hover:bg-white/5 cursor-pointer">
-                                        <div
-                                            className={`w-8 h-4 rounded-full relative transition-colors ${isOn ? "bg-[#0EA5E9]" : "bg-white/20"}`}
-                                            onClick={() => toggleLayer(currentDist, layer)}
+                        <div className="flex-1 overflow-y-auto min-h-0">
+                            {/* Base Map */}
+                            <div className="p-3 border-b border-white/10 shrink-0">
+                                <p className="text-[10px] uppercase tracking-wider text-white/50 mb-2">Base Map</p>
+                                <div className="flex flex-wrap gap-1.5">
+                                    {BASE_MAPS.map(bm => (
+                                        <button
+                                            key={bm.id}
+                                            onClick={() => setBaseMap(bm.id)}
+                                            className={`px-2 py-1.5 text-[10px] rounded-md flex flex-col items-center gap-0.5 transition-colors ${baseMap === bm.id ? "bg-[#0EA5E9] text-white" : "bg-white/10 text-white/70 hover:bg-white/20"
+                                                }`}
                                         >
-                                            <div className={`absolute top-0.5 w-3 h-3 rounded-full bg-white shadow transition-all ${isOn ? "left-4.5" : "left-0.5"}`} />
-                                        </div>
-                                        <span className="w-2 h-2 rounded-full shrink-0" style={{ background: layer.color }} />
-                                        <span className="text-xs">{layer.label}</span>
-                                    </label>
-                                );
-                            })}
+                                            <span>{bm.icon}</span>
+                                            <span>{bm.label}</span>
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
 
-                            {currentDist.layers.length === 0 && (
-                                <p className="text-xs text-white/40 italic px-2 py-2">Layers coming soon for {currentDist.name}</p>
-                            )}
-                        </div>
-                    )}
+                            {/* State selector */}
+                            <div className="p-3 border-b border-white/10 shrink-0">
+                                <p className="text-[10px] uppercase tracking-wider text-white/50 mb-2">State</p>
+                                <select
+                                    value={selectedState}
+                                    onChange={e => { setSelectedState(e.target.value); setSelectedDistrict(null); }}
+                                    className="w-full bg-white/10 text-white text-xs rounded-md px-2 py-1.5 border border-white/20 focus:outline-none focus:ring-1 focus:ring-[#0EA5E9]"
+                                >
+                                    {STATES.map(s => <option key={s.name} value={s.name} className="bg-[#0B1E3E]">{s.name}</option>)}
+                                </select>
+                            </div>
 
-                    <div className="p-3">
-                        <p className="text-[10px] uppercase tracking-wider text-white/50 mb-2">Legend</p>
-                        <div className="space-y-1">
-                            <p className="text-[10px] text-white/40 uppercase mb-1">Layer Colors</p>
-                            <div className="grid grid-cols-2 gap-1">
-                                {[
-                                    { label: "Boundary", color: "#7B2D8E", hollow: true },
-                                    { label: "Buildings", color: "#EF4444" },
-                                    { label: "Roads", color: "#EAB308", hollow: true },
-                                    { label: "Water", color: "#3B82F6" },
-                                    { label: "Open Areas", color: "#9CA3AF" },
-                                    { label: "Vegetation", color: "#22C55E" },
-                                ].map(l => (
-                                    <div key={l.label} className="flex items-center gap-1.5">
-                                        <span className="w-2.5 h-2.5 rounded-sm shrink-0" style={{
-                                            background: l.hollow ? "transparent" : l.color,
-                                            border: l.hollow ? `2px solid ${l.color}` : `1px solid ${l.color}80`,
-                                        }} />
-                                        <span className="text-[10px] text-white/60">{l.label}</span>
+                            {/* District selector */}
+                            <div className="p-3 border-b border-white/10 shrink-0">
+                                <p className="text-[10px] uppercase tracking-wider text-white/50 mb-2">District</p>
+                                <select
+                                    value={selectedDistrict || ""}
+                                    onChange={e => handleDistrictSelect(e.target.value)}
+                                    className="w-full bg-white/10 text-white text-xs rounded-md px-2 py-1.5 border border-white/20 focus:outline-none focus:ring-1 focus:ring-[#0EA5E9]"
+                                >
+                                    <option value="" className="bg-[#0B1E3E]">Select District...</option>
+                                    {(DISTRICTS[selectedState] || []).map(d => (
+                                        <option key={d.name} value={d.name} className="bg-[#0B1E3E]">{d.name}</option>
+                                    ))}
+                                </select>
+                            </div>
+
+                            {/* District layers */}
+                            {currentDist && (
+                                <div className="p-3 border-b border-white/10 shrink-0">
+                                    <div className="flex items-center justify-between mb-2">
+                                        <p className="text-[10px] uppercase tracking-wider text-white/50">{currentDist.name} Layers</p>
+                                        <button
+                                            onClick={() => mapRef.current?.flyTo({ center: currentDist.center, zoom: currentDist.zoom, duration: 1500 })}
+                                            className="text-[10px] text-[#0EA5E9] hover:text-white transition-colors"
+                                        >
+                                            ↗ Fly To
+                                        </button>
                                     </div>
-                                ))}
+
+                                    {/* Mask toggle */}
+                                    {currentDist.hasMask && (
+                                        <label className="flex items-center gap-2.5 py-1.5 px-2 rounded-md hover:bg-white/5 cursor-pointer mb-1">
+                                            <div className={`w-8 h-4 rounded-full relative transition-colors ${maskOn ? "bg-[#0EA5E9]" : "bg-white/20"}`}
+                                                onClick={toggleMask}
+                                            >
+                                                <div className={`absolute top-0.5 w-3 h-3 rounded-full bg-white shadow transition-all ${maskOn ? "left-4.5" : "left-0.5"}`} />
+                                            </div>
+                                            <span className="text-xs select-none">🎭 Land Use Mask</span>
+                                        </label>
+                                    )}
+
+                                    {/* Feature layers */}
+                                    {currentDist.layers.map(layer => {
+                                        const layerId = `${currentDist.name.toLowerCase()}-${layer.name}`;
+                                        const isOn = activeLayers[layerId];
+                                        return (
+                                            <label key={layer.id} className="flex items-center gap-2.5 py-1.5 px-2 rounded-md hover:bg-white/5 cursor-pointer">
+                                                <div
+                                                    className={`w-8 h-4 rounded-full relative transition-colors ${isOn ? "bg-[#0EA5E9]" : "bg-white/20"}`}
+                                                    onClick={() => toggleLayer(currentDist, layer)}
+                                                >
+                                                    <div className={`absolute top-0.5 w-3 h-3 rounded-full bg-white shadow transition-all ${isOn ? "left-4.5" : "left-0.5"}`} />
+                                                </div>
+                                                <span className="w-2 h-2 rounded-full shrink-0" style={{ background: layer.color || "#EF4444" }} />
+                                                <span className="text-xs select-none">{layer.label}</span>
+                                            </label>
+                                        );
+                                    })}
+
+                                    {currentDist.layers.length === 0 && (
+                                        <p className="text-xs text-white/40 italic px-2 py-2">Layers coming soon for {currentDist.name}</p>
+                                    )}
+                                </div>
+                            )}
+
+                            {/* Change Detection (Semantic) Layers */}
+                            <div className="p-3 border-b border-white/10 shrink-0">
+                                <p className="text-[10px] uppercase tracking-wider text-white/50 mb-2">Change Detection (Semantic)</p>
+                                <div className="space-y-1">
+                                    {[
+                                        { label: "New Construction (Open → Building)", color: "#10B981" },
+                                        { label: "Encroachment / Reclamation (Water → Building)", color: "#F43F5E" },
+                                        { label: "Demolition / Clearing (Building → Open)", color: "#8B5CF6" },
+                                        { label: "New Road / Access (Open → Road)", color: "#F59E0B" },
+                                        { label: "Monthly Change Summary Layer", color: "#3B82F6" },
+                                        { label: "Quarterly Change Summary Layer", color: "#06B6D4" },
+                                        { label: "Yearly Change Summary Layer", color: "#EAB308" },
+                                    ].map((cd, idx) => (
+                                        <label key={idx} className="flex items-center gap-2.5 py-1.5 px-2 rounded-md hover:bg-white/5 cursor-not-allowed opacity-60">
+                                            <div className="w-8 h-4 rounded-full relative bg-white/10 shrink-0">
+                                                <div className="absolute top-0.5 left-0.5 w-3 h-3 rounded-full bg-white/30 shadow" />
+                                            </div>
+                                            <span className="w-2 h-2 rounded-full shrink-0" style={{ background: cd.color }} />
+                                            <div className="flex flex-col flex-1 min-w-0">
+                                                <span className="text-[11px] select-none truncate" title={cd.label}>{cd.label}</span>
+                                                <span className="text-[9px] text-white/40 italic mt-0.5">— In Progress</span>
+                                            </div>
+                                        </label>
+                                    ))}
+                                </div>
+                            </div>
+
+                            {/* Legend */}
+                            <div className="p-3 shrink-0">
+                                <p className="text-[10px] uppercase tracking-wider text-white/50 mb-2">Legend</p>
+                                <div className="space-y-1">
+                                    <p className="text-[10px] text-white/40 uppercase mb-1">Layer Colors</p>
+                                    <div className="grid grid-cols-2 gap-1">
+                                        {[
+                                            { label: "Boundary", color: "#7B2D8E", hollow: true },
+                                            { label: "Bldg (High)", color: "#DC2626" },
+                                            { label: "Bldg (Med)", color: "#F97316" },
+                                            { label: "Bldg (Low)", color: "#FBBF24" },
+                                            { label: "Roads", color: "#EAB308", hollow: true },
+                                            { label: "Water", color: "#3B82F6" },
+                                            { label: "Open Areas", color: "#9CA3AF" },
+                                        ].map(l => (
+                                            <div key={l.label} className="flex items-center gap-1.5">
+                                                <span className="w-2.5 h-2.5 rounded-sm shrink-0" style={{
+                                                    background: l.hollow ? "transparent" : l.color,
+                                                    border: l.hollow ? `2px solid ${l.color}` : `1px solid ${l.color}80`,
+                                                }} />
+                                                <span className="text-[10px] text-white/60 select-none">{l.label}</span>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
                             </div>
                         </div>
                     </div>
-                </div>
+                </Draggable>
             )}
 
             {/* Loading indicator */}
