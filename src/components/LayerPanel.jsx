@@ -78,7 +78,7 @@ export default function LayerPanel({ layers, onToggle, onFlyTo, mapStyle, onStyl
                         className="layer-dot"
                         style={{ background: LAYER_COLORS['vizag-mask'].dot }}
                     />
-                    <span className="layer-label">Land Use Mask</span>
+                    <span className="layer-label">Land Use Segmentation</span>
                 </div>
             </div>
 

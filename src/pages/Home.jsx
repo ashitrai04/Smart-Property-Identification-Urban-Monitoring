@@ -2,12 +2,22 @@ import React, { useEffect, useRef, useState, useMemo } from "react";
 import mapboxgl from "mapbox-gl";
 import "mapbox-gl/dist/mapbox-gl.css";
 import StatCard from "../components/StatCard";
+import { addArcGISFeatureLayer, removeLayerGroup } from "../utils/mapLayers";
 import {
     BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer,
     PieChart, Pie, Cell, Legend, AreaChart, Area, CartesianGrid,
 } from "recharts";
 
 const MAPBOX_TOKEN = import.meta.env.VITE_MAPBOX_TOKEN;
+
+// ── District FeatureServer URLs (boundary = layer 0) ──
+const DISTRICT_FS = {
+    "Visakhapatnam": "https://services5.arcgis.com/73n8CSGpSSyHr1T9/arcgis/rest/services/final_visakhapatnam/FeatureServer",
+    "Vijayawada": "https://services5.arcgis.com/73n8CSGpSSyHr1T9/arcgis/rest/services/vijayawada_layers/FeatureServer",
+    "Guntur": "https://services5.arcgis.com/73n8CSGpSSyHr1T9/arcgis/rest/services/guntur_layer/FeatureServer",
+    "Anantapur": "https://services5.arcgis.com/73n8CSGpSSyHr1T9/arcgis/rest/services/anantapur_layers/FeatureServer",
+    "Nellore": "https://services5.arcgis.com/73n8CSGpSSyHr1T9/arcgis/rest/services/nellore_shpfiles/FeatureServer",
+};
 
 // ── District-wise dummy data ──
 const DISTRICT_DATA = {
@@ -61,6 +71,7 @@ const DISTRICT_NAMES = Object.keys(DISTRICT_DATA);
 export default function Home() {
     const mapContainerRef = useRef(null);
     const mapRef = useRef(null);
+    const boundaryIdRef = useRef(null);
     const [selectedDistrict, setSelectedDistrict] = useState("");
 
     // Current data based on selection
@@ -95,13 +106,44 @@ export default function Home() {
         return () => { mapRef.current = null; map.remove(); };
     }, []);
 
-    // Fly to district on selection
+    // Fly to district on selection + load boundary
     useEffect(() => {
-        if (mapRef.current && selectedDistrict && DISTRICT_DATA[selectedDistrict]) {
+        const map = mapRef.current;
+        if (!map) return;
+
+        // Remove old boundary
+        if (boundaryIdRef.current) {
+            removeLayerGroup(map, boundaryIdRef.current);
+            boundaryIdRef.current = null;
+        }
+
+        if (selectedDistrict && DISTRICT_DATA[selectedDistrict]) {
             const d = DISTRICT_DATA[selectedDistrict];
-            mapRef.current.flyTo({ center: d.center, zoom: d.zoom, duration: 1500 });
-        } else if (mapRef.current && !selectedDistrict) {
-            mapRef.current.flyTo({ center: [80.0, 15.9], zoom: 6.2, duration: 1500 });
+            map.flyTo({ center: d.center, zoom: d.zoom, duration: 1500 });
+
+            // Load boundary from ArcGIS
+            const fs = DISTRICT_FS[selectedDistrict];
+            if (fs) {
+                const bId = `home-boundary-${selectedDistrict.toLowerCase().replace(/\s+/g, "-")}`;
+                boundaryIdRef.current = bId;
+                // Wait for map to be loaded/styled before adding layers
+                const loadBoundary = () => {
+                    addArcGISFeatureLayer(map, {
+                        id: bId,
+                        featureServerUrl: `${fs}/0`, // layer 0 = boundary
+                        where: "1=1",
+                        fit: false,
+                        paintOverrides: {
+                            fill: { "fill-color": "transparent", "fill-opacity": 0 },
+                            outline: { "line-color": "#7B2D8E", "line-width": 3 },
+                        },
+                    }).catch(err => console.warn("Home boundary load failed:", err));
+                };
+                if (map.isStyleLoaded()) loadBoundary();
+                else map.once("load", loadBoundary);
+            }
+        } else {
+            map.flyTo({ center: [80.0, 15.9], zoom: 6.2, duration: 1500 });
         }
     }, [selectedDistrict]);
 

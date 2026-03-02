@@ -2,13 +2,14 @@ import React, { useState, useRef } from "react";
 import { fromBlob } from "geotiff";
 
 const SEGMENTATION_API = "https://amrender-unified-cartographer-api.hf.space/predict";
+const CHANGE_DETECTION_API = "https://amrender-change-detection-falcon.hf.space/detect";
 const MAX_FILE_SIZE = 4.5 * 1024 * 1024; // 4.5 MB
 
 const ANALYSIS_TYPES = [
     { id: "segment", label: "AI Segmentation", desc: "Run AI segmentation on satellite/drone imagery (max 4.5 MB per image)" },
+    { id: "change", label: "Change Detection", desc: "Compare past & present satellite images to detect urban changes" },
     { id: "boundary", label: "Boundary Analysis", desc: "Upload a shapefile boundary for land use analysis" },
     { id: "mask", label: "Mask Overlay", desc: "Upload a mask TIFF for change detection comparison" },
-    { id: "change", label: "Change Detection", desc: "Compare uploaded data with existing satellite imagery" },
 ];
 
 const MASK_LEGEND = [
@@ -18,16 +19,20 @@ const MASK_LEGEND = [
     { label: "Open Plots / Barren", color: "#9CA3AF" },
 ];
 
+const CHANGE_LEGEND = [
+    { label: "New Construction", color: "#EF4444" },
+    { label: "Demolished / Cleared", color: "#3B82F6" },
+    { label: "No Change", color: "transparent", border: true },
+];
+
 const ACCEPTED = ".shp,.shx,.dbf,.prj,.tif,.tiff,.geojson,.json,.zip,.jpg,.jpeg,.png,.bmp,.webp";
 
 // ── Convert any image file to a displayable data URL ──
 async function fileToPreviewUrl(file) {
     const name = file.name.toLowerCase();
-    // Browser-native formats → fast blob URL
     if (/\.(jpg|jpeg|png|gif|webp|bmp|svg)$/.test(name)) {
         return URL.createObjectURL(file);
     }
-    // TIFF → decode with geotiff and render to canvas
     if (/\.(tif|tiff)$/.test(name)) {
         try {
             const tiff = await fromBlob(file);
@@ -43,13 +48,11 @@ async function fileToPreviewUrl(file) {
             const numBands = rasters.length;
             for (let i = 0; i < width * height; i++) {
                 if (numBands >= 3) {
-                    // RGB or RGBA
                     imgData.data[i * 4] = rasters[0][i];
                     imgData.data[i * 4 + 1] = rasters[1][i];
                     imgData.data[i * 4 + 2] = rasters[2][i];
                     imgData.data[i * 4 + 3] = numBands >= 4 ? rasters[3][i] : 255;
                 } else {
-                    // Grayscale
                     const v = rasters[0][i];
                     imgData.data[i * 4] = v;
                     imgData.data[i * 4 + 1] = v;
@@ -60,11 +63,10 @@ async function fileToPreviewUrl(file) {
             ctx.putImageData(imgData, 0, 0);
             return canvas.toDataURL("image/png");
         } catch (e) {
-            console.warn("TIFF decode failed, using fallback:", e);
+            console.warn("TIFF decode failed:", e);
             return null;
         }
     }
-    // Unknown format — try blob URL anyway
     return URL.createObjectURL(file);
 }
 
@@ -74,10 +76,17 @@ export default function Upload() {
     const [processing, setProcessing] = useState(false);
     const [progress, setProgress] = useState("");
     const [error, setError] = useState(null);
-    // Each result: { inputName, inputUrl, maskUrl, status, error? }
     const [segResults, setSegResults] = useState([]);
     const [dummyResult, setDummyResult] = useState(null);
     const abortRef = useRef(false);
+
+    // ── Change Detection state ──
+    const [cdPastFile, setCdPastFile] = useState(null);
+    const [cdPresentFile, setCdPresentFile] = useState(null);
+    const [cdVolumeKnob, setCdVolumeKnob] = useState(11.0);
+    const [cdThreshold, setCdThreshold] = useState(0.85);
+    // { pastUrl, presentUrl, changeUrl, status, error? }
+    const [cdResult, setCdResult] = useState(null);
 
     const handleDrop = (e) => {
         e.preventDefault();
@@ -91,7 +100,7 @@ export default function Upload() {
 
     const removeFile = (idx) => { setFiles(prev => prev.filter((_, i) => i !== idx)); };
 
-    // ── Send one image to the API ──
+    // ── Send one image to the segmentation API ──
     const segmentOneFile = async (file) => {
         const formData = new FormData();
         formData.append("file", file);
@@ -126,14 +135,11 @@ export default function Upload() {
             const file = imageFiles[i];
             setProgress(`Processing ${i + 1} of ${imageFiles.length}: ${file.name}...`);
 
-            // Convert to displayable preview (handles TIFF conversion)
             const inputUrl = await fileToPreviewUrl(file);
-            // Add a "loading" placeholder
             setSegResults(prev => [...prev, { inputName: file.name, inputUrl, maskUrl: null, status: "processing" }]);
 
             try {
                 const maskUrl = await segmentOneFile(file);
-                // Update last entry with mask
                 setSegResults(prev => prev.map((r, idx) =>
                     idx === prev.length - 1 ? { ...r, maskUrl, status: "done" } : r
                 ));
@@ -142,6 +148,49 @@ export default function Upload() {
                     idx === prev.length - 1 ? { ...r, status: "error", error: err.message } : r
                 ));
             }
+        }
+        setProgress("");
+    };
+
+    // ── Change Detection ──
+    const runChangeDetection = async () => {
+        if (!cdPastFile || !cdPresentFile) {
+            setError("Please upload both a PAST and a PRESENT image for change detection.");
+            return;
+        }
+        if (cdPastFile.size > MAX_FILE_SIZE) {
+            setError(`Past image (${cdPastFile.name}) exceeds 4.5 MB limit.`);
+            return;
+        }
+        if (cdPresentFile.size > MAX_FILE_SIZE) {
+            setError(`Present image (${cdPresentFile.name}) exceeds 4.5 MB limit.`);
+            return;
+        }
+
+        setProgress("Generating previews...");
+        const pastUrl = await fileToPreviewUrl(cdPastFile);
+        const presentUrl = await fileToPreviewUrl(cdPresentFile);
+
+        setCdResult({ pastUrl, presentUrl, changeUrl: null, status: "processing" });
+
+        setProgress("📡 Scanning for changes... Sending to AI model...");
+        try {
+            const formData = new FormData();
+            formData.append("image_past", cdPastFile);
+            formData.append("image_present", cdPresentFile);
+            formData.append("volume_knob", cdVolumeKnob.toString());
+            formData.append("threshold", cdThreshold.toString());
+
+            const resp = await fetch(CHANGE_DETECTION_API, { method: "POST", body: formData });
+            if (!resp.ok) {
+                const errText = await resp.text().catch(() => "Unknown error");
+                throw new Error(`API ${resp.status}: ${errText}`);
+            }
+            const blob = await resp.blob();
+            const changeUrl = URL.createObjectURL(blob);
+            setCdResult(prev => ({ ...prev, changeUrl, status: "done" }));
+        } catch (err) {
+            setCdResult(prev => ({ ...prev, status: "error", error: err.message }));
         }
         setProgress("");
     };
@@ -164,13 +213,22 @@ export default function Upload() {
     };
 
     const handleSubmit = async () => {
-        if (files.length === 0) return;
+        if (analysisType === "change") {
+            if (!cdPastFile || !cdPresentFile) {
+                setError("Please upload both a PAST and a PRESENT image.");
+                return;
+            }
+        } else if (files.length === 0) {
+            return;
+        }
         setProcessing(true);
         setError(null);
         setDummyResult(null);
 
         if (analysisType === "segment") {
             await runSegmentation();
+        } else if (analysisType === "change") {
+            await runChangeDetection();
         } else {
             await runDummyAnalysis();
         }
@@ -181,42 +239,128 @@ export default function Upload() {
         segResults.forEach(r => { if (r.inputUrl) URL.revokeObjectURL(r.inputUrl); if (r.maskUrl) URL.revokeObjectURL(r.maskUrl); });
         setSegResults([]);
         setDummyResult(null);
+        setCdResult(null);
+        setCdPastFile(null);
+        setCdPresentFile(null);
         setError(null);
     };
 
     const completedCount = segResults.filter(r => r.status === "done").length;
     const totalImages = files.filter(f => /\.(jpg|jpeg|png|tif|tiff)$/i.test(f.name)).length;
 
+    // ── Check if submit button should be enabled ──
+    const canSubmit = analysisType === "change"
+        ? (cdPastFile && cdPresentFile && !processing)
+        : (files.length > 0 && !processing);
+
     return (
         <div className="space-y-6">
             <div className="bg-white rounded-lg border border-gray-200 p-4 sm:p-5 shadow-sm">
                 <h2 className="text-lg sm:text-xl font-bold text-gray-900">Upload & Analysis</h2>
                 <p className="text-sm text-gray-500 mt-1">
-                    Upload satellite/drone images for AI segmentation or boundary files for analysis
+                    Upload satellite/drone images for AI segmentation, change detection, or boundary analysis
                 </p>
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                 {/* Upload zone + results */}
                 <div className="lg:col-span-2 space-y-4">
-                    <div
-                        onDrop={handleDrop}
-                        onDragOver={e => { e.preventDefault(); e.stopPropagation(); }}
-                        className="bg-white border-2 border-dashed border-gray-300 rounded-lg p-8 text-center hover:border-[#0B5FA5] hover:bg-blue-50/30 transition-colors cursor-pointer"
-                        onClick={() => document.getElementById("file-input").click()}
-                    >
-                        <div className="text-4xl mb-3">📁</div>
-                        <p className="text-sm font-medium text-gray-900">Drag & drop files here</p>
-                        <p className="text-xs text-gray-400 mt-1">or click to browse • multiple files supported</p>
-                        <p className="text-[10px] text-gray-400 mt-2">Accepts: .jpg, .png, .tif, .tiff, .shp, .shx, .dbf, .prj, .geojson, .zip</p>
-                        {analysisType === "segment" && (
-                            <p className="text-[10px] text-[#0B5FA5] mt-1 font-medium">🧠 Upload multiple satellite tiles — each will be processed sequentially (max 4.5 MB each)</p>
-                        )}
-                        <input id="file-input" type="file" multiple accept={ACCEPTED} onChange={handleFileInput} className="hidden" />
-                    </div>
 
-                    {/* File list */}
-                    {files.length > 0 && (
+                    {/* ── CHANGE DETECTION: Dual Upload ── */}
+                    {analysisType === "change" ? (
+                        <div className="space-y-4">
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                {/* Past image upload */}
+                                <div
+                                    onDrop={e => { e.preventDefault(); e.stopPropagation(); const f = e.dataTransfer.files[0]; if (f) setCdPastFile(f); }}
+                                    onDragOver={e => { e.preventDefault(); e.stopPropagation(); }}
+                                    onClick={() => document.getElementById("cd-past-input").click()}
+                                    className={`bg-white border-2 border-dashed rounded-lg p-6 text-center cursor-pointer transition-colors ${cdPastFile ? "border-green-300 bg-green-50/30" : "border-gray-300 hover:border-[#0B5FA5] hover:bg-blue-50/30"}`}
+                                >
+                                    <div className="text-3xl mb-2">🕒</div>
+                                    <p className="text-xs font-medium text-gray-900">PAST Image</p>
+                                    <p className="text-[10px] text-gray-400 mt-1">Upload the older satellite image</p>
+                                    {cdPastFile ? (
+                                        <div className="mt-2 flex items-center justify-center gap-1">
+                                            <span className="text-[10px] text-green-700 font-medium truncate max-w-[140px]">✓ {cdPastFile.name}</span>
+                                            <button onClick={e => { e.stopPropagation(); setCdPastFile(null); }} className="text-red-400 hover:text-red-600 text-xs ml-1">✕</button>
+                                        </div>
+                                    ) : (
+                                        <p className="text-[10px] text-gray-400 mt-2">Click or drag & drop</p>
+                                    )}
+                                    <input id="cd-past-input" type="file" accept=".jpg,.jpeg,.png,.tif,.tiff,.webp,.bmp"
+                                        onChange={e => { if (e.target.files[0]) setCdPastFile(e.target.files[0]); }} className="hidden" />
+                                </div>
+
+                                {/* Present image upload */}
+                                <div
+                                    onDrop={e => { e.preventDefault(); e.stopPropagation(); const f = e.dataTransfer.files[0]; if (f) setCdPresentFile(f); }}
+                                    onDragOver={e => { e.preventDefault(); e.stopPropagation(); }}
+                                    onClick={() => document.getElementById("cd-present-input").click()}
+                                    className={`bg-white border-2 border-dashed rounded-lg p-6 text-center cursor-pointer transition-colors ${cdPresentFile ? "border-green-300 bg-green-50/30" : "border-gray-300 hover:border-[#0B5FA5] hover:bg-blue-50/30"}`}
+                                >
+                                    <div className="text-3xl mb-2">📍</div>
+                                    <p className="text-xs font-medium text-gray-900">PRESENT Image</p>
+                                    <p className="text-[10px] text-gray-400 mt-1">Upload the recent satellite image</p>
+                                    {cdPresentFile ? (
+                                        <div className="mt-2 flex items-center justify-center gap-1">
+                                            <span className="text-[10px] text-green-700 font-medium truncate max-w-[140px]">✓ {cdPresentFile.name}</span>
+                                            <button onClick={e => { e.stopPropagation(); setCdPresentFile(null); }} className="text-red-400 hover:text-red-600 text-xs ml-1">✕</button>
+                                        </div>
+                                    ) : (
+                                        <p className="text-[10px] text-gray-400 mt-2">Click or drag & drop</p>
+                                    )}
+                                    <input id="cd-present-input" type="file" accept=".jpg,.jpeg,.png,.tif,.tiff,.webp,.bmp"
+                                        onChange={e => { if (e.target.files[0]) setCdPresentFile(e.target.files[0]); }} className="hidden" />
+                                </div>
+                            </div>
+
+                            {/* Sensitivity controls */}
+                            <div className="bg-white rounded-lg border border-gray-200 p-4 shadow-sm">
+                                <p className="text-xs font-semibold text-gray-900 mb-3">Detection Sensitivity</p>
+                                <div className="grid grid-cols-2 gap-4">
+                                    <div>
+                                        <label className="text-[10px] text-gray-500 font-medium block mb-1">
+                                            Volume Knob: <span className="text-gray-900">{cdVolumeKnob.toFixed(1)}</span>
+                                        </label>
+                                        <input type="range" min="1" max="20" step="0.5" value={cdVolumeKnob}
+                                            onChange={e => setCdVolumeKnob(parseFloat(e.target.value))}
+                                            className="w-full h-1.5 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-[#0B5FA5]" />
+                                        <p className="text-[9px] text-gray-400 mt-0.5">Higher = more sensitive to small changes</p>
+                                    </div>
+                                    <div>
+                                        <label className="text-[10px] text-gray-500 font-medium block mb-1">
+                                            Threshold: <span className="text-gray-900">{cdThreshold.toFixed(2)}</span>
+                                        </label>
+                                        <input type="range" min="0.5" max="1.0" step="0.01" value={cdThreshold}
+                                            onChange={e => setCdThreshold(parseFloat(e.target.value))}
+                                            className="w-full h-1.5 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-[#0B5FA5]" />
+                                        <p className="text-[9px] text-gray-400 mt-0.5">Lower = detects more subtle changes</p>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    ) : (
+                        /* ── Standard file upload (Segmentation, Boundary, Mask) ── */
+                        <div
+                            onDrop={handleDrop}
+                            onDragOver={e => { e.preventDefault(); e.stopPropagation(); }}
+                            className="bg-white border-2 border-dashed border-gray-300 rounded-lg p-8 text-center hover:border-[#0B5FA5] hover:bg-blue-50/30 transition-colors cursor-pointer"
+                            onClick={() => document.getElementById("file-input").click()}
+                        >
+                            <div className="text-4xl mb-3">📁</div>
+                            <p className="text-sm font-medium text-gray-900">Drag & drop files here</p>
+                            <p className="text-xs text-gray-400 mt-1">or click to browse • multiple files supported</p>
+                            <p className="text-[10px] text-gray-400 mt-2">Accepts: .jpg, .png, .tif, .tiff, .shp, .shx, .dbf, .prj, .geojson, .zip</p>
+                            {analysisType === "segment" && (
+                                <p className="text-[10px] text-[#0B5FA5] mt-1 font-medium">🧠 Upload multiple satellite tiles — each will be processed sequentially (max 4.5 MB each)</p>
+                            )}
+                            <input id="file-input" type="file" multiple accept={ACCEPTED} onChange={handleFileInput} className="hidden" />
+                        </div>
+                    )}
+
+                    {/* File list (for non-change detection) */}
+                    {analysisType !== "change" && files.length > 0 && (
                         <div className="bg-white rounded-lg border border-gray-200 p-4 shadow-sm">
                             <div className="flex items-center justify-between mb-3">
                                 <h3 className="text-sm font-semibold text-gray-900">Selected Files ({files.length})</h3>
@@ -249,7 +393,7 @@ export default function Upload() {
                         </div>
                     )}
 
-                    {/* Dummy result for non-segment */}
+                    {/* Dummy result for non-segment/non-change */}
                     {dummyResult && (
                         <div className="bg-white rounded-lg border border-green-200 p-4 shadow-sm">
                             <div className="flex items-center gap-2 mb-3">
@@ -264,6 +408,100 @@ export default function Upload() {
                                         <p className="text-sm font-bold text-gray-900">{v}</p>
                                     </div>
                                 ))}
+                            </div>
+                        </div>
+                    )}
+
+                    {/* ── Change Detection Results ── */}
+                    {cdResult && (
+                        <div className="space-y-4">
+                            <div className="flex items-center justify-between">
+                                <div className="flex items-center gap-2">
+                                    <h3 className="text-sm font-semibold text-gray-900">🔍 Change Detection Results</h3>
+                                    {cdResult.status === "processing" && (
+                                        <span className="text-[10px] bg-yellow-100 text-yellow-700 px-2 py-0.5 rounded-full animate-pulse">Processing...</span>
+                                    )}
+                                    {cdResult.status === "done" && (
+                                        <span className="text-[10px] bg-green-100 text-green-700 px-2 py-0.5 rounded-full">✓ Complete</span>
+                                    )}
+                                    {cdResult.status === "error" && (
+                                        <span className="text-[10px] bg-red-100 text-red-700 px-2 py-0.5 rounded-full">✕ Failed</span>
+                                    )}
+                                </div>
+                                <button onClick={clearResults} className="text-[10px] text-gray-400 hover:text-red-500">Clear Results</button>
+                            </div>
+
+                            {/* Color legend */}
+                            <div className="bg-white rounded-lg border border-gray-200 p-3 shadow-sm">
+                                <p className="text-[10px] text-gray-400 font-medium mb-2">CHANGE DETECTION LEGEND</p>
+                                <div className="flex flex-wrap gap-3">
+                                    {CHANGE_LEGEND.map(l => (
+                                        <div key={l.label} className="flex items-center gap-1.5">
+                                            <span className="w-3 h-3 rounded-sm shrink-0" style={{
+                                                background: l.border ? "transparent" : l.color,
+                                                border: l.border ? "2px solid #9CA3AF" : `1px solid ${l.color}80`,
+                                            }} />
+                                            <span className="text-xs text-gray-700">{l.label}</span>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+
+                            {/* Three-column display: Past | Present | Change Map */}
+                            <div className="bg-white rounded-lg border border-gray-200 p-4 shadow-sm">
+                                <div className="grid grid-cols-3 gap-3">
+                                    {/* Past */}
+                                    <div>
+                                        <p className="text-[10px] text-gray-400 mb-1 font-medium">🕒 PAST Image</p>
+                                        {cdResult.pastUrl ? (
+                                            <img src={cdResult.pastUrl} alt="Past satellite" className="rounded-lg border border-gray-200 w-full object-contain max-h-[350px] bg-gray-100" />
+                                        ) : (
+                                            <div className="rounded-lg border border-gray-200 w-full h-[200px] bg-gray-50 flex items-center justify-center">
+                                                <span className="text-xs text-gray-400">No preview</span>
+                                            </div>
+                                        )}
+                                    </div>
+                                    {/* Present */}
+                                    <div>
+                                        <p className="text-[10px] text-gray-400 mb-1 font-medium">📍 PRESENT Image</p>
+                                        {cdResult.presentUrl ? (
+                                            <img src={cdResult.presentUrl} alt="Present satellite" className="rounded-lg border border-gray-200 w-full object-contain max-h-[350px] bg-gray-100" />
+                                        ) : (
+                                            <div className="rounded-lg border border-gray-200 w-full h-[200px] bg-gray-50 flex items-center justify-center">
+                                                <span className="text-xs text-gray-400">No preview</span>
+                                            </div>
+                                        )}
+                                    </div>
+                                    {/* Change Map Output */}
+                                    <div>
+                                        <p className="text-[10px] text-gray-400 mb-1 font-medium">🔥 CHANGE MAP — AI Output</p>
+                                        {cdResult.status === "processing" && (
+                                            <div className="rounded-lg border border-gray-200 w-full h-[200px] bg-gray-50 flex flex-col items-center justify-center gap-2">
+                                                <div className="w-6 h-6 border-2 border-[#0B5FA5]/30 border-t-[#0B5FA5] rounded-full animate-spin" />
+                                                <span className="text-xs text-gray-400">Detecting changes...</span>
+                                            </div>
+                                        )}
+                                        {cdResult.status === "done" && cdResult.changeUrl && (
+                                            <img src={cdResult.changeUrl} alt="Change detection output" className="rounded-lg border border-[#0B5FA5]/20 w-full object-contain max-h-[350px] bg-gray-100" />
+                                        )}
+                                        {cdResult.status === "error" && (
+                                            <div className="rounded-lg border border-red-200 w-full h-[200px] bg-red-50 flex flex-col items-center justify-center gap-1">
+                                                <span className="text-2xl">⚠️</span>
+                                                <span className="text-xs text-red-500">{cdResult.error || "Failed"}</span>
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+
+                                {/* Download button */}
+                                {cdResult.status === "done" && cdResult.changeUrl && (
+                                    <div className="mt-3 flex justify-end">
+                                        <a href={cdResult.changeUrl} download="ai_change_detection_output.png"
+                                            className="text-xs text-[#0B5FA5] hover:text-[#094d87] font-medium flex items-center gap-1">
+                                            📥 Download Change Map
+                                        </a>
+                                    </div>
+                                )}
                             </div>
                         </div>
                     )}
@@ -377,13 +615,20 @@ export default function Upload() {
 
                     <button
                         onClick={handleSubmit}
-                        disabled={files.length === 0 || processing}
-                        className={`w-full py-2.5 rounded-lg text-sm font-semibold transition-colors ${files.length > 0 && !processing ? "bg-[#0B5FA5] text-white hover:bg-[#094d87]" : "bg-gray-200 text-gray-400 cursor-not-allowed"}`}
+                        disabled={!canSubmit}
+                        className={`w-full py-2.5 rounded-lg text-sm font-semibold transition-colors ${canSubmit ? "bg-[#0B5FA5] text-white hover:bg-[#094d87]" : "bg-gray-200 text-gray-400 cursor-not-allowed"}`}
                     >
-                        {processing ? progress || "Processing..." : analysisType === "segment" ? `🧠 Run AI Segmentation${totalImages > 1 ? ` (${totalImages} images)` : ""}` : "Run Analysis"}
+                        {processing
+                            ? progress || "Processing..."
+                            : analysisType === "segment"
+                                ? `🧠 Run AI Segmentation${totalImages > 1 ? ` (${totalImages} images)` : ""}`
+                                : analysisType === "change"
+                                    ? "🔍 Run Change Detection"
+                                    : "Run Analysis"
+                        }
                     </button>
 
-                    {processing && analysisType === "segment" && (
+                    {processing && (analysisType === "segment" || analysisType === "change") && (
                         <button onClick={() => { abortRef.current = true; }} className="w-full py-2 rounded-lg text-xs font-medium text-red-500 border border-red-200 hover:bg-red-50 transition-colors">
                             ✕ Stop Processing
                         </button>
@@ -403,6 +648,18 @@ export default function Upload() {
                                         <span className="text-[10px] text-blue-600">{l.label}</span>
                                     </div>
                                 ))}
+                            </div>
+                        </div>
+                    ) : analysisType === "change" ? (
+                        <div className="bg-orange-50 border border-orange-200 rounded-lg p-3 space-y-2">
+                            <p className="text-[10px] text-orange-700 font-medium">🔍 Change Detection</p>
+                            <p className="text-[10px] text-orange-600">
+                                Upload two images of the same area from different time periods. The AI model (Falcon) compares them pixel-by-pixel to detect construction, demolition, and land use changes.
+                            </p>
+                            <div className="border-t border-orange-200 pt-2">
+                                <p className="text-[10px] text-orange-700 font-medium mb-1">Parameters:</p>
+                                <p className="text-[10px] text-orange-600">• <strong>Volume Knob</strong>: Higher = more sensitive</p>
+                                <p className="text-[10px] text-orange-600">• <strong>Threshold</strong>: Lower = detects subtle changes</p>
                             </div>
                         </div>
                     ) : (

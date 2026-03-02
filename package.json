@@ -21,6 +21,8 @@
     "proj4": "^2.20.2",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
+    "react-draggable": "^4.5.0",
+    "react-is": "^19.2.4",
     "react-router-dom": "^7.13.1",
     "recharts": "^3.7.0",
     "tailwindcss": "^4.2.1"
