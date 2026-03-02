@@ -194,9 +194,16 @@ async function buildMaskForViewport(map, imageServer, onProgress) {
 
     let done = 0;
     const promises = [];
-    for (let r = rowMin; r <= rowMax; r++)
-        for (let c = colMin; c <= colMax; c++)
-            promises.push(getDecodedTile(imageServer, arcLevel, r, c).then(() => { done++; if (onProgress) onProgress(Math.round((done / total) * 100)); }));
+    for (let r = rowMin; r <= rowMax; r++) {
+        for (let c = colMin; c <= colMax; c++) {
+            promises.push(
+                getDecodedTile(imageServer, arcLevel, r, c).then(() => {
+                    done++;
+                    if (onProgress) onProgress(Math.round((done / total) * 100));
+                })
+            );
+        }
+    }
     await Promise.all(promises);
 
     const maxDim = 2048;
@@ -306,26 +313,31 @@ export default function Mapping() {
         }
         
         if (!map.getLayer(layerId)) {
-            const style = map.getStyle();
-            let beforeId;
-            if (style && Array.isArray(style.layers)) {
-                const preferred = ['waterway-label', 'settlement-label', 'place-label'];
-                beforeId = preferred.find(id => style.layers.some(l => l.id === id));
-                if (!beforeId) {
-                    const sym = style.layers.find(l => l.type === 'symbol');
-                    beforeId = sym ? sym.id : undefined;
-                }
-            }
             const layerDef = {
                 id: layerId,
                 type: 'raster',
                 source: sourceId,
-                paint: { 'raster-opacity': 0.95, 'raster-fade-duration': 0 }
+                minzoom: 4,
+                maxzoom: 16,
+                paint: { 
+                    'raster-opacity': 0.85, 
+                    'raster-fade-duration': 300,
+                    'raster-resampling': 'nearest'
+                }
             };
             try {
+                const style = map.getStyle();
+                let beforeId;
+                if (style && style.layers) {
+                     // Try to place the Sentinel LULC layer below any label, road, or symbol layers so it acts as a basemap overlay
+                     const firstLabelOrLine = style.layers.find(l => l.type === 'symbol' || l.type === 'line' || (l.id && l.id.includes('label')));
+                     beforeId = firstLabelOrLine ? firstLabelOrLine.id : undefined;
+                }
+                
                 if (beforeId) map.addLayer(layerDef, beforeId);
                 else map.addLayer(layerDef);
             } catch (e) {
+                console.warn("Error injecting Sentinel LULC layer before existing layers. Adding it to the top.", e);
                 try { map.addLayer(layerDef); } catch (_) {}
             }
         }
@@ -443,40 +455,62 @@ export default function Mapping() {
         const map = mapRef.current;
         if (!map) return;
         
-        if (showSentinel) {
-            sentinelMaskGeomRef.current = null;
-            if (!selectedState && !selectedDistrict && !selectedVillage) {
-                alert('Select a State (or District/Village) to view Sentinel LULC.');
-                setShowSentinel(false);
-                return;
+        const loadSentinel = async () => {
+            if (showSentinel) {
+                sentinelMaskGeomRef.current = null;
+                if (!selectedState && !selectedDistrict && !selectedVillage) {
+                    alert('Select a State (or District/Village) to view Sentinel LULC.');
+                    setShowSentinel(false);
+                    return;
+                }
+                
+                if (!map.isStyleLoaded()) {
+                    map.once('style.load', async () => {
+                        addSentinelLayer(map);
+                        await updateSentinelMask();
+                    });
+                } else {
+                    addSentinelLayer(map);
+                    await updateSentinelMask();
+                }
+            } else {
+                removeSentinelLayer(map);
+                removeSentinelMask(map);
             }
-            if (!map.isStyleLoaded()) map.once('style.load', () => addSentinelLayer(map));
-            else addSentinelLayer(map);
-            updateSentinelMask();
-        } else {
-            removeSentinelLayer(map);
-            removeSentinelMask(map);
-            
-            const onIdle = () => { try { removeSentinelLayer(map); removeSentinelMask(map); } catch (_) {} };
-            const onStyle = () => { try { removeSentinelLayer(map); removeSentinelMask(map); } catch (_) {} };
-            try { map.once('idle', onIdle); } catch (_) {}
-            try { map.once('style.load', onStyle); } catch (_) {}
-            
-            return () => {
-                try { map.off('idle', onIdle); } catch (_) {}
-                try { map.off('style.load', onStyle); } catch (_) {}
-            };
-        }
-    }, [showSentinel, updateSentinelMask, addSentinelLayer, removeSentinelLayer, removeSentinelMask, selectedState, selectedDistrict, selectedVillage]);
+        };
+
+        loadSentinel();
+        
+        // Cleanup functions
+        const onIdle = () => { if (!showSentinel) { removeSentinelLayer(map); removeSentinelMask(map); } };
+        const onStyle = () => { if (!showSentinel) { removeSentinelLayer(map); removeSentinelMask(map); } };
+        
+        map.on('idle', onIdle);
+        map.on('style.load', onStyle);
+        
+        return () => {
+            map.off('idle', onIdle);
+            map.off('style.load', onStyle);
+        };
+    }, [showSentinel, selectedState, selectedDistrict, selectedVillage, addSentinelLayer, removeSentinelLayer, removeSentinelMask, updateSentinelMask]);
 
     // Update mask whenever selection changes while active
     useEffect(() => {
         const map = mapRef.current;
-        sentinelMaskGeomRef.current = null;
-        if (!showSentinel) return;
-        if (map) removeSentinelMask(map);
-        if (selectedState) updateSentinelMask();
-        else if (map) removeSentinelLayer(map);
+        if (!map || !showSentinel) return;
+        
+        sentinelMaskGeomRef.current = null; // Clear old mask
+        
+        const refreshMask = async () => {
+             if (selectedState) {
+                 await updateSentinelMask();
+             } else {
+                 removeSentinelLayer(map);
+                 removeSentinelMask(map);
+             }
+        };
+        
+        refreshMask();
     }, [selectedState, selectedDistrict, selectedVillage, showSentinel, removeSentinelMask, updateSentinelMask, removeSentinelLayer]);
 
 
@@ -664,43 +698,6 @@ export default function Mapping() {
                             </div>
                         </div>
 
-<<<<<<< HEAD
-                            {/* Custom LULC toggle using Sentinel */}
-                            <label className="flex items-center justify-between py-1.5 px-2 rounded-md hover:bg-white/5 cursor-pointer mb-2 border border-white/5 bg-white/5">
-                                <div className="flex items-center gap-2">
-                                    <span className="text-sm">🌍</span>
-                                    <span className="text-xs font-semibold text-[#0EA5E9]">Land Covers (LULC)</span>
-                                </div>
-                                <div
-                                    className={`w-8 h-4 rounded-full relative transition-colors ${showSentinel ? "bg-[#0EA5E9]" : "bg-white/20"}`}
-                                    onClick={() => setShowSentinel(!showSentinel)}
-                                >
-                                    <div className={`absolute top-0.5 w-3 h-3 rounded-full bg-white shadow transition-all ${showSentinel ? "left-4.5" : "left-0.5"}`} />
-                                </div>
-                            </label>
-
-                            {/* Legacy local mask toggle */}
-                            {currentDist.hasMask && (
-                                <label className="flex items-center gap-2.5 py-1.5 px-2 rounded-md hover:bg-white/5 cursor-pointer mb-1">
-                                    <div className={`w-8 h-4 rounded-full relative transition-colors ${maskOn ? "bg-[#0EA5E9]" : "bg-white/20"}`}
-                                        onClick={toggleMask}
-                                    >
-                                        <div className={`absolute top-0.5 w-3 h-3 rounded-full bg-white shadow transition-all ${maskOn ? "left-4.5" : "left-0.5"}`} />
-                                    </div>
-                                    <span className="text-xs">🎭 District Mask (Local)</span>
-                                </label>
-                            )}
-
-                            {/* Feature layers */}
-                            {currentDist.layers.map(layer => {
-                                const layerId = `${currentDist.name.toLowerCase()}-${layer.name}`;
-                                const isOn = activeLayers[layerId];
-                                return (
-                                    <label key={layer.id} className="flex items-center gap-2.5 py-1.5 px-2 rounded-md hover:bg-white/5 cursor-pointer">
-                                        <div
-                                            className={`w-8 h-4 rounded-full relative transition-colors ${isOn ? "bg-[#0EA5E9]" : "bg-white/20"}`}
-                                            onClick={() => toggleLayer(currentDist, layer)}
-=======
                         <div className="flex-1 overflow-y-auto min-h-0">
                             {/* Base Map */}
                             <div className="p-3 border-b border-white/10 shrink-0">
@@ -712,7 +709,6 @@ export default function Mapping() {
                                             onClick={() => setBaseMap(bm.id)}
                                             className={`px-2 py-1.5 text-[10px] rounded-md flex flex-col items-center gap-0.5 transition-colors ${baseMap === bm.id ? "bg-[#0EA5E9] text-white" : "bg-white/10 text-white/70 hover:bg-white/20"
                                                 }`}
->>>>>>> 9e705c287377f4bfe2709148dfb4afd337a15630
                                         >
                                             <span>{bm.icon}</span>
                                             <span>{bm.label}</span>
@@ -760,6 +756,20 @@ export default function Mapping() {
                                             ↗ Fly To
                                         </button>
                                     </div>
+
+                                    {/* Custom LULC toggle using Sentinel */}
+                                    <label className="flex items-center justify-between py-1.5 px-2 rounded-md hover:bg-white/5 cursor-pointer mb-2 border border-white/5 bg-white/5">
+                                        <div className="flex items-center gap-2">
+                                            <span className="text-sm">🌍</span>
+                                            <span className="text-xs font-semibold text-[#0EA5E9]">Land Covers (LULC)</span>
+                                        </div>
+                                        <div
+                                            className={`w-8 h-4 rounded-full relative transition-colors ${showSentinel ? "bg-[#0EA5E9]" : "bg-white/20"}`}
+                                            onClick={() => setShowSentinel(!showSentinel)}
+                                        >
+                                            <div className={`absolute top-0.5 w-3 h-3 rounded-full bg-white shadow transition-all ${showSentinel ? "left-4.5" : "left-0.5"}`} />
+                                        </div>
+                                    </label>
 
                                     {/* Mask toggle */}
                                     {currentDist.hasMask && (
@@ -850,27 +860,24 @@ export default function Mapping() {
                                     </div>
                                 </div>
                             </div>
+
+                            {/* Sentinel LULC Legend */}
+                            {showSentinel && (
+                                <div className="p-3 border-t border-white/10 shrink-0 bg-[#0B1E3E]/60">
+                                    <p className="text-[10px] uppercase tracking-wider text-white/50 mb-2">LULC Categories</p>
+                                    <div className="grid grid-cols-2 gap-y-1.5 gap-x-2">
+                                        {LAND_COVER_LEGEND.map(lc => (
+                                            <div key={lc.label} className="flex items-center gap-1.5">
+                                                <span className="w-2.5 h-2.5 rounded-sm shrink-0" style={{ background: lc.color }} />
+                                                <span className="text-[10px] text-white/80">{lc.label}</span>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
                         </div>
                     </div>
-<<<<<<< HEAD
-                    {/* Sentinel LULC Legend */}
-                    {showSentinel && (
-                        <div className="p-3 border-t border-white/10 bg-[#0B1E3E]/60">
-                            <p className="text-[10px] uppercase tracking-wider text-white/50 mb-2">LULC Categories</p>
-                            <div className="grid grid-cols-2 gap-y-1.5 gap-x-2">
-                                {LAND_COVER_LEGEND.map(lc => (
-                                    <div key={lc.label} className="flex items-center gap-1.5">
-                                        <span className="w-2.5 h-2.5 rounded-sm shrink-0" style={{ background: lc.color }} />
-                                        <span className="text-[10px] text-white/80">{lc.label}</span>
-                                    </div>
-                                ))}
-                            </div>
-                        </div>
-                    )}
-                </div>
-=======
                 </Draggable>
->>>>>>> 9e705c287377f4bfe2709148dfb4afd337a15630
             )}
 
             {/* Loading indicator */}
