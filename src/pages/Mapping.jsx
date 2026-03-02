@@ -414,6 +414,26 @@ export default function Mapping() {
     const showDistrictBoundary = useCallback(async (stateName, districtName) => {
         if (!stateName || !districtName) return;
         try {
+            const distConfig = (DISTRICTS[stateName] || []).find(d => d.name === districtName);
+            
+            // Prioritize original distinct FeatureServer for tighter clipping
+            if (distConfig && distConfig.featureServer) {
+                // Determine Layer ID based on name. Usually layer 0 is boundary
+                const boundaryLayer = distConfig.layers.find(l => l.isBoundary || l.name === 'boundary');
+                const layerId = boundaryLayer ? boundaryLayer.id : '0';
+                
+                // For Visakhapatnam specifically, the original boundary came from 1=1 query
+                const url = `${distConfig.featureServer}/${layerId}/query?where=1=1&outFields=*&f=geojson`;
+                const resp = await fetch(url);
+                const data = await resp.json();
+                
+                if (data?.features?.length && data.features[0].geometry) {
+                    sentinelMaskGeomRef.current = data.features[0].geometry;
+                    return;
+                }
+            }
+            
+            // Fallback to Living Atlas generalized geometry
             const districtWhere = `district='${districtName.replace(/'/g, "''")}'`;
             const url = `${DISTRICT_SERVICE}/query?where=${encodeURIComponent(districtWhere)}&outFields=*&f=geojson`;
             const resp = await fetch(url);
@@ -421,7 +441,9 @@ export default function Mapping() {
             if (data?.features?.length && data.features[0].geometry) {
                 sentinelMaskGeomRef.current = data.features[0].geometry;
             }
-        } catch (e) { console.error('Error fetching district boundary:', e); }
+        } catch (e) {
+            console.error('Error fetching district boundary:', e);
+        }
     }, []);
 
     const updateSentinelMask = useCallback(async () => {
