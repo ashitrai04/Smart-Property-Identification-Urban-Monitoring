@@ -9,6 +9,29 @@ proj4.defs("EPSG:32644", "+proj=utm +zone=44 +datum=WGS84 +units=m +no_defs");
 
 const MAPBOX_TOKEN = import.meta.env.VITE_MAPBOX_TOKEN;
 
+// Service URLs for Masking
+const DISTRICT_SERVICE = 'https://services5.arcgis.com/73n8CSGpSSyHr1T9/arcgis/rest/services/district_boundary/FeatureServer/0';
+const STATE_SERVICE = 'https://services5.arcgis.com/73n8CSGpSSyHr1T9/arcgis/rest/services/state_boundary/FeatureServer/0';
+
+// Land Covers legend
+const LAND_COVER_LEGEND = [
+  { label: 'Water', color: '#5b98d7' },
+  { label: 'Trees', color: '#4c7b4e' },
+  { label: 'Flooded Veg', color: '#7c86bf' },
+  { label: 'Crops', color: '#da9949' },
+  { label: 'Built Area', color: '#b53728' },
+  { label: 'Bare Ground', color: '#a39b90' },
+  { label: 'Snow/Ice', color: '#b6e9fe' },
+  { label: 'Clouds', color: '#616161' },
+  { label: 'Rangeland', color: '#e3e2c6' },
+];
+
+const SENTINEL_SOURCE = 'sentinel-lulc';
+const SENTINEL_LAYER = 'sentinel-lulc-layer';
+const SENTINEL_MASK_SOURCE = 'sentinel-mask-src';
+const SENTINEL_MASK_LAYER = 'sentinel-mask-layer';
+const SENTINEL_LULC_URL = 'https://livingatlas.esri.in/server/rest/services/Sentinel_Lulc/MapServer/export?bbox={bbox-epsg-3857}&bboxSR=3857&imageSR=3857&size=256,256&format=png32&transparent=true&f=image';
+
 // ───────── DATA CONFIG ─────────
 const STATES = [{ name: "Andhra Pradesh", center: [80.0, 15.9], zoom: 6.5 }];
 
@@ -213,20 +236,26 @@ async function buildMaskForViewport(map, imageServer, onProgress) {
 }
 
 // ==================== COMPONENT ====================
+// ==================== COMPONENT ====================
 export default function Mapping() {
     const mapContainerRef = useRef(null);
     const mapRef = useRef(null);
 
     const [selectedState, setSelectedState] = useState("Andhra Pradesh");
     const [selectedDistrict, setSelectedDistrict] = useState(null);
+    // Note: If you implement village-level feature server later
+    const [selectedVillage, setSelectedVillage] = useState("");
     const [baseMap, setBaseMap] = useState("dark-v11");
     const [loading, setLoading] = useState(null);
     const [coords, setCoords] = useState(null);
     const [panelOpen, setPanelOpen] = useState(true);
 
-    // Track which layers are toggled on
     const [activeLayers, setActiveLayers] = useState({});
     const [maskOn, setMaskOn] = useState(false);
+    
+    // Sentinel Control
+    const [showSentinel, setShowSentinel] = useState(false);
+    const sentinelMaskGeomRef = useRef(null);
 
     const maskLoadedRef = useRef(false);
     const maskLevelRef = useRef(-1);
@@ -256,6 +285,196 @@ export default function Mapping() {
         map.on("load", () => { mapRef.current = map; });
         return () => { mapRef.current = null; maskLoadedRef.current = false; maskLevelRef.current = -1; map.remove(); };
     }, [baseMap]);
+
+    // ── Sentinel LULC Functions ──
+    const addSentinelLayer = useCallback((map) => {
+        if (!showSentinel) return;
+        const sourceId = SENTINEL_SOURCE;
+        const layerId = SENTINEL_LAYER;
+        
+        if (!map.getSource(sourceId)) {
+            map.addSource(sourceId, {
+                type: 'raster',
+                tiles: [SENTINEL_LULC_URL],
+                tileSize: 256,
+                attribution: '© Esri Living Atlas India'
+            });
+        }
+        
+        if (!map.getLayer(layerId)) {
+            const style = map.getStyle();
+            let beforeId;
+            if (style && Array.isArray(style.layers)) {
+                const preferred = ['waterway-label', 'settlement-label', 'place-label'];
+                beforeId = preferred.find(id => style.layers.some(l => l.id === id));
+                if (!beforeId) {
+                    const sym = style.layers.find(l => l.type === 'symbol');
+                    beforeId = sym ? sym.id : undefined;
+                }
+            }
+            const layerDef = {
+                id: layerId,
+                type: 'raster',
+                source: sourceId,
+                paint: { 'raster-opacity': 0.95, 'raster-fade-duration': 0 }
+            };
+            try {
+                if (beforeId) map.addLayer(layerDef, beforeId);
+                else map.addLayer(layerDef);
+            } catch (e) {
+                try { map.addLayer(layerDef); } catch (_) {}
+            }
+        }
+    }, [showSentinel]);
+
+    const removeSentinelLayer = useCallback((map) => {
+        if (map.getLayer(SENTINEL_LAYER)) try { map.removeLayer(SENTINEL_LAYER); } catch (_) {}
+        if (map.getSource(SENTINEL_SOURCE)) try { map.removeSource(SENTINEL_SOURCE); } catch (_) {}
+    }, []);
+
+    const addSentinelMask = useCallback((map, geom) => {
+        if (!geom) return;
+        let outer = [[-179.9, -85], [179.9, -85], [179.9, 85], [-179.9, 85], [-179.9, -85]];
+        const polygons = [];
+        if (geom.type === 'Polygon') polygons.push(geom.coordinates);
+        else if (geom.type === 'MultiPolygon') for (const p of geom.coordinates) polygons.push(p);
+        else return;
+        
+        let holes = polygons.map(rings => rings[0]).filter(Boolean);
+        const ringArea = (ring) => {
+            let sum = 0;
+            for (let i = 0; i < ring.length - 1; i++) {
+                sum += (ring[i+1][0] - ring[i][0]) * (ring[i+1][1] + ring[i][1]);
+            }
+            return sum;
+        };
+        const isCCW = (ring) => ringArea(ring) < 0;
+        if (!isCCW(outer)) outer = [...outer].reverse();
+        holes = holes.map(h => (isCCW(h) ? [...h].reverse() : h));
+        
+        const maskFeature = {
+            type: 'Feature',
+            properties: {},
+            geometry: { type: 'Polygon', coordinates: [outer, ...holes] }
+        };
+        
+        if (!map.getSource(SENTINEL_MASK_SOURCE)) {
+            map.addSource(SENTINEL_MASK_SOURCE, {
+                type: 'geojson',
+                data: { type: 'FeatureCollection', features: [maskFeature] }
+            });
+        } else {
+            const src = map.getSource(SENTINEL_MASK_SOURCE);
+            if (src && src.setData) src.setData({ type: 'FeatureCollection', features: [maskFeature] });
+        }
+        
+        if (!map.getLayer(SENTINEL_MASK_LAYER)) {
+            map.addLayer({
+                id: SENTINEL_MASK_LAYER,
+                type: 'fill',
+                source: SENTINEL_MASK_SOURCE,
+                paint: { 'fill-color': '#ffffff', 'fill-opacity': 1.0 }
+            });
+        }
+    }, []);
+
+    const removeSentinelMask = useCallback((map) => {
+        if (map.getLayer(SENTINEL_MASK_LAYER)) try { map.removeLayer(SENTINEL_MASK_LAYER); } catch (_) {}
+        if (map.getSource(SENTINEL_MASK_SOURCE)) try { map.removeSource(SENTINEL_MASK_SOURCE); } catch (_) {}
+    }, []);
+
+    const showStateBoundary = useCallback(async (stateName) => {
+        const whereByName = `State_FSI='${stateName.replace(/'/g, "''")}'`;
+        const url = `${STATE_SERVICE}/query?where=${encodeURIComponent(whereByName)}&outFields=*&f=geojson`;
+        try {
+            const resp = await fetch(url);
+            const data = await resp.json();
+            if (data?.features?.length && data.features[0].geometry) {
+                sentinelMaskGeomRef.current = data.features[0].geometry;
+            }
+        } catch (error) { console.error('Error fetching state boundary:', error); }
+    }, []);
+
+    const showDistrictBoundary = useCallback(async (stateName, districtName) => {
+        if (!stateName || !districtName) return;
+        try {
+            const districtWhere = `district='${districtName.replace(/'/g, "''")}'`;
+            const url = `${DISTRICT_SERVICE}/query?where=${encodeURIComponent(districtWhere)}&outFields=*&f=geojson`;
+            const resp = await fetch(url);
+            const data = await resp.json();
+            if (data?.features?.length && data.features[0].geometry) {
+                sentinelMaskGeomRef.current = data.features[0].geometry;
+            }
+        } catch (e) { console.error('Error fetching district boundary:', e); }
+    }, []);
+
+    const updateSentinelMask = useCallback(async () => {
+        const map = mapRef.current;
+        if (!map || !showSentinel) return;
+        try {
+            let geom = sentinelMaskGeomRef.current || null;
+            if (!geom) {
+                setLoading("Fetching region boundary...");
+                if (selectedState && selectedDistrict) await showDistrictBoundary(selectedState, selectedDistrict);
+                else if (selectedState) await showStateBoundary(selectedState);
+                geom = sentinelMaskGeomRef.current || null;
+                setLoading(null);
+            }
+            removeSentinelMask(map);
+            if (geom) {
+                addSentinelLayer(map);
+                addSentinelMask(map, geom);
+            } else {
+                removeSentinelLayer(map);
+            }
+        } catch (e) {
+            console.error('Failed to update sentinel mask:', e);
+            removeSentinelMask(map);
+            setLoading(null);
+        }
+    }, [showSentinel, selectedState, selectedDistrict, removeSentinelMask, addSentinelLayer, addSentinelMask, showDistrictBoundary, showStateBoundary]);
+
+    // Sentinel Toggle Effect
+    useEffect(() => {
+        const map = mapRef.current;
+        if (!map) return;
+        
+        if (showSentinel) {
+            sentinelMaskGeomRef.current = null;
+            if (!selectedState && !selectedDistrict && !selectedVillage) {
+                alert('Select a State (or District/Village) to view Sentinel LULC.');
+                setShowSentinel(false);
+                return;
+            }
+            if (!map.isStyleLoaded()) map.once('style.load', () => addSentinelLayer(map));
+            else addSentinelLayer(map);
+            updateSentinelMask();
+        } else {
+            removeSentinelLayer(map);
+            removeSentinelMask(map);
+            
+            const onIdle = () => { try { removeSentinelLayer(map); removeSentinelMask(map); } catch (_) {} };
+            const onStyle = () => { try { removeSentinelLayer(map); removeSentinelMask(map); } catch (_) {} };
+            try { map.once('idle', onIdle); } catch (_) {}
+            try { map.once('style.load', onStyle); } catch (_) {}
+            
+            return () => {
+                try { map.off('idle', onIdle); } catch (_) {}
+                try { map.off('style.load', onStyle); } catch (_) {}
+            };
+        }
+    }, [showSentinel, updateSentinelMask, addSentinelLayer, removeSentinelLayer, removeSentinelMask, selectedState, selectedDistrict, selectedVillage]);
+
+    // Update mask whenever selection changes while active
+    useEffect(() => {
+        const map = mapRef.current;
+        sentinelMaskGeomRef.current = null;
+        if (!showSentinel) return;
+        if (map) removeSentinelMask(map);
+        if (selectedState) updateSentinelMask();
+        else if (map) removeSentinelLayer(map);
+    }, [selectedState, selectedDistrict, selectedVillage, showSentinel, removeSentinelMask, updateSentinelMask, removeSentinelLayer]);
+
 
     // ── District selection ──
     const handleDistrictSelect = useCallback((districtName) => {
@@ -485,7 +704,21 @@ export default function Mapping() {
                                 </button>
                             </div>
 
-                            {/* Mask toggle */}
+                            {/* Custom LULC toggle using Sentinel */}
+                            <label className="flex items-center justify-between py-1.5 px-2 rounded-md hover:bg-white/5 cursor-pointer mb-2 border border-white/5 bg-white/5">
+                                <div className="flex items-center gap-2">
+                                    <span className="text-sm">🌍</span>
+                                    <span className="text-xs font-semibold text-[#0EA5E9]">Land Covers (LULC)</span>
+                                </div>
+                                <div
+                                    className={`w-8 h-4 rounded-full relative transition-colors ${showSentinel ? "bg-[#0EA5E9]" : "bg-white/20"}`}
+                                    onClick={() => setShowSentinel(!showSentinel)}
+                                >
+                                    <div className={`absolute top-0.5 w-3 h-3 rounded-full bg-white shadow transition-all ${showSentinel ? "left-4.5" : "left-0.5"}`} />
+                                </div>
+                            </label>
+
+                            {/* Legacy local mask toggle */}
                             {currentDist.hasMask && (
                                 <label className="flex items-center gap-2.5 py-1.5 px-2 rounded-md hover:bg-white/5 cursor-pointer mb-1">
                                     <div className={`w-8 h-4 rounded-full relative transition-colors ${maskOn ? "bg-[#0EA5E9]" : "bg-white/20"}`}
@@ -493,7 +726,7 @@ export default function Mapping() {
                                     >
                                         <div className={`absolute top-0.5 w-3 h-3 rounded-full bg-white shadow transition-all ${maskOn ? "left-4.5" : "left-0.5"}`} />
                                     </div>
-                                    <span className="text-xs">🎭 Land Use Mask</span>
+                                    <span className="text-xs">🎭 District Mask (Local)</span>
                                 </label>
                             )}
 
@@ -545,6 +778,20 @@ export default function Mapping() {
                             </div>
                         </div>
                     </div>
+                    {/* Sentinel LULC Legend */}
+                    {showSentinel && (
+                        <div className="p-3 border-t border-white/10 bg-[#0B1E3E]/60">
+                            <p className="text-[10px] uppercase tracking-wider text-white/50 mb-2">LULC Categories</p>
+                            <div className="grid grid-cols-2 gap-y-1.5 gap-x-2">
+                                {LAND_COVER_LEGEND.map(lc => (
+                                    <div key={lc.label} className="flex items-center gap-1.5">
+                                        <span className="w-2.5 h-2.5 rounded-sm shrink-0" style={{ background: lc.color }} />
+                                        <span className="text-[10px] text-white/80">{lc.label}</span>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    )}
                 </div>
             )}
 
