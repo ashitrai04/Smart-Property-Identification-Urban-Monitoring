@@ -10,6 +10,29 @@ proj4.defs("EPSG:32644", "+proj=utm +zone=44 +datum=WGS84 +units=m +no_defs");
 
 const MAPBOX_TOKEN = import.meta.env.VITE_MAPBOX_TOKEN;
 
+// Service URLs for Masking
+const DISTRICT_SERVICE = 'https://services5.arcgis.com/73n8CSGpSSyHr1T9/arcgis/rest/services/district_boundary/FeatureServer/0';
+const STATE_SERVICE = 'https://services5.arcgis.com/73n8CSGpSSyHr1T9/arcgis/rest/services/state_boundary/FeatureServer/0';
+
+// Land Covers legend
+const LAND_COVER_LEGEND = [
+  { label: 'Water', color: '#5b98d7' },
+  { label: 'Trees', color: '#4c7b4e' },
+  { label: 'Flooded Veg', color: '#7c86bf' },
+  { label: 'Crops', color: '#da9949' },
+  { label: 'Built Area', color: '#b53728' },
+  { label: 'Bare Ground', color: '#a39b90' },
+  { label: 'Snow/Ice', color: '#b6e9fe' },
+  { label: 'Clouds', color: '#616161' },
+  { label: 'Rangeland', color: '#e3e2c6' },
+];
+
+const SENTINEL_SOURCE = 'sentinel-lulc';
+const SENTINEL_LAYER = 'sentinel-lulc-layer';
+const SENTINEL_MASK_SOURCE = 'sentinel-mask-src';
+const SENTINEL_MASK_LAYER = 'sentinel-mask-layer';
+const SENTINEL_LULC_URL = 'https://livingatlas.esri.in/server/rest/services/Sentinel_Lulc/MapServer/export?bbox={bbox-epsg-3857}&bboxSR=3857&imageSR=3857&size=256,256&format=png32&transparent=true&f=image';
+
 // ───────── DATA CONFIG ─────────
 const STATES = [{ name: "Andhra Pradesh", center: [80.0, 15.9], zoom: 6.5 }];
 
@@ -36,7 +59,6 @@ const DISTRICTS = {
             zoom: 11,
             featureServer: "https://services5.arcgis.com/73n8CSGpSSyHr1T9/arcgis/rest/services/vijayawada_layers/FeatureServer",
             imageServer: null,
-            droneImagery: "https://tiledimageservices5.arcgis.com/73n8CSGpSSyHr1T9/arcgis/rest/services/Drone_img_vijayvada/ImageServer",
             hasMask: false,
             layers: [
                 { id: 0, name: "boundary", label: "Boundary", color: "#7B2D8E", isBoundary: true },
@@ -172,9 +194,16 @@ async function buildMaskForViewport(map, imageServer, onProgress) {
 
     let done = 0;
     const promises = [];
-    for (let r = rowMin; r <= rowMax; r++)
-        for (let c = colMin; c <= colMax; c++)
-            promises.push(getDecodedTile(imageServer, arcLevel, r, c).then(() => { done++; if (onProgress) onProgress(Math.round((done / total) * 100)); }));
+    for (let r = rowMin; r <= rowMax; r++) {
+        for (let c = colMin; c <= colMax; c++) {
+            promises.push(
+                getDecodedTile(imageServer, arcLevel, r, c).then(() => {
+                    done++;
+                    if (onProgress) onProgress(Math.round((done / total) * 100));
+                })
+            );
+        }
+    }
     await Promise.all(promises);
 
     const maxDim = 2048;
@@ -216,101 +245,7 @@ async function buildMaskForViewport(map, imageServer, onProgress) {
     return { dataUrl, coordinates: [[tlWgs[0], tlWgs[1]], [trWgs[0], trWgs[1]], [brWgs[0], brWgs[1]], [blWgs[0], blWgs[1]]], level: arcLevel };
 }
 
-// ── DRONE IMAGERY LERC CONFIG (4326) ──
-const DRONE_ORIGIN = { x: -180, y: 90 };
-const DRONE_LODS = [
-    { level: 0, res: 0.0000666308154761365 },
-    { level: 1, res: 0.0000333154077380682 },
-    { level: 2, res: 0.0000166577038690341 },
-    { level: 3, res: 0.00000832885193451706 },
-    { level: 4, res: 0.00000416442596725853 },
-    { level: 5, res: 0.00000208221298362926 },
-    { level: 6, res: 0.00000104110649181463 },
-    { level: 7, res: 5.20553245907316e-7 },
-    { level: 8, res: 2.60276622953658e-7 }
-];
-
-const VIJAYAWADA_DRONE_EXTENT = {
-    xmin: 80.628690247170482,
-    ymin: 16.522700957538024,
-    xmax: 80.6492427304254,
-    ymax: 16.53610806666299,
-};
-
-async function buildDroneForLevel(imageServer, level, onProgress) {
-    const resolution = DRONE_LODS[level].res;
-    const tileLength = 256 * resolution;
-
-    const minCol = Math.floor((VIJAYAWADA_DRONE_EXTENT.xmin - DRONE_ORIGIN.x) / tileLength);
-    const maxCol = Math.ceil((VIJAYAWADA_DRONE_EXTENT.xmax - DRONE_ORIGIN.x) / tileLength) - 1;
-    const minRow = Math.floor((DRONE_ORIGIN.y - VIJAYAWADA_DRONE_EXTENT.ymax) / tileLength);
-    const maxRow = Math.ceil((DRONE_ORIGIN.y - VIJAYAWADA_DRONE_EXTENT.ymin) / tileLength) - 1;
-
-    const cols = maxCol - minCol + 1;
-    const rows = maxRow - minRow + 1;
-    const totalTiles = cols * rows;
-
-    const canvas = document.createElement("canvas");
-    canvas.width = cols * 256;
-    canvas.height = rows * 256;
-    const ctx = canvas.getContext("2d");
-    ctx.clearRect(0, 0, canvas.width, canvas.height); // crucial for missing tiles
-
-    let loaded = 0;
-    const promises = [];
-
-    for (let row = minRow; row <= maxRow; row++) {
-        for (let col = minCol; col <= maxCol; col++) {
-            promises.push((async () => {
-                if (!lercReady) await lercReadyP;
-                try {
-                    const resp = await fetch(`${imageServer}/tile/${level}/${row}/${col}`);
-                    if (resp.ok) {
-                        const block = lercDecode(await resp.arrayBuffer());
-                        const { width, height, pixels, mask } = block;
-                        const red = pixels[0], green = pixels[1], blue = pixels[2];
-                        const imgData = new ImageData(width, height);
-                        const dest = imgData.data;
-                        const hasMask = Boolean(mask);
-                        for (let i = 0; i < width * height; i++) {
-                            const offset = i * 4;
-                            dest[offset] = red ? red[i] : 0;
-                            dest[offset + 1] = green ? green[i] : 0;
-                            dest[offset + 2] = blue ? blue[i] : 0;
-                            dest[offset + 3] = (hasMask && mask && !mask[i]) ? 0 : 255;
-                        }
-                        ctx.putImageData(imgData, (col - minCol) * 256, (row - minRow) * 256);
-                    }
-                } catch (e) { }
-                loaded++;
-                if (onProgress && (loaded % 5 === 0 || loaded === totalTiles)) {
-                    onProgress(Math.round((loaded / totalTiles) * 100));
-                }
-            })());
-        }
-    }
-
-    await Promise.all(promises);
-
-    const stMinX = DRONE_ORIGIN.x + minCol * tileLength;
-    const stMaxY = DRONE_ORIGIN.y - minRow * tileLength;
-    const stMaxX = DRONE_ORIGIN.x + (maxCol + 1) * tileLength;
-    const stMinY = DRONE_ORIGIN.y - (maxRow + 1) * tileLength;
-
-    return {
-        // We use PNG because JPEG strips alpha logic, but WebP is also good and fast.
-        // We stick to what user's reference App had, but WebP reduces RAM.
-        dataUrl: canvas.toDataURL("image/webp", 0.9),
-        coordinates: [
-            [stMinX, stMaxY],
-            [stMaxX, stMaxY],
-            [stMaxX, stMinY],
-            [stMinX, stMinY]
-        ],
-        level
-    };
-}
-
+// ==================== COMPONENT ====================
 // ==================== COMPONENT ====================
 export default function Mapping() {
     const mapContainerRef = useRef(null);
@@ -318,27 +253,24 @@ export default function Mapping() {
 
     const [selectedState, setSelectedState] = useState("Andhra Pradesh");
     const [selectedDistrict, setSelectedDistrict] = useState(null);
+    // Note: If you implement village-level feature server later
+    const [selectedVillage, setSelectedVillage] = useState("");
     const [baseMap, setBaseMap] = useState("dark-v11");
     const [loading, setLoading] = useState(null);
     const [coords, setCoords] = useState(null);
     const [panelOpen, setPanelOpen] = useState(true);
     const panelRef = useRef(null); // Ref for Draggable
 
-    // Track which layers are toggled on
     const [activeLayers, setActiveLayers] = useState({});
     const [maskOn, setMaskOn] = useState(false);
-    const [droneOn, setDroneOn] = useState(false);
+    
+    // Sentinel Control
+    const [showSentinel, setShowSentinel] = useState(false);
+    const sentinelMaskGeomRef = useRef(null);
 
     const maskLoadedRef = useRef(false);
     const maskLevelRef = useRef(-1);
     const loadingMaskRef = useRef(false);
-
-    const droneLoadedRef = useRef(false);
-    const droneBuildingRef = useRef(false);
-    const dronePendingLevelRef = useRef(null);
-    const droneCacheRef = useRef(new Map());
-    const droneCurrentLevelRef = useRef(null);
-
     const debounceRef = useRef(null);
     const activeLayerIdsRef = useRef(new Set());
 
@@ -361,25 +293,248 @@ export default function Mapping() {
                 debounceRef.current = setTimeout(() => updateMask(mapRef.current), 500);
             }
         });
-
-        const refreshDroneLevel = () => {
-            if (mapRef.current) {
-                updateDroneState(mapRef.current);
-            }
-        };
-        map.on("zoomend", refreshDroneLevel);
-
         map.on("load", () => { mapRef.current = map; });
-        return () => {
-            mapRef.current = null;
-            maskLoadedRef.current = false; maskLevelRef.current = -1;
-            droneLoadedRef.current = false; droneCurrentLevelRef.current = null;
-            if (map) {
-                map.off("zoomend", refreshDroneLevel);
-                map.remove();
+        return () => { mapRef.current = null; maskLoadedRef.current = false; maskLevelRef.current = -1; map.remove(); };
+    }, [baseMap]);
+
+    // ── Sentinel LULC Functions ──
+    const addSentinelLayer = useCallback((map) => {
+        if (!showSentinel) return;
+        const sourceId = SENTINEL_SOURCE;
+        const layerId = SENTINEL_LAYER;
+        
+        if (!map.getSource(sourceId)) {
+            map.addSource(sourceId, {
+                type: 'raster',
+                tiles: [SENTINEL_LULC_URL],
+                tileSize: 256,
+                attribution: '© Esri Living Atlas India'
+            });
+        }
+        
+        if (!map.getLayer(layerId)) {
+            const layerDef = {
+                id: layerId,
+                type: 'raster',
+                source: sourceId,
+                minzoom: 4,
+                maxzoom: 16,
+                paint: { 
+                    'raster-opacity': 0.85, 
+                    'raster-fade-duration': 300,
+                    'raster-resampling': 'nearest'
+                }
+            };
+            try {
+                const style = map.getStyle();
+                let beforeId;
+                if (style && style.layers) {
+                     // Try to place the Sentinel LULC layer below any label, road, or symbol layers so it acts as a basemap overlay
+                     const firstLabelOrLine = style.layers.find(l => l.type === 'symbol' || l.type === 'line' || (l.id && l.id.includes('label')));
+                     beforeId = firstLabelOrLine ? firstLabelOrLine.id : undefined;
+                }
+                
+                if (beforeId) map.addLayer(layerDef, beforeId);
+                else map.addLayer(layerDef);
+            } catch (e) {
+                console.warn("Error injecting Sentinel LULC layer before existing layers. Adding it to the top.", e);
+                try { map.addLayer(layerDef); } catch (_) {}
+            }
+        }
+    }, [showSentinel]);
+
+    const removeSentinelLayer = useCallback((map) => {
+        if (map.getLayer(SENTINEL_LAYER)) try { map.removeLayer(SENTINEL_LAYER); } catch (_) {}
+        if (map.getSource(SENTINEL_SOURCE)) try { map.removeSource(SENTINEL_SOURCE); } catch (_) {}
+    }, []);
+
+    const addSentinelMask = useCallback((map, geom) => {
+        if (!geom) return;
+        let outer = [[-179.9, -85], [179.9, -85], [179.9, 85], [-179.9, 85], [-179.9, -85]];
+        const polygons = [];
+        if (geom.type === 'Polygon') polygons.push(geom.coordinates);
+        else if (geom.type === 'MultiPolygon') for (const p of geom.coordinates) polygons.push(p);
+        else return;
+        
+        let holes = polygons.map(rings => rings[0]).filter(Boolean);
+        const ringArea = (ring) => {
+            let sum = 0;
+            for (let i = 0; i < ring.length - 1; i++) {
+                sum += (ring[i+1][0] - ring[i][0]) * (ring[i+1][1] + ring[i][1]);
+            }
+            return sum;
+        };
+        const isCCW = (ring) => ringArea(ring) < 0;
+        if (!isCCW(outer)) outer = [...outer].reverse();
+        holes = holes.map(h => (isCCW(h) ? [...h].reverse() : h));
+        
+        const maskFeature = {
+            type: 'Feature',
+            properties: {},
+            geometry: { type: 'Polygon', coordinates: [outer, ...holes] }
+        };
+        
+        if (!map.getSource(SENTINEL_MASK_SOURCE)) {
+            map.addSource(SENTINEL_MASK_SOURCE, {
+                type: 'geojson',
+                data: { type: 'FeatureCollection', features: [maskFeature] }
+            });
+        } else {
+            const src = map.getSource(SENTINEL_MASK_SOURCE);
+            if (src && src.setData) src.setData({ type: 'FeatureCollection', features: [maskFeature] });
+        }
+        
+        if (!map.getLayer(SENTINEL_MASK_LAYER)) {
+            map.addLayer({
+                id: SENTINEL_MASK_LAYER,
+                type: 'fill',
+                source: SENTINEL_MASK_SOURCE,
+                paint: { 'fill-color': '#ffffff', 'fill-opacity': 1.0 }
+            });
+        }
+    }, []);
+
+    const removeSentinelMask = useCallback((map) => {
+        if (map.getLayer(SENTINEL_MASK_LAYER)) try { map.removeLayer(SENTINEL_MASK_LAYER); } catch (_) {}
+        if (map.getSource(SENTINEL_MASK_SOURCE)) try { map.removeSource(SENTINEL_MASK_SOURCE); } catch (_) {}
+    }, []);
+
+    const showStateBoundary = useCallback(async (stateName) => {
+        const whereByName = `State_FSI='${stateName.replace(/'/g, "''")}'`;
+        const url = `${STATE_SERVICE}/query?where=${encodeURIComponent(whereByName)}&outFields=*&f=geojson`;
+        try {
+            const resp = await fetch(url);
+            const data = await resp.json();
+            if (data?.features?.length && data.features[0].geometry) {
+                sentinelMaskGeomRef.current = data.features[0].geometry;
+            }
+        } catch (error) { console.error('Error fetching state boundary:', error); }
+    }, []);
+
+    const showDistrictBoundary = useCallback(async (stateName, districtName) => {
+        if (!stateName || !districtName) return;
+        try {
+            const distConfig = (DISTRICTS[stateName] || []).find(d => d.name === districtName);
+            
+            // Prioritize original distinct FeatureServer for tighter clipping
+            if (distConfig && distConfig.featureServer) {
+                // Determine Layer ID based on name. Usually layer 0 is boundary
+                const boundaryLayer = distConfig.layers.find(l => l.isBoundary || l.name === 'boundary');
+                const layerId = boundaryLayer ? boundaryLayer.id : '0';
+                
+                // For Visakhapatnam specifically, the original boundary came from 1=1 query
+                const url = `${distConfig.featureServer}/${layerId}/query?where=1=1&outFields=*&f=geojson`;
+                const resp = await fetch(url);
+                const data = await resp.json();
+                
+                if (data?.features?.length && data.features[0].geometry) {
+                    sentinelMaskGeomRef.current = data.features[0].geometry;
+                    return;
+                }
+            }
+            
+            // Fallback to Living Atlas generalized geometry
+            const districtWhere = `district='${districtName.replace(/'/g, "''")}'`;
+            const url = `${DISTRICT_SERVICE}/query?where=${encodeURIComponent(districtWhere)}&outFields=*&f=geojson`;
+            const resp = await fetch(url);
+            const data = await resp.json();
+            if (data?.features?.length && data.features[0].geometry) {
+                sentinelMaskGeomRef.current = data.features[0].geometry;
+            }
+        } catch (e) {
+            console.error('Error fetching district boundary:', e);
+        }
+    }, []);
+
+    const updateSentinelMask = useCallback(async () => {
+        const map = mapRef.current;
+        if (!map || !showSentinel) return;
+        try {
+            let geom = sentinelMaskGeomRef.current || null;
+            if (!geom) {
+                setLoading("Fetching region boundary...");
+                if (selectedState && selectedDistrict) await showDistrictBoundary(selectedState, selectedDistrict);
+                else if (selectedState) await showStateBoundary(selectedState);
+                geom = sentinelMaskGeomRef.current || null;
+                setLoading(null);
+            }
+            removeSentinelMask(map);
+            if (geom) {
+                addSentinelLayer(map);
+                addSentinelMask(map, geom);
+            } else {
+                removeSentinelLayer(map);
+            }
+        } catch (e) {
+            console.error('Failed to update sentinel mask:', e);
+            removeSentinelMask(map);
+            setLoading(null);
+        }
+    }, [showSentinel, selectedState, selectedDistrict, removeSentinelMask, addSentinelLayer, addSentinelMask, showDistrictBoundary, showStateBoundary]);
+
+    // Sentinel Toggle Effect
+    useEffect(() => {
+        const map = mapRef.current;
+        if (!map) return;
+        
+        const loadSentinel = async () => {
+            if (showSentinel) {
+                sentinelMaskGeomRef.current = null;
+                if (!selectedState && !selectedDistrict && !selectedVillage) {
+                    alert('Select a State (or District/Village) to view Sentinel LULC.');
+                    setShowSentinel(false);
+                    return;
+                }
+                
+                if (!map.isStyleLoaded()) {
+                    map.once('style.load', async () => {
+                        addSentinelLayer(map);
+                        await updateSentinelMask();
+                    });
+                } else {
+                    addSentinelLayer(map);
+                    await updateSentinelMask();
+                }
+            } else {
+                removeSentinelLayer(map);
+                removeSentinelMask(map);
             }
         };
-    }, [baseMap, maskOn, droneOn]);
+
+        loadSentinel();
+        
+        // Cleanup functions
+        const onIdle = () => { if (!showSentinel) { removeSentinelLayer(map); removeSentinelMask(map); } };
+        const onStyle = () => { if (!showSentinel) { removeSentinelLayer(map); removeSentinelMask(map); } };
+        
+        map.on('idle', onIdle);
+        map.on('style.load', onStyle);
+        
+        return () => {
+            map.off('idle', onIdle);
+            map.off('style.load', onStyle);
+        };
+    }, [showSentinel, selectedState, selectedDistrict, selectedVillage, addSentinelLayer, removeSentinelLayer, removeSentinelMask, updateSentinelMask]);
+
+    // Update mask whenever selection changes while active
+    useEffect(() => {
+        const map = mapRef.current;
+        if (!map || !showSentinel) return;
+        
+        sentinelMaskGeomRef.current = null; // Clear old mask
+        
+        const refreshMask = async () => {
+             if (selectedState) {
+                 await updateSentinelMask();
+             } else {
+                 removeSentinelLayer(map);
+                 removeSentinelMask(map);
+             }
+        };
+        
+        refreshMask();
+    }, [selectedState, selectedDistrict, selectedVillage, showSentinel, removeSentinelMask, updateSentinelMask, removeSentinelLayer]);
+
 
     // ── District selection ──
     const handleDistrictSelect = useCallback((districtName) => {
@@ -399,11 +554,6 @@ export default function Mapping() {
         // Remove old mask
         if (map.getLayer("vizag-mask-layer")) map.removeLayer("vizag-mask-layer");
         if (map.getSource("vizag-mask-source")) map.removeSource("vizag-mask-source");
-
-        // Remove old drone layer
-        if (map.getLayer("drone-layer")) map.removeLayer("drone-layer");
-        if (map.getSource("drone-source")) map.removeSource("drone-source");
-        setDroneOn(false);
 
         setSelectedDistrict(districtName);
         map.flyTo({ center: dist.center, zoom: dist.zoom, duration: 1500 });
@@ -540,118 +690,6 @@ export default function Mapping() {
         }
     }, [maskOn, updateMask]);
 
-    // ── Toggle Drone Imagery ──
-    const getDroneTargetLevel = (zoom) => {
-        if (zoom < 13) return 2;
-        if (zoom < 14.5) return 3;
-        return 4;
-    };
-
-    const applyDroneLayerToMap = (map, url, coordinates) => {
-        const sourceId = "drone-source";
-        const layerId = "drone-layer";
-        if (map.getSource(sourceId)) {
-            map.getSource(sourceId).updateImage({ url, coordinates });
-        } else {
-            map.addSource(sourceId, { type: "image", url, coordinates });
-            let firstFeatureId = null;
-            for (const activeLid of activeLayerIdsRef.current) {
-                firstFeatureId = map.getLayer(`${activeLid}-fill`) ? `${activeLid}-fill` : map.getLayer(`${activeLid}-line`) ? `${activeLid}-line` : activeLid;
-                if (firstFeatureId) break;
-            }
-            map.addLayer({
-                id: layerId,
-                type: "raster",
-                source: sourceId,
-                paint: { "raster-opacity": 1.0, "raster-resampling": "nearest" }
-            }, firstFeatureId);
-        }
-        if (droneOn) {
-            if (!map.getLayer(layerId) || map.getLayoutProperty(layerId, 'visibility') !== 'visible') {
-                map.setLayoutProperty(layerId, "visibility", "visible");
-            }
-        }
-    };
-
-    const updateDroneState = useCallback((map) => {
-        if (!droneOn) return;
-        const dist = (DISTRICTS[selectedState] || []).find(d => d.name === selectedDistrict);
-        if (!dist?.droneImagery) return;
-
-        const zoom = map.getZoom();
-        const targetLevel = getDroneTargetLevel(zoom);
-
-        const buildNext = (levelToBuild) => {
-            droneBuildingRef.current = true;
-            setLoading(`Decoding ArcGIS tiles (LOD ${levelToBuild})...`);
-
-            buildDroneForLevel(dist.droneImagery, levelToBuild, pct => setLoading(`Decoding ArcGIS tiles (LOD ${levelToBuild})... ${pct}%`))
-                .then(result => {
-                    droneCacheRef.current.set(result.level, result);
-                    if (droneOn) applyDroneLayerToMap(mapRef.current, result.dataUrl, result.coordinates);
-                    droneCurrentLevelRef.current = result.level;
-                    droneLoadedRef.current = true;
-                })
-                .catch(err => {
-                    console.error("Drone failed:", err);
-                })
-                .finally(() => {
-                    droneBuildingRef.current = false;
-                    setLoading(null);
-
-                    const pending = dronePendingLevelRef.current;
-                    dronePendingLevelRef.current = null;
-                    if (pending != null && pending !== levelToBuild && droneOn) {
-                        const cached = droneCacheRef.current.get(pending);
-                        if (cached) {
-                            applyDroneLayerToMap(mapRef.current, cached.dataUrl, cached.coordinates);
-                            droneCurrentLevelRef.current = pending;
-                        } else {
-                            setTimeout(() => {
-                                if (droneOn && !droneBuildingRef.current) buildNext(pending);
-                            }, 0);
-                        }
-                    }
-                });
-        };
-
-        const cached = droneCacheRef.current.get(targetLevel);
-        if (cached) {
-            applyDroneLayerToMap(map, cached.dataUrl, cached.coordinates);
-            droneCurrentLevelRef.current = targetLevel;
-            return;
-        }
-
-        if (droneBuildingRef.current) {
-            dronePendingLevelRef.current = targetLevel;
-            return;
-        }
-
-        buildNext(targetLevel);
-    }, [droneOn, selectedState, selectedDistrict]);
-
-    const toggleDrone = useCallback(() => {
-        const map = mapRef.current;
-        if (!map || !selectedDistrict) return;
-        const dist = (DISTRICTS[selectedState] || []).find(d => d.name === selectedDistrict);
-
-        if (droneOn) {
-            if (map.getLayer("drone-layer")) map.setLayoutProperty("drone-layer", "visibility", "none");
-            setDroneOn(false);
-        } else {
-            setDroneOn(true);
-            setTimeout(() => { // Let state update so updateDroneState sees droneOn=true
-                updateDroneState(map);
-                if (!droneLoadedRef.current) {
-                    map.fitBounds([
-                        [VIJAYAWADA_DRONE_EXTENT.xmin, VIJAYAWADA_DRONE_EXTENT.ymin],
-                        [VIJAYAWADA_DRONE_EXTENT.xmax, VIJAYAWADA_DRONE_EXTENT.ymax]
-                    ], { padding: 40, duration: 2000 });
-                }
-            }, 0);
-        }
-    }, [droneOn, selectedDistrict, updateDroneState, selectedState]);
-
     // Get current district config
     const currentDist = (DISTRICTS[selectedState] || []).find(d => d.name === selectedDistrict);
 
@@ -741,29 +779,29 @@ export default function Mapping() {
                                         </button>
                                     </div>
 
+                                    {/* Custom LULC toggle using Sentinel */}
+                                    <label className="flex items-center justify-between py-1.5 px-2 rounded-md hover:bg-white/5 cursor-pointer mb-2 border border-white/5 bg-white/5">
+                                        <div className="flex items-center gap-2">
+                                            <span className="text-sm">🌍</span>
+                                            <span className="text-xs font-semibold text-[#0EA5E9]">Land Covers (LULC)</span>
+                                        </div>
+                                        <div
+                                            className={`w-8 h-4 rounded-full relative transition-colors ${showSentinel ? "bg-[#0EA5E9]" : "bg-white/20"}`}
+                                            onClick={() => setShowSentinel(!showSentinel)}
+                                        >
+                                            <div className={`absolute top-0.5 w-3 h-3 rounded-full bg-white shadow transition-all ${showSentinel ? "left-4.5" : "left-0.5"}`} />
+                                        </div>
+                                    </label>
+
                                     {/* Mask toggle */}
                                     {currentDist.hasMask && (
-                                        <label
-                                            className="flex items-center gap-2.5 py-1.5 px-2 rounded-md hover:bg-white/5 cursor-pointer mb-1"
-                                            onClick={(e) => { e.preventDefault(); toggleMask(); }}
-                                        >
-                                            <div className={`w-8 h-4 rounded-full relative transition-colors ${maskOn ? "bg-[#0EA5E9]" : "bg-white/20"}`}>
+                                        <label className="flex items-center gap-2.5 py-1.5 px-2 rounded-md hover:bg-white/5 cursor-pointer mb-1">
+                                            <div className={`w-8 h-4 rounded-full relative transition-colors ${maskOn ? "bg-[#0EA5E9]" : "bg-white/20"}`}
+                                                onClick={toggleMask}
+                                            >
                                                 <div className={`absolute top-0.5 w-3 h-3 rounded-full bg-white shadow transition-all ${maskOn ? "left-4.5" : "left-0.5"}`} />
                                             </div>
                                             <span className="text-xs select-none">🎭 Land Use Mask</span>
-                                        </label>
-                                    )}
-
-                                    {/* Drone Imagery toggle */}
-                                    {currentDist.droneImagery && (
-                                        <label
-                                            className="flex items-center gap-2.5 py-1.5 px-2 rounded-md hover:bg-white/5 cursor-pointer mb-1"
-                                            onClick={(e) => { e.preventDefault(); toggleDrone(); }}
-                                        >
-                                            <div className={`w-8 h-4 rounded-full relative transition-colors ${droneOn ? "bg-[#0EA5E9]" : "bg-white/20"}`}>
-                                                <div className={`absolute top-0.5 w-3 h-3 rounded-full bg-white shadow transition-all ${droneOn ? "left-4.5" : "left-0.5"}`} />
-                                            </div>
-                                            <span className="text-xs select-none">🚁 Drone Imagery</span>
                                         </label>
                                     )}
 
@@ -772,12 +810,11 @@ export default function Mapping() {
                                         const layerId = `${currentDist.name.toLowerCase()}-${layer.name}`;
                                         const isOn = activeLayers[layerId];
                                         return (
-                                            <label
-                                                key={layer.id}
-                                                className="flex items-center gap-2.5 py-1.5 px-2 rounded-md hover:bg-white/5 cursor-pointer"
-                                                onClick={(e) => { e.preventDefault(); toggleLayer(currentDist, layer); }}
-                                            >
-                                                <div className={`w-8 h-4 rounded-full relative transition-colors ${isOn ? "bg-[#0EA5E9]" : "bg-white/20"}`}>
+                                            <label key={layer.id} className="flex items-center gap-2.5 py-1.5 px-2 rounded-md hover:bg-white/5 cursor-pointer">
+                                                <div
+                                                    className={`w-8 h-4 rounded-full relative transition-colors ${isOn ? "bg-[#0EA5E9]" : "bg-white/20"}`}
+                                                    onClick={() => toggleLayer(currentDist, layer)}
+                                                >
                                                     <div className={`absolute top-0.5 w-3 h-3 rounded-full bg-white shadow transition-all ${isOn ? "left-4.5" : "left-0.5"}`} />
                                                 </div>
                                                 <span className="w-2 h-2 rounded-full shrink-0" style={{ background: layer.color || "#EF4444" }} />
@@ -845,6 +882,21 @@ export default function Mapping() {
                                     </div>
                                 </div>
                             </div>
+
+                            {/* Sentinel LULC Legend */}
+                            {showSentinel && (
+                                <div className="p-3 border-t border-white/10 shrink-0 bg-[#0B1E3E]/60">
+                                    <p className="text-[10px] uppercase tracking-wider text-white/50 mb-2">LULC Categories</p>
+                                    <div className="grid grid-cols-2 gap-y-1.5 gap-x-2">
+                                        {LAND_COVER_LEGEND.map(lc => (
+                                            <div key={lc.label} className="flex items-center gap-1.5">
+                                                <span className="w-2.5 h-2.5 rounded-sm shrink-0" style={{ background: lc.color }} />
+                                                <span className="text-[10px] text-white/80">{lc.label}</span>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
                         </div>
                     </div>
                 </Draggable>
