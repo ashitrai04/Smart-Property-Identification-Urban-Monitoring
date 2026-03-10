@@ -2,7 +2,7 @@ import React, { useState, useRef } from "react";
 import { fromBlob } from "geotiff";
 
 const SEGMENTATION_API = "https://amrender-segformer-b5.hf.space/predict";
-const CHANGE_DETECTION_API = "https://amrender-urban-change-detector.hf.space/detect";
+const CHANGE_DETECTION_API = "https://amrender-urban-change-detector.hf.space/api/process_temporal_change";
 const MAX_FILE_SIZE = 4.5 * 1024 * 1024; // 4.5 MB
 
 const ANALYSIS_TYPES = [
@@ -20,8 +20,10 @@ const MASK_LEGEND = [
 ];
 
 const CHANGE_LEGEND = [
-    { label: "New Construction", color: "#EF4444" },
-    { label: "Demolished / Cleared", color: "#3B82F6" },
+    { label: "New Construction / Urban Growth", color: "#00FFFF" },
+    { label: "Demolished / Cleared", color: "#EF4444" },
+    { label: "Vegetation Loss", color: "#F59E0B" },
+    { label: "Land Use Change", color: "#8B5CF6" },
     { label: "No Change", color: "transparent", border: true },
 ];
 
@@ -109,8 +111,10 @@ export default function Upload() {
             const errText = await resp.text().catch(() => "Unknown error");
             throw new Error(`API ${resp.status}: ${errText}`);
         }
-        const blob = await resp.blob();
-        return URL.createObjectURL(blob);
+        const data = await resp.json();
+        // API returns { master_map_base64, raw_mask_base64 } as JPEG base64
+        const b64 = data.master_map_base64 || data.raw_mask_base64;
+        return `data:image/jpeg;base64,${b64}`;
     };
 
     // ── Process multiple images sequentially ──
@@ -173,22 +177,86 @@ export default function Upload() {
 
         setCdResult({ pastUrl, presentUrl, changeUrl: null, status: "processing" });
 
-        setProgress("📡 Scanning for changes... Sending to AI model...");
+        setProgress("📡 Preparing images...");
         try {
-            const formData = new FormData();
-            formData.append("image_past", cdPastFile);
-            formData.append("image_present", cdPresentFile);
-            formData.append("volume_knob", cdVolumeKnob.toString());
-            formData.append("threshold", cdThreshold.toString());
+            const GRADIO_BASE = "https://amrender-urban-change-detector.hf.space";
 
-            const resp = await fetch(CHANGE_DETECTION_API, { method: "POST", body: formData });
-            if (!resp.ok) {
-                const errText = await resp.text().catch(() => "Unknown error");
-                throw new Error(`API ${resp.status}: ${errText}`);
+            // Convert TIF files to PNG blobs, pass other formats through
+            const fileToPngBlob = async (file) => {
+                const name = file.name.toLowerCase();
+                if (/\.(tif|tiff)$/.test(name)) {
+                    // Convert TIF → canvas → PNG blob
+                    const previewDataUrl = await fileToPreviewUrl(file);
+                    if (previewDataUrl) {
+                        const resp = await fetch(previewDataUrl);
+                        return new File([await resp.blob()], file.name.replace(/\.(tif|tiff)$/i, ".png"), { type: "image/png" });
+                    }
+                }
+                return file;
+            };
+
+            const pastBlob = await fileToPngBlob(cdPastFile);
+            const presentBlob = await fileToPngBlob(cdPresentFile);
+
+            // Step 1: Upload files to Gradio server
+            setProgress("📡 Uploading images to AI server...");
+            const uploadFile = async (file) => {
+                const form = new FormData();
+                form.append("files", file);
+                const resp = await fetch(`${GRADIO_BASE}/gradio_api/upload`, { method: "POST", body: form });
+                if (!resp.ok) throw new Error(`Upload failed: ${resp.status}`);
+                const paths = await resp.json();
+                return paths[0]; // server file path like "/tmp/gradio/.../filename.png"
+            };
+
+            const pastPath = await uploadFile(pastBlob);
+            const presentPath = await uploadFile(presentBlob);
+
+            // Step 2: Submit processing job → get event_id
+            setProgress("📡 Submitting to Urban Change Detector AI...");
+            const callResp = await fetch(`${GRADIO_BASE}/gradio_api/call/process_temporal_change`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    data: [
+                        { path: pastPath, orig_name: pastBlob.name, size: pastBlob.size, mime_type: "image/png", is_stream: false, meta: { _type: "gradio.FileData" } },
+                        { path: presentPath, orig_name: presentBlob.name, size: presentBlob.size, mime_type: "image/png", is_stream: false, meta: { _type: "gradio.FileData" } },
+                    ],
+                }),
+            });
+            if (!callResp.ok) {
+                const errText = await callResp.text().catch(() => "Unknown error");
+                throw new Error(`API call failed ${callResp.status}: ${errText}`);
             }
-            const blob = await resp.blob();
-            const changeUrl = URL.createObjectURL(blob);
-            setCdResult(prev => ({ ...prev, changeUrl, status: "done" }));
+            const { event_id } = await callResp.json();
+            if (!event_id) throw new Error("No event_id returned");
+
+            // Step 3: Get SSE result stream
+            setProgress("📡 AI is analyzing changes... please wait...");
+            const sseResp = await fetch(`${GRADIO_BASE}/gradio_api/call/process_temporal_change/${event_id}`);
+            if (!sseResp.ok) throw new Error(`Result fetch failed: ${sseResp.status}`);
+            const sseText = await sseResp.text();
+
+            // Parse SSE — find the "data:" line with JSON array of image objects
+            let changeUrl = null;
+            for (const line of sseText.split("\n")) {
+                if (line.startsWith("data:")) {
+                    try {
+                        const data = JSON.parse(line.slice(5).trim());
+                        if (Array.isArray(data) && data.length > 0 && data[0]?.url) {
+                            changeUrl = data[0].url; // Growth Highlighted change map
+                            break;
+                        }
+                    } catch (e) { /* skip non-JSON data lines */ }
+                }
+            }
+
+            if (!changeUrl) throw new Error("No change map returned. Response: " + sseText.slice(0, 200));
+
+            // Fetch the result image and display it
+            const imgResp = await fetch(changeUrl);
+            const blob = await imgResp.blob();
+            setCdResult(prev => ({ ...prev, changeUrl: URL.createObjectURL(blob), status: "done" }));
         } catch (err) {
             setCdResult(prev => ({ ...prev, status: "error", error: err.message }));
         }
@@ -206,7 +274,7 @@ export default function Upload() {
                 "Total Features": "2,847", "Buildings Detected": "1,923",
                 "Open Plots": "524", "Water Bodies": "12",
                 "Road Segments": "388", "Processing Time": "4.2s",
-                "Model": "YOLOv8-Seg (EC2)", "Confidence": "94.3%",
+                "Model": "Unified Cartographer (HF)", "Confidence": "94.3%",
             },
         });
         setProgress("");
@@ -654,7 +722,7 @@ export default function Upload() {
                         <div className="bg-orange-50 border border-orange-200 rounded-lg p-3 space-y-2">
                             <p className="text-[10px] text-orange-700 font-medium">🔍 Change Detection</p>
                             <p className="text-[10px] text-orange-600">
-                                Upload two images of the same area from different time periods. The AI model (Falcon) compares them pixel-by-pixel to detect construction, demolition, and land use changes.
+                                Upload two images of the same area from different time periods. The AI model (Urban Change Detector) compares them semantically to detect construction, demolition, and land use changes.
                             </p>
                             <div className="border-t border-orange-200 pt-2">
                                 <p className="text-[10px] text-orange-700 font-medium mb-1">Parameters:</p>
@@ -666,7 +734,7 @@ export default function Upload() {
                         <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3">
                             <p className="text-[10px] text-yellow-700 font-medium">⚡ Backend Pipeline</p>
                             <p className="text-[10px] text-yellow-600 mt-1">
-                                Analysis runs on AWS EC2 with YOLOv8-Seg model. Better engine coming for production.
+                                Analysis runs on HuggingFace Spaces using Unified Cartographer & Urban Change Detector models.
                             </p>
                         </div>
                     )}
