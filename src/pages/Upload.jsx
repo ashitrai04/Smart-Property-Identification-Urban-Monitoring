@@ -1,8 +1,8 @@
 import React, { useState, useRef } from "react";
 import { fromBlob } from "geotiff";
 
-const SEGMENTATION_API = "https://amrender-unified-cartographer-api.hf.space/predict";
-const CHANGE_DETECTION_API = "https://amrender-change-detection-falcon.hf.space/detect";
+const SEGMENTATION_API = "https://amrender-segformer-b5.hf.space/predict";
+const CHANGE_DETECTION_API = "https://amrender-urban-change-detector.hf.space/detect";
 const MAX_FILE_SIZE = 4.5 * 1024 * 1024; // 4.5 MB
 
 const ANALYSIS_TYPES = [
