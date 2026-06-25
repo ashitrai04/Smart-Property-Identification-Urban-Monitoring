@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState, useCallback } from "react";
 import mapboxgl from "mapbox-gl";
 import "mapbox-gl/dist/mapbox-gl.css";
 import Draggable from "react-draggable";
-import { addArcGISFeatureLayer, removeLayerGroup } from "../utils/mapLayers";
+import { addArcGISFeatureLayer, addLocalGeoJSONLayer, reloadVisibleLayers, removeLayerGroup } from "../utils/mapLayers";
 import { load as lercLoad, decode as lercDecode } from "lerc";
 import proj4 from "proj4";
 
@@ -42,7 +42,8 @@ const DISTRICTS = {
             name: "Visakhapatnam",
             center: [83.25, 17.93],
             zoom: 11,
-            featureServer: "https://services5.arcgis.com/73n8CSGpSSyHr1T9/arcgis/rest/services/final_visakhapatnam/FeatureServer",
+            dataSource: "local",
+            districtKey: "visakhapatnam",
             imageServer: "https://tiledimageservices5.arcgis.com/73n8CSGpSSyHr1T9/arcgis/rest/services/VISAKHA_RASTER/ImageServer",
             hasMask: true,
             layers: [
@@ -57,10 +58,11 @@ const DISTRICTS = {
             name: "Vijayawada",
             center: [80.62, 16.51],
             zoom: 11,
-            featureServer: "https://services5.arcgis.com/73n8CSGpSSyHr1T9/arcgis/rest/services/vijayawada_layers/FeatureServer",
+            dataSource: "local",
+            districtKey: "vijayawada",
             imageServer: null,
             droneImagery: "https://tiledimageservices5.arcgis.com/73n8CSGpSSyHr1T9/arcgis/rest/services/Drone_img_vijayvada/ImageServer",
-            hasMask: false,
+            hasMask: true,
             layers: [
                 { id: 0, name: "boundary", label: "Boundary", color: "#7B2D8E", isBoundary: true },
                 { id: 1, name: "buildings", label: "Buildings", color: "#EF4444" },
@@ -73,9 +75,10 @@ const DISTRICTS = {
             name: "Guntur",
             center: [80.45, 16.30],
             zoom: 11,
-            featureServer: "https://services5.arcgis.com/73n8CSGpSSyHr1T9/arcgis/rest/services/guntur_layer/FeatureServer",
+            dataSource: "local",
+            districtKey: "guntur",
             imageServer: null,
-            hasMask: false,
+            hasMask: true,
             layers: [
                 { id: 0, name: "boundary", label: "Boundary", color: "#7B2D8E", isBoundary: true },
                 { id: 1, name: "buildings", label: "Buildings", color: "#EF4444" },
@@ -88,9 +91,10 @@ const DISTRICTS = {
             name: "Anantapur",
             center: [77.60, 14.68],
             zoom: 10,
-            featureServer: "https://services5.arcgis.com/73n8CSGpSSyHr1T9/arcgis/rest/services/anantapur_layers/FeatureServer",
+            dataSource: "local",
+            districtKey: "anantapur",
             imageServer: null,
-            hasMask: false,
+            hasMask: true,
             layers: [
                 { id: 0, name: "boundary", label: "Boundary", color: "#7B2D8E", isBoundary: true },
                 { id: 1, name: "buildings", label: "Buildings", color: "#EF4444" },
@@ -103,9 +107,10 @@ const DISTRICTS = {
             name: "Nellore",
             center: [79.99, 14.44],
             zoom: 10,
-            featureServer: "https://services5.arcgis.com/73n8CSGpSSyHr1T9/arcgis/rest/services/nellore_shpfiles/FeatureServer",
+            dataSource: "local",
+            districtKey: "nellore",
             imageServer: null,
-            hasMask: false,
+            hasMask: true,
             layers: [
                 { id: 0, name: "boundary", label: "Boundary", color: "#7B2D8E", isBoundary: true },
                 { id: 1, name: "buildings", label: "Buildings", color: "#EF4444" },
@@ -374,6 +379,7 @@ export default function Mapping() {
 
     const debounceRef = useRef(null);
     const activeLayerIdsRef = useRef(new Set());
+    const activeLayerConfigsRef = useRef([]);
 
     // ── Initialize map ──
     useEffect(() => {
@@ -392,6 +398,13 @@ export default function Mapping() {
             if (maskOn && mapRef.current) {
                 if (debounceRef.current) clearTimeout(debounceRef.current);
                 debounceRef.current = setTimeout(() => updateMask(mapRef.current), 500);
+            }
+            
+            // Reload visible vector layers dynamically
+            if (mapRef.current && activeLayerConfigsRef.current.length > 0) {
+                import("../utils/mapLayers").then(({ reloadVisibleLayers }) => {
+                    reloadVisibleLayers(mapRef.current, activeLayerConfigsRef.current);
+                });
             }
         });
 
@@ -527,17 +540,26 @@ export default function Mapping() {
         try {
             const distConfig = (DISTRICTS[stateName] || []).find(d => d.name === districtName);
 
-            // Prioritize original distinct FeatureServer for tighter clipping
+            // Try local backend first
+            if (distConfig && distConfig.dataSource === "local") {
+                const { API_BASE } = await import("../utils/mapLayers");
+                const distKey = distConfig.districtKey || distConfig.name.toLowerCase();
+                const url = `${API_BASE}/api/districts/${encodeURIComponent(distKey)}/boundary`;
+                const resp = await fetch(url);
+                const data = await resp.json();
+                if (data?.features?.length && data.features[0].geometry) {
+                    sentinelMaskGeomRef.current = data.features[0].geometry;
+                    return;
+                }
+            }
+
+            // Fallback: ArcGIS FeatureServer
             if (distConfig && distConfig.featureServer) {
-                // Determine Layer ID based on name. Usually layer 0 is boundary
                 const boundaryLayer = distConfig.layers.find(l => l.isBoundary || l.name === 'boundary');
                 const layerId = boundaryLayer ? boundaryLayer.id : '0';
-
-                // For Visakhapatnam specifically, the original boundary came from 1=1 query
                 const url = `${distConfig.featureServer}/${layerId}/query?where=1=1&outFields=*&f=geojson`;
                 const resp = await fetch(url);
                 const data = await resp.json();
-
                 if (data?.features?.length && data.features[0].geometry) {
                     sentinelMaskGeomRef.current = data.features[0].geometry;
                     return;
@@ -685,66 +707,93 @@ export default function Mapping() {
         const layerId = `${dist.name.toLowerCase()}-${layer.name}`;
         const isOn = activeLayers[layerId];
 
+        // If already loaded, just toggle visibility (instant, no re-fetch)
+        const fillId = `${layerId}-fill`;
+        const outlineId = `${layerId}-outline`;
+        const lineId = `${layerId}-line`;
+        const alreadyLoaded = map.getSource(layerId);
+
         if (isOn) {
-            removeLayerGroup(map, layerId);
+            // Hide all sub-layers
+            [fillId, outlineId, lineId, layerId].forEach(lid => {
+                if (map.getLayer(lid)) map.setLayoutProperty(lid, "visibility", "none");
+            });
             activeLayerIdsRef.current.delete(layerId);
+            activeLayerConfigsRef.current = activeLayerConfigsRef.current.filter(c => c.id !== layerId);
             setActiveLayers(prev => ({ ...prev, [layerId]: false }));
+        } else if (alreadyLoaded) {
+            // Already loaded — just show again (instant!)
+            [fillId, outlineId, lineId, layerId].forEach(lid => {
+                if (map.getLayer(lid)) map.setLayoutProperty(lid, "visibility", "visible");
+            });
+            activeLayerIdsRef.current.add(layerId);
+            activeLayerConfigsRef.current.push({ id: layerId, district: dist.districtKey || dist.name.toLowerCase(), layer: layer.name });
+            setActiveLayers(prev => ({ ...prev, [layerId]: true }));
         } else {
+            // First time loading — fetch from backend
             setLoading(`Loading ${layer.label}...`);
             try {
                 let paintOverrides;
                 if (layer.isBoundary) {
                     paintOverrides = {
                         fill: { "fill-color": "transparent", "fill-opacity": 0 },
-                        outline: { "line-color": "#7B2D8E", "line-width": 3 },
-                        line: { "line-color": "#7B2D8E", "line-width": 3 },
+                        outline: { "line-color": layer.color || "#7B2D8E", "line-width": 3 },
+                        line: { "line-color": layer.color || "#7B2D8E", "line-width": 3 },
                     };
                 } else if (layer.isRoad) {
                     paintOverrides = {
-                        fill: { "fill-color": "transparent", "fill-opacity": 0 },
-                        outline: { "line-color": "#EAB308", "line-width": 2 },
-                        line: { "line-color": "#EAB308", "line-width": 2 },
+                        fill: { "fill-color": layer.color || "#EAB308", "fill-opacity": 1 },
+                        outline: { "line-color": layer.color || "#EAB308", "line-width": 2 },
+                        line: { "line-color": layer.color || "#EAB308", "line-width": 2 },
                     };
                 } else if (layer.isBuilding) {
-                    const bldgColorExpr = [
-                        "case",
-                        [">=", ["get", "conf"], 0.75], "#DC2626",
-                        [">=", ["get", "conf"], 0.7], "#F97316",
-                        [">=", ["get", "conf"], 0.65], "#FBBF24",
-                        "#EF4444" // Default
-                    ];
                     paintOverrides = {
-                        fill: { "fill-color": bldgColorExpr, "fill-opacity": 0.4 },
-                        outline: { "line-color": bldgColorExpr, "line-width": 1.5 },
-                        line: { "line-color": bldgColorExpr, "line-width": 2 },
-                        circle: { "circle-color": bldgColorExpr },
+                        fill: { "fill-color": layer.color || "#DC2626", "fill-opacity": 0.6 },
+                        outline: { "line-color": layer.color || "#DC2626", "line-width": 1.5 },
+                        line: { "line-color": layer.color || "#DC2626", "line-width": 2 },
+                        circle: { "circle-color": layer.color || "#DC2626" },
                     };
                 } else {
                     paintOverrides = {
-                        fill: { "fill-color": layer.color, "fill-opacity": 0.4 },
+                        fill: { "fill-color": layer.color, "fill-opacity": 0.6 },
                         outline: { "line-color": layer.color, "line-width": 1.5 },
                         line: { "line-color": layer.color, "line-width": 2 },
                         circle: { "circle-color": layer.color },
                     };
                 }
 
-                await addArcGISFeatureLayer(map, {
-                    id: layerId,
-                    featureServerUrl: `${dist.featureServer}/${layer.id}`,
-                    where: layer.where || "1=1",
-                    fit: false,
-                    paintOverrides,
-                    onProgress: (loaded, total) => {
-                        if (total > 2000) {
-                            setLoading(`Loading ${layer.label}: ${loaded.toLocaleString()} / ${total.toLocaleString()} features...`);
-                        }
-                    },
-                });
+                if (dist.dataSource === "local") {
+                    await addLocalGeoJSONLayer(map, {
+                        id: layerId,
+                        district: dist.districtKey || dist.name.toLowerCase(),
+                        layer: layer.name,
+                        fit: false,
+                        paintOverrides,
+                        onProgress: (loaded, total) => {
+                            if (total > 2000) {
+                                setLoading(`Loading ${layer.label}: ${loaded.toLocaleString()} / ${total.toLocaleString()} features...`);
+                            }
+                        },
+                    });
+                } else {
+                    await addArcGISFeatureLayer(map, {
+                        id: layerId,
+                        featureServerUrl: `${dist.featureServer}/${layer.id}`,
+                        where: layer.where || "1=1",
+                        fit: false,
+                        paintOverrides,
+                        onProgress: (loaded, total) => {
+                            if (total > 2000) {
+                                setLoading(`Loading ${layer.label}: ${loaded.toLocaleString()} / ${total.toLocaleString()} features...`);
+                            }
+                        },
+                    });
+                }
                 activeLayerIdsRef.current.add(layerId);
+                activeLayerConfigsRef.current.push({ id: layerId, district: dist.districtKey || dist.name.toLowerCase(), layer: layer.name });
                 setActiveLayers(prev => ({ ...prev, [layerId]: true }));
 
                 // Click popup
-                const fillId = `${layerId}-fill`;
                 if (map.getLayer(fillId)) {
                     map.on("click", fillId, (e) => {
                         if (!e.features?.length) return;
@@ -768,44 +817,77 @@ export default function Mapping() {
         }
     }, [activeLayers]);
 
-    // ── Toggle mask ──
+    // ── Local LULC Mask Functions ──
+    const MASK_SOURCE_ID = 'local-mask-source';
+    const MASK_LAYER_ID = 'local-mask-layer';
+
+    const removeMask = useCallback((map) => {
+        if (!map) return;
+        if (map.getLayer(MASK_LAYER_ID)) map.removeLayer(MASK_LAYER_ID);
+        if (map.getSource(MASK_SOURCE_ID)) map.removeSource(MASK_SOURCE_ID);
+        maskLoadedRef.current = false;
+    }, []);
+
     const updateMask = useCallback(async (map) => {
-        if (loadingMaskRef.current || !selectedDistrict) return;
+        if (!selectedDistrict || !map) return;
         const dist = (DISTRICTS[selectedState] || []).find(d => d.name === selectedDistrict);
-        if (!dist?.imageServer) return;
+        if (!dist || !dist.hasMask) return;
 
-        const zoom = Math.round(map.getZoom());
-        const newLevel = zoomToLevel(zoom);
-        if (newLevel === maskLevelRef.current && maskLoadedRef.current) return;
+        const distKey = dist.districtKey || dist.name.toLowerCase();
+        
+        // Use API_BASE from our mapLayers util
+        const { API_BASE } = await import("../utils/mapLayers");
+        const tileUrl = `${API_BASE}/api/districts/${encodeURIComponent(distKey)}/raster/tiles/{z}/{x}/{y}.png`;
 
-        loadingMaskRef.current = true;
-        setLoading("Loading Mask...");
-        try {
-            const result = await buildMaskForViewport(map, dist.imageServer, pct => setLoading(`Loading Mask... ${pct}%`));
-            if (!result || !map.getCanvas()) { loadingMaskRef.current = false; setLoading(null); return; }
-            const source = map.getSource("vizag-mask-source");
-            if (source) source.updateImage({ url: result.dataUrl, coordinates: result.coordinates });
-            else {
-                map.addSource("vizag-mask-source", { type: "image", url: result.dataUrl, coordinates: result.coordinates });
-                map.addLayer({ id: "vizag-mask-layer", type: "raster", source: "vizag-mask-source", paint: { "raster-opacity": 0.8, "raster-resampling": "nearest" } });
+        if (!map.getSource(MASK_SOURCE_ID)) {
+            map.addSource(MASK_SOURCE_ID, {
+                type: 'raster',
+                tiles: [tileUrl],
+                tileSize: 256,
+            });
+        } else {
+            // Force refresh of tiles if district changed
+            map.getSource(MASK_SOURCE_ID).tiles = [tileUrl];
+            map.style.sourceCaches[MASK_SOURCE_ID].clearTiles();
+            map.style.sourceCaches[MASK_SOURCE_ID].update(map.transform);
+        }
+
+        if (!map.getLayer(MASK_LAYER_ID)) {
+            const layerDef = {
+                id: MASK_LAYER_ID,
+                type: 'raster',
+                source: MASK_SOURCE_ID,
+                paint: {
+                    'raster-opacity': 0.7,
+                    'raster-fade-duration': 300,
+                    'raster-resampling': 'nearest'
+                }
+            };
+            
+            // Put it below the roads/boundaries
+            try {
+                const style = map.getStyle();
+                const firstLabelOrLine = style.layers.find(l => l.type === 'symbol' || l.type === 'line' || (l.id && l.id.includes('label')));
+                if (firstLabelOrLine) map.addLayer(layerDef, firstLabelOrLine.id);
+                else map.addLayer(layerDef);
+            } catch (e) {
+                map.addLayer(layerDef);
             }
-            maskLoadedRef.current = true;
-            maskLevelRef.current = newLevel;
-        } catch (err) { console.error("Mask failed:", err); }
-        loadingMaskRef.current = false;
-        setLoading(null);
+        }
+        
+        maskLoadedRef.current = true;
     }, [selectedState, selectedDistrict]);
 
     const toggleMask = useCallback(() => {
         const map = mapRef.current;
         if (!map) return;
         if (maskOn) {
-            if (map.getLayer("vizag-mask-layer")) map.setLayoutProperty("vizag-mask-layer", "visibility", "none");
+            if (map.getLayer(MASK_LAYER_ID)) map.setLayoutProperty(MASK_LAYER_ID, "visibility", "none");
             setMaskOn(false);
         } else {
             setMaskOn(true);
             if (!maskLoadedRef.current) updateMask(map);
-            else if (map.getLayer("vizag-mask-layer")) map.setLayoutProperty("vizag-mask-layer", "visibility", "visible");
+            else if (map.getLayer(MASK_LAYER_ID)) map.setLayoutProperty(MASK_LAYER_ID, "visibility", "visible");
         }
     }, [maskOn, updateMask]);
 

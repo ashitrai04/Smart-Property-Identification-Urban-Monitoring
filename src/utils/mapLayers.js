@@ -1,5 +1,104 @@
-// Utilities to add ArcGIS sources/layers to Mapbox GL
+// Utilities to add map layers — supports both local backend & ArcGIS
 import mapboxgl from 'mapbox-gl';
+
+// ── Backend API base URL ──
+export const API_BASE = (import.meta.env.VITE_API_BASE || "http://127.0.0.1:8000").replace(/\/+$/, "");
+
+// ══════════════════════════════════════════════════════════════════
+// LOCAL BACKEND — Fetch GeoJSON from FastAPI server
+// ══════════════════════════════════════════════════════════════════
+
+/**
+ * Load a GeoJSON layer from the local backend.
+ * Supports bbox filtering and zoom-level-aware feature limits.
+ */
+export async function addLocalGeoJSONLayer(
+    map,
+    {
+        id,
+        district,    // e.g. "guntur"
+        layer,       // e.g. "buildings", "roads", "waterbodies", "boundary"
+        fit = false,
+        paintOverrides = {},
+        labelField = null,
+        onProgress = null,
+    }
+) {
+    if (!map || !district || !layer) return null;
+
+    // Build URL with bbox + zoom for spatial filtering
+    const bounds = map.getBounds();
+    const zoom = Math.round(map.getZoom());
+    const bbox = `${bounds.getWest()},${bounds.getSouth()},${bounds.getEast()},${bounds.getNorth()}`;
+    const url = `${API_BASE}/api/districts/${encodeURIComponent(district)}/${encodeURIComponent(layer)}?bbox=${bbox}&zoom=${zoom}`;
+
+    if (onProgress) onProgress(0, 0);
+
+    const resp = await fetch(url);
+    if (!resp.ok) throw new Error(`Backend error: ${resp.status} ${resp.statusText}`);
+    const geojson = await resp.json();
+
+    const count = geojson?.features?.length || 0;
+    if (onProgress) onProgress(count, geojson?.metadata?.total_in_district || count);
+
+    // Add/update source
+    if (!map.getSource(id)) {
+        map.addSource(id, { type: "geojson", data: geojson });
+    } else {
+        map.getSource(id).setData(geojson);
+    }
+
+    // Add visual layers
+    _addLayersForGeojson(map, id, geojson, paintOverrides, labelField);
+
+    // Fit bounds
+    if (fit && count > 0) {
+        try {
+            const b = new mapboxgl.LngLatBounds();
+            (geojson.features || []).forEach(f => {
+                const g = f.geometry;
+                if (!g) return;
+                if (g.type === "Point") b.extend(g.coordinates);
+                else if (g.type === "MultiPoint") g.coordinates.forEach(c => b.extend(c));
+                else if (g.type === "Polygon") g.coordinates.forEach(ring => ring.forEach(c => b.extend(c)));
+                else if (g.type === "MultiPolygon") g.coordinates.forEach(poly => poly.forEach(ring => ring.forEach(c => b.extend(c))));
+                else if (g.type === "LineString") g.coordinates.forEach(c => b.extend(c));
+                else if (g.type === "MultiLineString") g.coordinates.forEach(line => line.forEach(c => b.extend(c)));
+            });
+            if (!b.isEmpty()) map.fitBounds(b, { padding: 40, duration: 800 });
+        } catch (_) { }
+    }
+
+    return geojson;
+}
+
+/**
+ * Reload visible layers when map moves (bbox changes).
+ * Call this on map 'moveend' for dynamic loading.
+ */
+export async function reloadVisibleLayers(map, activeLayerConfigs) {
+    if (!map || !activeLayerConfigs?.length) return;
+    
+    const bounds = map.getBounds();
+    const zoom = Math.round(map.getZoom());
+    const bbox = `${bounds.getWest()},${bounds.getSouth()},${bounds.getEast()},${bounds.getNorth()}`;
+
+    for (const config of activeLayerConfigs) {
+        const { id, district, layer } = config;
+        if (!district || !layer || layer === "boundary") continue;
+
+        const url = `${API_BASE}/api/districts/${encodeURIComponent(district)}/${encodeURIComponent(layer)}?bbox=${bbox}&zoom=${zoom}`;
+        try {
+            const resp = await fetch(url);
+            if (!resp.ok) continue;
+            const geojson = await resp.json();
+            const src = map.getSource(id);
+            if (src) src.setData(geojson);
+        } catch (e) {
+            console.warn(`Reload ${layer} failed:`, e);
+        }
+    }
+}
 
 // ── In-memory cache for ArcGIS GeoJSON responses ──
 const _arcgisGeojsonCache = new Map();

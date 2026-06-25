@@ -1,0 +1,11 @@
+fastapi
+uvicorn[standard]
+geopandas
+rio-tiler
+shapely
+pillow
+boto3
+python-dotenv
+fiona
+rasterio
+numpy
