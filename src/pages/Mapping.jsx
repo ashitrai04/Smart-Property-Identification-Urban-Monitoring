@@ -394,17 +394,21 @@ export default function Mapping() {
         map.addControl(new mapboxgl.NavigationControl(), "top-right");
         map.addControl(new mapboxgl.ScaleControl({ unit: "metric" }), "bottom-right");
         map.on("mousemove", e => setCoords({ lng: e.lngLat.lng.toFixed(5), lat: e.lngLat.lat.toFixed(5) }));
+        const vectorDebounceRef = { current: null };
         map.on("moveend", () => {
             if (maskOn && mapRef.current) {
                 if (debounceRef.current) clearTimeout(debounceRef.current);
                 debounceRef.current = setTimeout(() => updateMask(mapRef.current), 500);
             }
             
-            // Reload visible vector layers dynamically
+            // Reload visible vector layers dynamically (Debounced to prevent stuttering)
             if (mapRef.current && activeLayerConfigsRef.current.length > 0) {
-                import("../utils/mapLayers").then(({ reloadVisibleLayers }) => {
-                    reloadVisibleLayers(mapRef.current, activeLayerConfigsRef.current);
-                });
+                if (vectorDebounceRef.current) clearTimeout(vectorDebounceRef.current);
+                vectorDebounceRef.current = setTimeout(() => {
+                    import("../utils/mapLayers").then(({ reloadVisibleLayers }) => {
+                        reloadVisibleLayers(mapRef.current, activeLayerConfigsRef.current);
+                    });
+                }, 600);
             }
         });
 

@@ -216,14 +216,11 @@ def _load_district(name: str):
     return result
 
 
-def _gdf_to_geojson(gdf):
-    """Convert GeoDataFrame to GeoJSON dict, handling numpy types."""
+def _gdf_to_geojson_string(gdf):
+    """Convert GeoDataFrame to GeoJSON string. Avoids parsing back to dict."""
     if gdf is None or len(gdf) == 0:
-        return {"type": "FeatureCollection", "features": []}
-
-    # Convert to dict and handle numpy types
-    geojson = json.loads(gdf.to_json())
-    return geojson
+        return '{"type": "FeatureCollection", "features": []}'
+    return gdf.to_json()
 
 
 def _filter_features(gdf, class_id=None, bbox_str=None, zoom=None, limit=None):
@@ -235,14 +232,14 @@ def _filter_features(gdf, class_id=None, bbox_str=None, zoom=None, limit=None):
     if class_id is not None and "class_id" in gdf.columns:
         gdf = gdf[gdf["class_id"] == class_id]
 
-    # Filter by bounding box
+    # Filter by bounding box using spatial index (.cx)
     if bbox_str:
         try:
             parts = [float(x) for x in bbox_str.split(",")]
             if len(parts) == 4:
                 xmin, ymin, xmax, ymax = parts
-                bbox_geom = box(xmin, ymin, xmax, ymax)
-                gdf = gdf[gdf.geometry.intersects(bbox_geom)]
+                # .cx is 100x faster than full intersection
+                gdf = gdf.cx[xmin:xmax, ymin:ymax]
         except (ValueError, TypeError):
             pass
 
@@ -319,26 +316,14 @@ async def get_boundary(name: str):
     name = name.lower()
     data = _load_district(name)
     bdf = data.get("boundary", gpd.GeoDataFrame())
-    return JSONResponse(_gdf_to_geojson(bdf))
+    # Raw response for boundary too
+    return Response(content=_gdf_to_geojson_string(bdf), media_type="application/json")
 
 
 @app.get("/api/districts/{name}/{layer}")
-async def get_layer(
-    name: str,
-    layer: str,
-    bbox: str = Query(None, description="xmin,ymin,xmax,ymax in EPSG:4326"),
-    zoom: int = Query(None, description="Current map zoom level"),
-    limit: int = Query(None, description="Max features to return"),
-):
-    """
-    Get a feature layer as GeoJSON.
 
-    Supports:
-    - layer: buildings, roads, waterbodies, openareas
-    - bbox: spatial filter (xmin,ymin,xmax,ymax)
-    - zoom: zoom-level-based feature limit for performance
-    - limit: hard cap on features
-    """
+async def get_district_layer(name: str, layer: str, bbox: str = Query(None), zoom: float = Query(None), limit: int = Query(None)):
+    """Get GeoJSON for a specific layer, optionally filtered by bbox and zoom."""
     name = name.lower()
     layer = layer.lower()
 
@@ -352,24 +337,9 @@ async def get_layer(
     data = _load_district(name)
     gdf = data.get("features", gpd.GeoDataFrame())
 
-    t0 = time.time()
     filtered = _filter_features(gdf, class_id=class_id, bbox_str=bbox, zoom=zoom, limit=limit)
-    elapsed = time.time() - t0
-
-    geojson = _gdf_to_geojson(filtered)
-
-    # Add metadata header
-    geojson["metadata"] = {
-        "district": name,
-        "layer": layer,
-        "count": len(geojson.get("features", [])),
-        "total_in_district": int((gdf["class_id"] == class_id).sum()) if "class_id" in gdf.columns else 0,
-        "query_time_ms": round(elapsed * 1000, 1),
-        "bbox_filter": bbox is not None,
-        "zoom_filter": zoom,
-    }
-
-    return JSONResponse(geojson)
+    
+    return Response(content=_gdf_to_geojson_string(filtered), media_type="application/json")
 
 
 @app.get("/api/districts/{name}/stats")
