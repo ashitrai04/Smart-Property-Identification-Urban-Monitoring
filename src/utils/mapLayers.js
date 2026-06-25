@@ -32,14 +32,24 @@ export async function addLocalGeoJSONLayer(
     const bbox = `${bounds.getWest()},${bounds.getSouth()},${bounds.getEast()},${bounds.getNorth()}`;
     const url = `${API_BASE}/api/districts/${encodeURIComponent(district)}/${encodeURIComponent(layer)}?bbox=${bbox}&zoom=${zoom}`;
 
-    if (onProgress) onProgress(0, 0);
+    let minZoom = 0;
+    if (layer === "buildings") minZoom = 13;
+    else if (layer === "roads") minZoom = 11;
+    else if (layer === "waterbodies") minZoom = 10;
 
-    const resp = await fetch(url);
-    if (!resp.ok) throw new Error(`Backend error: ${resp.status} ${resp.statusText}`);
-    const geojson = await resp.json();
+    let geojson = { type: "FeatureCollection", features: [] };
+    let count = 0;
 
-    const count = geojson?.features?.length || 0;
-    if (onProgress) onProgress(count, geojson?.metadata?.total_in_district || count);
+    if (zoom >= minZoom) {
+        if (onProgress) onProgress(0, 0);
+        const resp = await fetch(url);
+        if (!resp.ok) throw new Error(`Backend error: ${resp.status} ${resp.statusText}`);
+        geojson = await resp.json();
+        count = geojson?.features?.length || 0;
+        if (onProgress) onProgress(count, geojson?.metadata?.total_in_district || count);
+    } else {
+        console.log(`Zoom ${zoom} is too low for ${layer} (needs ${minZoom}). Skipping fetch.`);
+    }
 
     // Add/update source
     if (!map.getSource(id)) {
@@ -86,6 +96,17 @@ export async function reloadVisibleLayers(map, activeLayerConfigs) {
     for (const config of activeLayerConfigs) {
         const { id, district, layer } = config;
         if (!district || !layer || layer === "boundary") continue;
+
+        let minZoom = 0;
+        if (layer === "buildings") minZoom = 13;
+        else if (layer === "roads") minZoom = 11;
+        else if (layer === "waterbodies") minZoom = 10;
+
+        if (zoom < minZoom) {
+            const src = map.getSource(id);
+            if (src) src.setData({ type: "FeatureCollection", features: [] });
+            continue;
+        }
 
         const url = `${API_BASE}/api/districts/${encodeURIComponent(district)}/${encodeURIComponent(layer)}?bbox=${bbox}&zoom=${zoom}`;
         try {
@@ -177,30 +198,28 @@ export function addArcGISTileLayer(map, { id, tiles, tileSize = 256, attribution
 
 // ── Helper: add visual map layers for a GeoJSON source ──
 function _addLayersForGeojson(map, id, geojson, paintOverrides = {}, labelField = null) {
-    const types = new Set((geojson.features || []).map(f => f.geometry && f.geometry.type));
-
-    if ((types.has("Polygon") || types.has("MultiPolygon")) && !map.getLayer(`${id}-fill`)) {
+    if (!map.getLayer(`${id}-fill`)) {
         map.addLayer({
             id: `${id}-fill`, type: "fill", source: id,
             filter: ["match", ["geometry-type"], ["Polygon", "MultiPolygon"], true, false],
             paint: { "fill-color": "#0EA5E9", "fill-opacity": 0.2, ...(paintOverrides.fill || {}) },
         });
     }
-    if ((types.has("Polygon") || types.has("MultiPolygon")) && !map.getLayer(`${id}-outline`)) {
+    if (!map.getLayer(`${id}-outline`)) {
         map.addLayer({
             id: `${id}-outline`, type: "line", source: id,
             filter: ["match", ["geometry-type"], ["Polygon", "MultiPolygon"], true, false],
             paint: { "line-color": "#0EA5E9", "line-width": 1.5, ...(paintOverrides.outline || {}) },
         });
     }
-    if ((types.has("LineString") || types.has("MultiLineString")) && !map.getLayer(`${id}-line`)) {
+    if (!map.getLayer(`${id}-line`)) {
         map.addLayer({
             id: `${id}-line`, type: "line", source: id,
             filter: ["match", ["geometry-type"], ["LineString", "MultiLineString"], true, false],
             paint: { "line-color": "#0B1E3E", "line-width": 2, ...(paintOverrides.line || {}) },
         });
     }
-    if ((types.has("Point") || types.has("MultiPoint")) && !map.getLayer(`${id}-circle`)) {
+    if (!map.getLayer(`${id}-circle`)) {
         map.addLayer({
             id: `${id}-circle`, type: "circle", source: id,
             filter: ["match", ["geometry-type"], ["Point", "MultiPoint"], true, false],
