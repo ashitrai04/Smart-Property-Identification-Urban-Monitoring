@@ -215,6 +215,14 @@ def _load_district(name: str):
     _cache[name] = result
     return result
 
+print("\n[STARTUP] Pre-loading datasets and building spatial indices to prevent 504 Timeouts...")
+for d_name in AVAILABLE_DISTRICTS:
+    _load_district(d_name)
+    if "features" in _cache[d_name] and not _cache[d_name]["features"].empty:
+        # Trigger spatial index build
+        _ = _cache[d_name]["features"].sindex
+print("[STARTUP] All spatial indices built!\n")
+
 
 def _gdf_to_geojson_string(gdf):
     """Convert GeoDataFrame to GeoJSON string. Avoids parsing back to dict."""
