@@ -6,3 +6,5 @@ dist
 *.log
 datasets/
 __pycache__/
+.vercel
+.env*

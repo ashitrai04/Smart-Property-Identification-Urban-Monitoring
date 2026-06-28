@@ -429,62 +429,62 @@ export default function DSS() {
     };
 
     return (
-        <div className="flex flex-col lg:flex-row w-full" style={{ height: "calc(100vh - 260px)", minHeight: "500px" }}>
+        <div className="flex flex-col lg:flex-row w-full h-full">
             {/* Map */}
             <div className="flex-1 relative" style={{ minHeight: "400px" }}>
                 <div ref={mapContainerRef} style={{ position: "absolute", top: 0, left: 0, right: 0, bottom: 0 }} />
             </div>
 
             {/* Sidebar */}
-            <div className="w-full lg:w-[380px] bg-white border-l border-gray-200 overflow-y-auto">
-                <div className="p-4 border-b border-gray-200 bg-[#0B5FA5] text-white">
-                    <h2 className="text-base font-bold">Decision Support System</h2>
+            <div className="w-full lg:w-[400px] shrink-0 bg-[var(--bg-secondary)] border-l border-[var(--border-default)] overflow-y-auto">
+                <div className="p-4 border-b border-[var(--border-default)] bg-gradient-to-r from-[var(--accent)] to-[#0a7a6a]">
+                    <h2 className="text-base font-bold text-white">Decision Support System</h2>
                     <p className="text-xs text-white/70 mt-0.5">Generate reports for areas of interest</p>
                 </div>
 
-                <div className="p-4 space-y-3 border-b border-gray-200">
+                <div className="p-4 space-y-3 border-b border-[var(--border-default)]">
                     <div>
-                        <label className="text-xs font-medium text-gray-600 block mb-1">State</label>
-                        <input value={selectedState} disabled className="w-full bg-gray-100 text-sm border border-gray-200 rounded-lg px-3 py-2" />
+                        <label className="text-xs font-medium text-[var(--text-muted)] block mb-1">State</label>
+                        <input value={selectedState} disabled className="w-full bg-[var(--bg-primary)] text-[var(--text-primary)] text-sm border border-[var(--border-default)] rounded-lg px-3 py-2" />
                     </div>
                     <div>
-                        <label className="text-xs font-medium text-gray-600 block mb-1">District</label>
+                        <label className="text-xs font-medium text-[var(--text-muted)] block mb-1">District</label>
                         <select value={selectedDistrict} onChange={e => setSelectedDistrict(e.target.value)}
-                            className="w-full bg-white text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-[#0B5FA5]">
+                            className="w-full bg-[var(--bg-primary)] text-[var(--text-primary)] text-sm border border-[var(--border-default)] rounded-lg px-3 py-2 focus:outline-none focus:ring-1 focus:ring-[var(--accent)]">
                             <option value="">Select District...</option>
                             {DISTRICTS_LIST.map(d => <option key={d.name} value={d.name}>{d.name}</option>)}
                         </select>
                     </div>
                     <div className="grid grid-cols-2 gap-2">
                         <div>
-                            <label className="text-xs font-medium text-gray-600 block mb-1">From</label>
+                            <label className="text-xs font-medium text-[var(--text-muted)] block mb-1">From</label>
                             <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)}
-                                className="w-full text-xs border border-gray-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-[#0B5FA5]" />
+                                className="w-full bg-[var(--bg-primary)] text-[var(--text-primary)] text-xs border border-[var(--border-default)] rounded-lg px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-[var(--accent)]" />
                         </div>
                         <div>
-                            <label className="text-xs font-medium text-gray-600 block mb-1">To</label>
+                            <label className="text-xs font-medium text-[var(--text-muted)] block mb-1">To</label>
                             <input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)}
-                                className="w-full text-xs border border-gray-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-[#0B5FA5]" />
+                                className="w-full bg-[var(--bg-primary)] text-[var(--text-primary)] text-xs border border-[var(--border-default)] rounded-lg px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-[var(--accent)]" />
                         </div>
                     </div>
                 </div>
 
-                <div className="p-4 border-b border-gray-200">
-                    <label className="text-xs font-medium text-gray-600 block mb-2">Data Types</label>
+                <div className="p-4 border-b border-[var(--border-default)]">
+                    <label className="text-xs font-medium text-[var(--text-muted)] block mb-2">Data Types</label>
                     <div className="space-y-1.5">
                         {DATA_TYPES.map(dt => (
                             <label key={dt} className="flex items-center gap-2 cursor-pointer">
                                 <input type="checkbox" checked={selectedDataTypes.includes(dt)} onChange={() => toggleDataType(dt)}
-                                    className="rounded border-gray-300 text-[#0B5FA5] focus:ring-[#0B5FA5]" />
-                                <span className="text-xs text-gray-700">{dt}</span>
+                                    className="rounded border-[var(--border-default)] text-[var(--accent)] focus:ring-[#0B5FA5]" />
+                                <span className="text-xs text-[var(--text-secondary)]">{dt}</span>
                             </label>
                         ))}
                     </div>
                 </div>
 
-                <div className="p-4 border-b border-gray-200">
+                <div className="p-4 border-b border-[var(--border-default)]">
                     <button onClick={handleGenerate} disabled={!selectedDistrict || generating}
-                        className={`w-full py-2.5 rounded-lg text-sm font-semibold transition-colors ${selectedDistrict && !generating ? "bg-[#0B5FA5] text-white hover:bg-[#094d87]" : "bg-gray-200 text-gray-400 cursor-not-allowed"
+                        className={`w-full py-2.5 rounded-lg text-sm font-semibold transition-colors ${selectedDistrict && !generating ? "bg-[var(--accent)] text-white hover:bg-[#094d87]" : "bg-[var(--bg-tertiary)] text-[var(--text-muted)] cursor-not-allowed"
                             }`}>
                         {generating ? "Generating..." : "Generate Report"}
                     </button>
@@ -493,23 +493,23 @@ export default function DSS() {
                 {report && (
                     <div className="p-4 space-y-4">
                         <div className="flex flex-col gap-3">
-                            <h3 className="text-sm font-bold text-gray-900">{report.district} Report Summary</h3>
+                            <h3 className="text-sm font-bold text-[var(--text-primary)]">{report.district} Report Summary</h3>
                             <button onClick={exportReport} 
                                 className="w-full py-3 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm font-bold shadow-md transition-colors flex items-center justify-center gap-2">
                                 <span>📥 Download Full Project Report (PDF)</span>
                             </button>
                         </div>
-                        <p className="text-[10px] text-gray-400">{report.generatedAt}</p>
+                        <p className="text-[10px] text-[var(--text-muted)]">{report.generatedAt}</p>
                         <div className="grid grid-cols-2 gap-2">
                             {Object.entries(report.summary).map(([k, v]) => (
-                                <div key={k} className="bg-gray-50 rounded-lg p-2">
-                                    <p className="text-[10px] text-gray-400">{k}</p>
-                                    <p className="text-sm font-bold text-gray-900">{v}</p>
+                                <div key={k} className="bg-[var(--bg-tertiary)] rounded-lg p-2">
+                                    <p className="text-[10px] text-[var(--text-muted)]">{k}</p>
+                                    <p className="text-sm font-bold text-[var(--text-primary)]">{v}</p>
                                 </div>
                             ))}
                         </div>
                         <div>
-                            <p className="text-xs font-medium text-gray-600 mb-2">Land Use Distribution</p>
+                            <p className="text-xs font-medium text-[var(--text-muted)] mb-2">Land Use Distribution</p>
                             <ResponsiveContainer width="100%" height={160}>
                                 <PieChart>
                                     <Pie data={report.landUse} cx="50%" cy="50%" innerRadius={35} outerRadius={60} dataKey="value" paddingAngle={2}>
@@ -521,7 +521,7 @@ export default function DSS() {
                             </ResponsiveContainer>
                         </div>
                         <div>
-                            <p className="text-xs font-medium text-gray-600 mb-2">Monthly Changes</p>
+                            <p className="text-xs font-medium text-[var(--text-muted)] mb-2">Monthly Changes</p>
                             <ResponsiveContainer width="100%" height={120}>
                                 <BarChart data={report.monthly}>
                                     <XAxis dataKey="month" tick={{ fontSize: 9 }} />

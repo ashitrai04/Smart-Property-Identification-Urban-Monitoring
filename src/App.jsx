@@ -1,9 +1,8 @@
-import React from "react";
+import React, { useState, useCallback } from "react";
 import { Routes, Route, useLocation } from "react-router-dom";
-import TopStrip from "./components/TopStrip";
-import BrandingHeader from "./components/BrandingHeader";
+import { AnimatePresence } from "framer-motion";
+import BootOverlay from "./components/BootOverlay";
 import Navbar from "./components/Navbar";
-import Footer from "./components/Footer";
 import Home from "./pages/Home";
 import Mapping from "./pages/Mapping";
 import Upload from "./pages/Upload";
@@ -13,63 +12,40 @@ import DSS from "./pages/DSS";
 function App() {
     const location = useLocation();
     const isFullWidth = location.pathname.startsWith("/mapping") || location.pathname.startsWith("/dss");
+    const [booted, setBooted] = useState(false);
+    const handleBootComplete = useCallback(() => setBooted(true), []);
 
     return (
-        <div className="min-h-dvh flex flex-col bg-gray-50">
-            {/* Utility strip */}
-            <TopStrip />
+        <>
+            <AnimatePresence>
+                {!booted && <BootOverlay onComplete={handleBootComplete} />}
+            </AnimatePresence>
 
-            {/* Moving disclaimer banner */}
-            <div className="w-full bg-red-600 text-white">
-                <div className="relative overflow-hidden">
-                    <div className="app-home-marquee py-2">
-                        <span className="px-4">
-                            This website does not belong to any government organization. Smart Property Identification  by Yantrikaran Innovations Pvt. Ltd.
-                        </span>
-                    </div>
-                </div>
-            </div>
+            <div className="app-layout">
+                {/* Primary navigation (Dronacharya style) */}
+                <Navbar />
 
-            {/* Ministry branding header */}
-            <BrandingHeader />
-
-            {/* Primary navigation */}
-            <Navbar />
-
-            {/* Main content */}
-            {isFullWidth ? (
-                <main id="main" className="flex-1" style={{ minHeight: "calc(100dvh - 260px)" }}>
-                    <Routes>
-                        <Route path="/mapping" element={<Mapping />} />
-                        <Route path="/dss" element={<DSS />} />
-                    </Routes>
-                </main>
-            ) : (
-                <main id="main" className="flex-1">
-                    <section className="max-w-7xl mx-auto px-3 sm:px-4 py-6 sm:py-8 w-full">
+                {/* Main content */}
+                {isFullWidth ? (
+                    <main id="main" className="app-main-fullscreen">
                         <Routes>
-                            <Route path="/" element={<Home />} />
-                            <Route path="/upload" element={<Upload />} />
-                            <Route path="/datalogs" element={<DataLogs />} />
+                            <Route path="/mapping" element={<Mapping />} />
+                            <Route path="/dss" element={<DSS />} />
                         </Routes>
-                    </section>
-                </main>
-            )}
-
-            {/* Footer */}
-            {!isFullWidth && <Footer />}
-
-            {/* Bottom disclaimer */}
-            <div className="w-full bg-red-600 text-white mt-0">
-                <div className="relative overflow-hidden">
-                    <div className="app-home-marquee py-2">
-                        <span className="px-4">
-                            This website does not belong to any government organization. Smart Property Identification by Yantrikaran Innovations Pvt. Ltd.
-                        </span>
-                    </div>
-                </div>
+                    </main>
+                ) : (
+                    <main id="main" className="app-main-content">
+                        <section className="content-container">
+                            <Routes>
+                                <Route path="/" element={<Home />} />
+                                <Route path="/upload" element={<Upload />} />
+                                <Route path="/datalogs" element={<DataLogs />} />
+                            </Routes>
+                        </section>
+                    </main>
+                )}
             </div>
-        </div>
+        </>
     );
 }
 

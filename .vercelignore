@@ -1,0 +1,5 @@
+backend/
+datasets/
+__pycache__/
+*.gpkg
+*.tif

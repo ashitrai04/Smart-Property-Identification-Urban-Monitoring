@@ -323,9 +323,9 @@ export default function Upload() {
 
     return (
         <div className="space-y-6">
-            <div className="bg-white rounded-lg border border-gray-200 p-4 sm:p-5 shadow-sm">
-                <h2 className="text-lg sm:text-xl font-bold text-gray-900">Upload & Analysis</h2>
-                <p className="text-sm text-gray-500 mt-1">
+            <div className="bg-[var(--bg-card)] backdrop-blur-md rounded-lg border border-[var(--border-default)] p-4 sm:p-5 shadow-sm">
+                <h2 className="text-lg sm:text-xl font-bold text-[var(--text-primary)]">Upload & Analysis</h2>
+                <p className="text-sm text-[var(--text-muted)] mt-1">
                     Upload satellite/drone images for AI segmentation, change detection, or boundary analysis
                 </p>
             </div>
@@ -343,18 +343,18 @@ export default function Upload() {
                                     onDrop={e => { e.preventDefault(); e.stopPropagation(); const f = e.dataTransfer.files[0]; if (f) setCdPastFile(f); }}
                                     onDragOver={e => { e.preventDefault(); e.stopPropagation(); }}
                                     onClick={() => document.getElementById("cd-past-input").click()}
-                                    className={`bg-white border-2 border-dashed rounded-lg p-6 text-center cursor-pointer transition-colors ${cdPastFile ? "border-green-300 bg-green-50/30" : "border-gray-300 hover:border-[#0B5FA5] hover:bg-blue-50/30"}`}
+                                    className={`bg-[var(--bg-card)] backdrop-blur-md border-2 border-dashed rounded-lg p-6 text-center cursor-pointer transition-colors ${cdPastFile ? "border-green-300 bg-green-50/30" : "border-[var(--border-default)] hover:border-[var(--accent)] hover:bg-[var(--accent-dim)]"}`}
                                 >
                                     <div className="text-3xl mb-2">🕒</div>
-                                    <p className="text-xs font-medium text-gray-900">PAST Image</p>
-                                    <p className="text-[10px] text-gray-400 mt-1">Upload the older satellite image</p>
+                                    <p className="text-xs font-medium text-[var(--text-primary)]">PAST Image</p>
+                                    <p className="text-[10px] text-[var(--text-muted)] mt-1">Upload the older satellite image</p>
                                     {cdPastFile ? (
                                         <div className="mt-2 flex items-center justify-center gap-1">
                                             <span className="text-[10px] text-green-700 font-medium truncate max-w-[140px]">✓ {cdPastFile.name}</span>
                                             <button onClick={e => { e.stopPropagation(); setCdPastFile(null); }} className="text-red-400 hover:text-red-600 text-xs ml-1">✕</button>
                                         </div>
                                     ) : (
-                                        <p className="text-[10px] text-gray-400 mt-2">Click or drag & drop</p>
+                                        <p className="text-[10px] text-[var(--text-muted)] mt-2">Click or drag & drop</p>
                                     )}
                                     <input id="cd-past-input" type="file" accept=".jpg,.jpeg,.png,.tif,.tiff,.webp,.bmp"
                                         onChange={e => { if (e.target.files[0]) setCdPastFile(e.target.files[0]); }} className="hidden" />
@@ -365,18 +365,18 @@ export default function Upload() {
                                     onDrop={e => { e.preventDefault(); e.stopPropagation(); const f = e.dataTransfer.files[0]; if (f) setCdPresentFile(f); }}
                                     onDragOver={e => { e.preventDefault(); e.stopPropagation(); }}
                                     onClick={() => document.getElementById("cd-present-input").click()}
-                                    className={`bg-white border-2 border-dashed rounded-lg p-6 text-center cursor-pointer transition-colors ${cdPresentFile ? "border-green-300 bg-green-50/30" : "border-gray-300 hover:border-[#0B5FA5] hover:bg-blue-50/30"}`}
+                                    className={`bg-[var(--bg-card)] backdrop-blur-md border-2 border-dashed rounded-lg p-6 text-center cursor-pointer transition-colors ${cdPresentFile ? "border-green-300 bg-green-50/30" : "border-[var(--border-default)] hover:border-[var(--accent)] hover:bg-[var(--accent-dim)]"}`}
                                 >
                                     <div className="text-3xl mb-2">📍</div>
-                                    <p className="text-xs font-medium text-gray-900">PRESENT Image</p>
-                                    <p className="text-[10px] text-gray-400 mt-1">Upload the recent satellite image</p>
+                                    <p className="text-xs font-medium text-[var(--text-primary)]">PRESENT Image</p>
+                                    <p className="text-[10px] text-[var(--text-muted)] mt-1">Upload the recent satellite image</p>
                                     {cdPresentFile ? (
                                         <div className="mt-2 flex items-center justify-center gap-1">
                                             <span className="text-[10px] text-green-700 font-medium truncate max-w-[140px]">✓ {cdPresentFile.name}</span>
                                             <button onClick={e => { e.stopPropagation(); setCdPresentFile(null); }} className="text-red-400 hover:text-red-600 text-xs ml-1">✕</button>
                                         </div>
                                     ) : (
-                                        <p className="text-[10px] text-gray-400 mt-2">Click or drag & drop</p>
+                                        <p className="text-[10px] text-[var(--text-muted)] mt-2">Click or drag & drop</p>
                                     )}
                                     <input id="cd-present-input" type="file" accept=".jpg,.jpeg,.png,.tif,.tiff,.webp,.bmp"
                                         onChange={e => { if (e.target.files[0]) setCdPresentFile(e.target.files[0]); }} className="hidden" />
@@ -384,26 +384,26 @@ export default function Upload() {
                             </div>
 
                             {/* Sensitivity controls */}
-                            <div className="bg-white rounded-lg border border-gray-200 p-4 shadow-sm">
-                                <p className="text-xs font-semibold text-gray-900 mb-3">Detection Sensitivity</p>
+                            <div className="bg-[var(--bg-card)] backdrop-blur-md rounded-lg border border-[var(--border-default)] p-4 shadow-sm">
+                                <p className="text-xs font-semibold text-[var(--text-primary)] mb-3">Detection Sensitivity</p>
                                 <div className="grid grid-cols-2 gap-4">
                                     <div>
-                                        <label className="text-[10px] text-gray-500 font-medium block mb-1">
-                                            Volume Knob: <span className="text-gray-900">{cdVolumeKnob.toFixed(1)}</span>
+                                        <label className="text-[10px] text-[var(--text-muted)] font-medium block mb-1">
+                                            Volume Knob: <span className="text-[var(--text-primary)]">{cdVolumeKnob.toFixed(1)}</span>
                                         </label>
                                         <input type="range" min="1" max="20" step="0.5" value={cdVolumeKnob}
                                             onChange={e => setCdVolumeKnob(parseFloat(e.target.value))}
-                                            className="w-full h-1.5 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-[#0B5FA5]" />
-                                        <p className="text-[9px] text-gray-400 mt-0.5">Higher = more sensitive to small changes</p>
+                                            className="w-full h-1.5 bg-[var(--bg-tertiary)] rounded-lg appearance-none cursor-pointer accent-[var(--accent)]" />
+                                        <p className="text-[9px] text-[var(--text-muted)] mt-0.5">Higher = more sensitive to small changes</p>
                                     </div>
                                     <div>
-                                        <label className="text-[10px] text-gray-500 font-medium block mb-1">
-                                            Threshold: <span className="text-gray-900">{cdThreshold.toFixed(2)}</span>
+                                        <label className="text-[10px] text-[var(--text-muted)] font-medium block mb-1">
+                                            Threshold: <span className="text-[var(--text-primary)]">{cdThreshold.toFixed(2)}</span>
                                         </label>
                                         <input type="range" min="0.5" max="1.0" step="0.01" value={cdThreshold}
                                             onChange={e => setCdThreshold(parseFloat(e.target.value))}
-                                            className="w-full h-1.5 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-[#0B5FA5]" />
-                                        <p className="text-[9px] text-gray-400 mt-0.5">Lower = detects more subtle changes</p>
+                                            className="w-full h-1.5 bg-[var(--bg-tertiary)] rounded-lg appearance-none cursor-pointer accent-[var(--accent)]" />
+                                        <p className="text-[9px] text-[var(--text-muted)] mt-0.5">Lower = detects more subtle changes</p>
                                     </div>
                                 </div>
                             </div>
@@ -413,15 +413,15 @@ export default function Upload() {
                         <div
                             onDrop={handleDrop}
                             onDragOver={e => { e.preventDefault(); e.stopPropagation(); }}
-                            className="bg-white border-2 border-dashed border-gray-300 rounded-lg p-8 text-center hover:border-[#0B5FA5] hover:bg-blue-50/30 transition-colors cursor-pointer"
+                            className="bg-[var(--bg-card)] backdrop-blur-md border-2 border-dashed border-[var(--border-default)] rounded-lg p-8 text-center hover:border-[var(--accent)] hover:bg-[var(--accent-dim)] transition-colors cursor-pointer"
                             onClick={() => document.getElementById("file-input").click()}
                         >
                             <div className="text-4xl mb-3">📁</div>
-                            <p className="text-sm font-medium text-gray-900">Drag & drop files here</p>
-                            <p className="text-xs text-gray-400 mt-1">or click to browse • multiple files supported</p>
-                            <p className="text-[10px] text-gray-400 mt-2">Accepts: .jpg, .png, .tif, .tiff, .shp, .shx, .dbf, .prj, .geojson, .zip</p>
+                            <p className="text-sm font-medium text-[var(--text-primary)]">Drag & drop files here</p>
+                            <p className="text-xs text-[var(--text-muted)] mt-1">or click to browse • multiple files supported</p>
+                            <p className="text-[10px] text-[var(--text-muted)] mt-2">Accepts: .jpg, .png, .tif, .tiff, .shp, .shx, .dbf, .prj, .geojson, .zip</p>
                             {analysisType === "segment" && (
-                                <p className="text-[10px] text-[#0B5FA5] mt-1 font-medium">🧠 Upload multiple satellite tiles — each will be processed sequentially (max 4.5 MB each)</p>
+                                <p className="text-[10px] text-[var(--accent)] mt-1 font-medium">🧠 Upload multiple satellite tiles — each will be processed sequentially (max 4.5 MB each)</p>
                             )}
                             <input id="file-input" type="file" multiple accept={ACCEPTED} onChange={handleFileInput} className="hidden" />
                         </div>
@@ -429,18 +429,18 @@ export default function Upload() {
 
                     {/* File list (for non-change detection) */}
                     {analysisType !== "change" && files.length > 0 && (
-                        <div className="bg-white rounded-lg border border-gray-200 p-4 shadow-sm">
+                        <div className="bg-[var(--bg-card)] backdrop-blur-md rounded-lg border border-[var(--border-default)] p-4 shadow-sm">
                             <div className="flex items-center justify-between mb-3">
-                                <h3 className="text-sm font-semibold text-gray-900">Selected Files ({files.length})</h3>
+                                <h3 className="text-sm font-semibold text-[var(--text-primary)]">Selected Files ({files.length})</h3>
                                 <button onClick={() => setFiles([])} className="text-[10px] text-red-400 hover:text-red-600">Clear All</button>
                             </div>
                             <div className="space-y-2 max-h-40 overflow-y-auto">
                                 {files.map((f, i) => (
-                                    <div key={i} className="flex items-center justify-between bg-gray-50 rounded-lg px-3 py-2">
+                                    <div key={i} className="flex items-center justify-between bg-[var(--bg-tertiary)] rounded-lg px-3 py-2">
                                         <div className="flex items-center gap-2 min-w-0">
                                             <span className="text-sm">{/\.(jpg|jpeg|png)$/i.test(f.name) ? "🖼️" : "📄"}</span>
-                                            <span className="text-xs font-medium text-gray-900 truncate">{f.name}</span>
-                                            <span className="text-[10px] text-gray-400">{(f.size / 1024).toFixed(1)} KB</span>
+                                            <span className="text-xs font-medium text-[var(--text-primary)] truncate">{f.name}</span>
+                                            <span className="text-[10px] text-[var(--text-muted)]">{(f.size / 1024).toFixed(1)} KB</span>
                                             {f.size > MAX_FILE_SIZE && <span className="text-[10px] text-red-500 font-medium">⚠ Too large</span>}
                                         </div>
                                         <button onClick={() => removeFile(i)} className="text-red-400 hover:text-red-600 text-xs">✕</button>
@@ -452,28 +452,28 @@ export default function Upload() {
 
                     {/* Error */}
                     {error && (
-                        <div className="bg-red-50 border border-red-200 rounded-lg p-4 shadow-sm">
+                        <div className="bg-red-900/30 border border-red-500/40 rounded-lg p-4 shadow-sm">
                             <div className="flex items-center gap-2 mb-1">
                                 <span className="text-lg">❌</span>
-                                <h3 className="text-sm font-semibold text-red-700">Error</h3>
+                                <h3 className="text-sm font-semibold text-red-400">Error</h3>
                             </div>
-                            <p className="text-xs text-red-600">{error}</p>
+                            <p className="text-xs text-red-300">{error}</p>
                         </div>
                     )}
 
                     {/* Dummy result for non-segment/non-change */}
                     {dummyResult && (
-                        <div className="bg-white rounded-lg border border-green-200 p-4 shadow-sm">
+                        <div className="bg-[var(--bg-card)] backdrop-blur-md rounded-lg border border-green-200 p-4 shadow-sm">
                             <div className="flex items-center gap-2 mb-3">
                                 <span className="text-lg">✅</span>
                                 <h3 className="text-sm font-semibold text-green-700">Analysis Complete</h3>
                             </div>
-                            <p className="text-xs text-gray-600 mb-3">{dummyResult.summary}</p>
+                            <p className="text-xs text-[var(--text-muted)] mb-3">{dummyResult.summary}</p>
                             <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                                 {Object.entries(dummyResult.details).map(([k, v]) => (
-                                    <div key={k} className="bg-gray-50 rounded-lg p-2">
-                                        <p className="text-[10px] text-gray-400">{k}</p>
-                                        <p className="text-sm font-bold text-gray-900">{v}</p>
+                                    <div key={k} className="bg-[var(--bg-tertiary)] rounded-lg p-2">
+                                        <p className="text-[10px] text-[var(--text-muted)]">{k}</p>
+                                        <p className="text-sm font-bold text-[var(--text-primary)]">{v}</p>
                                     </div>
                                 ))}
                             </div>
@@ -485,7 +485,7 @@ export default function Upload() {
                         <div className="space-y-4">
                             <div className="flex items-center justify-between">
                                 <div className="flex items-center gap-2">
-                                    <h3 className="text-sm font-semibold text-gray-900">🔍 Change Detection Results</h3>
+                                    <h3 className="text-sm font-semibold text-[var(--text-primary)]">🔍 Change Detection Results</h3>
                                     {cdResult.status === "processing" && (
                                         <span className="text-[10px] bg-yellow-100 text-yellow-700 px-2 py-0.5 rounded-full animate-pulse">Processing...</span>
                                     )}
@@ -496,12 +496,12 @@ export default function Upload() {
                                         <span className="text-[10px] bg-red-100 text-red-700 px-2 py-0.5 rounded-full">✕ Failed</span>
                                     )}
                                 </div>
-                                <button onClick={clearResults} className="text-[10px] text-gray-400 hover:text-red-500">Clear Results</button>
+                                <button onClick={clearResults} className="text-[10px] text-[var(--text-muted)] hover:text-red-500">Clear Results</button>
                             </div>
 
                             {/* Color legend */}
-                            <div className="bg-white rounded-lg border border-gray-200 p-3 shadow-sm">
-                                <p className="text-[10px] text-gray-400 font-medium mb-2">CHANGE DETECTION LEGEND</p>
+                            <div className="bg-[var(--bg-card)] backdrop-blur-md rounded-lg border border-[var(--border-default)] p-3 shadow-sm">
+                                <p className="text-[10px] text-[var(--text-muted)] font-medium mb-2">CHANGE DETECTION LEGEND</p>
                                 <div className="flex flex-wrap gap-3">
                                     {CHANGE_LEGEND.map(l => (
                                         <div key={l.label} className="flex items-center gap-1.5">
@@ -509,48 +509,48 @@ export default function Upload() {
                                                 background: l.border ? "transparent" : l.color,
                                                 border: l.border ? "2px solid #9CA3AF" : `1px solid ${l.color}80`,
                                             }} />
-                                            <span className="text-xs text-gray-700">{l.label}</span>
+                                            <span className="text-xs text-[var(--text-secondary)]">{l.label}</span>
                                         </div>
                                     ))}
                                 </div>
                             </div>
 
                             {/* Three-column display: Past | Present | Change Map */}
-                            <div className="bg-white rounded-lg border border-gray-200 p-4 shadow-sm">
+                            <div className="bg-[var(--bg-card)] backdrop-blur-md rounded-lg border border-[var(--border-default)] p-4 shadow-sm">
                                 <div className="grid grid-cols-3 gap-3">
                                     {/* Past */}
                                     <div>
-                                        <p className="text-[10px] text-gray-400 mb-1 font-medium">🕒 PAST Image</p>
+                                        <p className="text-[10px] text-[var(--text-muted)] mb-1 font-medium">🕒 PAST Image</p>
                                         {cdResult.pastUrl ? (
-                                            <img src={cdResult.pastUrl} alt="Past satellite" className="rounded-lg border border-gray-200 w-full object-contain max-h-[350px] bg-gray-100" />
+                                            <img src={cdResult.pastUrl} alt="Past satellite" className="rounded-lg border border-[var(--border-default)] w-full object-contain max-h-[350px] bg-[var(--bg-secondary)]" />
                                         ) : (
-                                            <div className="rounded-lg border border-gray-200 w-full h-[200px] bg-gray-50 flex items-center justify-center">
-                                                <span className="text-xs text-gray-400">No preview</span>
+                                            <div className="rounded-lg border border-[var(--border-default)] w-full h-[200px] bg-[var(--bg-tertiary)] flex items-center justify-center">
+                                                <span className="text-xs text-[var(--text-muted)]">No preview</span>
                                             </div>
                                         )}
                                     </div>
                                     {/* Present */}
                                     <div>
-                                        <p className="text-[10px] text-gray-400 mb-1 font-medium">📍 PRESENT Image</p>
+                                        <p className="text-[10px] text-[var(--text-muted)] mb-1 font-medium">📍 PRESENT Image</p>
                                         {cdResult.presentUrl ? (
-                                            <img src={cdResult.presentUrl} alt="Present satellite" className="rounded-lg border border-gray-200 w-full object-contain max-h-[350px] bg-gray-100" />
+                                            <img src={cdResult.presentUrl} alt="Present satellite" className="rounded-lg border border-[var(--border-default)] w-full object-contain max-h-[350px] bg-[var(--bg-secondary)]" />
                                         ) : (
-                                            <div className="rounded-lg border border-gray-200 w-full h-[200px] bg-gray-50 flex items-center justify-center">
-                                                <span className="text-xs text-gray-400">No preview</span>
+                                            <div className="rounded-lg border border-[var(--border-default)] w-full h-[200px] bg-[var(--bg-tertiary)] flex items-center justify-center">
+                                                <span className="text-xs text-[var(--text-muted)]">No preview</span>
                                             </div>
                                         )}
                                     </div>
                                     {/* Change Map Output */}
                                     <div>
-                                        <p className="text-[10px] text-gray-400 mb-1 font-medium">🔥 CHANGE MAP — AI Output</p>
+                                        <p className="text-[10px] text-[var(--text-muted)] mb-1 font-medium">🔥 CHANGE MAP — AI Output</p>
                                         {cdResult.status === "processing" && (
-                                            <div className="rounded-lg border border-gray-200 w-full h-[200px] bg-gray-50 flex flex-col items-center justify-center gap-2">
-                                                <div className="w-6 h-6 border-2 border-[#0B5FA5]/30 border-t-[#0B5FA5] rounded-full animate-spin" />
-                                                <span className="text-xs text-gray-400">Detecting changes...</span>
+                                            <div className="rounded-lg border border-[var(--border-default)] w-full h-[200px] bg-[var(--bg-tertiary)] flex flex-col items-center justify-center gap-2">
+                                                <div className="w-6 h-6 border-2 border-[var(--accent)]/30 border-t-[#0B5FA5] rounded-full animate-spin" />
+                                                <span className="text-xs text-[var(--text-muted)]">Detecting changes...</span>
                                             </div>
                                         )}
                                         {cdResult.status === "done" && cdResult.changeUrl && (
-                                            <img src={cdResult.changeUrl} alt="Change detection output" className="rounded-lg border border-[#0B5FA5]/20 w-full object-contain max-h-[350px] bg-gray-100" />
+                                            <img src={cdResult.changeUrl} alt="Change detection output" className="rounded-lg border border-[var(--accent)]/20 w-full object-contain max-h-[350px] bg-[var(--bg-secondary)]" />
                                         )}
                                         {cdResult.status === "error" && (
                                             <div className="rounded-lg border border-red-200 w-full h-[200px] bg-red-50 flex flex-col items-center justify-center gap-1">
@@ -565,7 +565,7 @@ export default function Upload() {
                                 {cdResult.status === "done" && cdResult.changeUrl && (
                                     <div className="mt-3 flex justify-end">
                                         <a href={cdResult.changeUrl} download="ai_change_detection_output.png"
-                                            className="text-xs text-[#0B5FA5] hover:text-[#094d87] font-medium flex items-center gap-1">
+                                            className="text-xs text-[var(--accent)] hover:text-[#094d87] font-medium flex items-center gap-1">
                                             📥 Download Change Map
                                         </a>
                                     </div>
@@ -579,22 +579,22 @@ export default function Upload() {
                         <div className="space-y-4">
                             <div className="flex items-center justify-between">
                                 <div className="flex items-center gap-2">
-                                    <h3 className="text-sm font-semibold text-gray-900">🧠 Segmentation Results</h3>
-                                    <span className="text-[10px] bg-[#0B5FA5] text-white px-2 py-0.5 rounded-full">
+                                    <h3 className="text-sm font-semibold text-[var(--text-primary)]">🧠 Segmentation Results</h3>
+                                    <span className="text-[10px] bg-[var(--accent)] text-white px-2 py-0.5 rounded-full">
                                         {completedCount}/{totalImages} done
                                     </span>
                                 </div>
-                                <button onClick={clearResults} className="text-[10px] text-gray-400 hover:text-red-500">Clear Results</button>
+                                <button onClick={clearResults} className="text-[10px] text-[var(--text-muted)] hover:text-red-500">Clear Results</button>
                             </div>
 
                             {/* Color legend */}
-                            <div className="bg-white rounded-lg border border-gray-200 p-3 shadow-sm">
-                                <p className="text-[10px] text-gray-400 font-medium mb-2">MASK COLOR LEGEND</p>
+                            <div className="bg-[var(--bg-card)] backdrop-blur-md rounded-lg border border-[var(--border-default)] p-3 shadow-sm">
+                                <p className="text-[10px] text-[var(--text-muted)] font-medium mb-2">MASK COLOR LEGEND</p>
                                 <div className="flex flex-wrap gap-3">
                                     {MASK_LEGEND.map(l => (
                                         <div key={l.label} className="flex items-center gap-1.5">
                                             <span className="w-3 h-3 rounded-sm shrink-0 border border-black/10" style={{ background: l.color }} />
-                                            <span className="text-xs text-gray-700">{l.label}</span>
+                                            <span className="text-xs text-[var(--text-secondary)]">{l.label}</span>
                                         </div>
                                     ))}
                                 </div>
@@ -602,10 +602,10 @@ export default function Upload() {
 
                             {/* Each result: side-by-side input + mask */}
                             {segResults.map((r, idx) => (
-                                <div key={idx} className="bg-white rounded-lg border border-gray-200 p-4 shadow-sm">
+                                <div key={idx} className="bg-[var(--bg-card)] backdrop-blur-md rounded-lg border border-[var(--border-default)] p-4 shadow-sm">
                                     <div className="flex items-center justify-between mb-3">
                                         <div className="flex items-center gap-2">
-                                            <span className="text-xs font-medium text-gray-900">📸 {r.inputName}</span>
+                                            <span className="text-xs font-medium text-[var(--text-primary)]">📸 {r.inputName}</span>
                                             {r.status === "processing" && (
                                                 <span className="text-[10px] bg-yellow-100 text-yellow-700 px-2 py-0.5 rounded-full animate-pulse">Processing...</span>
                                             )}
@@ -617,7 +617,7 @@ export default function Upload() {
                                             )}
                                         </div>
                                         {r.maskUrl && (
-                                            <a href={r.maskUrl} download={`mask_${r.inputName}`} className="text-[10px] text-[#0B5FA5] hover:text-[#094d87] font-medium">
+                                            <a href={r.maskUrl} download={`mask_${r.inputName}`} className="text-[10px] text-[var(--accent)] hover:text-[#094d87] font-medium">
                                                 📥 Download
                                             </a>
                                         )}
@@ -625,28 +625,28 @@ export default function Upload() {
 
                                     <div className="grid grid-cols-2 gap-3">
                                         <div>
-                                            <p className="text-[10px] text-gray-400 mb-1 font-medium">INPUT — Satellite Image</p>
+                                            <p className="text-[10px] text-[var(--text-muted)] mb-1 font-medium">INPUT — Satellite Image</p>
                                             {r.inputUrl ? (
-                                                <img src={r.inputUrl} alt={`Input: ${r.inputName}`} className="rounded-lg border border-gray-200 w-full object-contain max-h-[350px] bg-gray-100" />
+                                                <img src={r.inputUrl} alt={`Input: ${r.inputName}`} className="rounded-lg border border-[var(--border-default)] w-full object-contain max-h-[350px] bg-[var(--bg-secondary)]" />
                                             ) : (
-                                                <div className="rounded-lg border border-gray-200 w-full h-[200px] bg-gray-50 flex flex-col items-center justify-center gap-1">
+                                                <div className="rounded-lg border border-[var(--border-default)] w-full h-[200px] bg-[var(--bg-tertiary)] flex flex-col items-center justify-center gap-1">
                                                     <span className="text-3xl">🖼️</span>
-                                                    <span className="text-xs text-gray-500 font-medium">{r.inputName}</span>
-                                                    <span className="text-[10px] text-gray-400">Preview not available for this format</span>
+                                                    <span className="text-xs text-[var(--text-muted)] font-medium">{r.inputName}</span>
+                                                    <span className="text-[10px] text-[var(--text-muted)]">Preview not available for this format</span>
                                                 </div>
                                             )}
                                         </div>
                                         {/* Output */}
                                         <div>
-                                            <p className="text-[10px] text-gray-400 mb-1 font-medium">OUTPUT — AI Segmentation Mask</p>
+                                            <p className="text-[10px] text-[var(--text-muted)] mb-1 font-medium">OUTPUT — AI Segmentation Mask</p>
                                             {r.status === "processing" && (
-                                                <div className="rounded-lg border border-gray-200 w-full h-[200px] bg-gray-50 flex flex-col items-center justify-center gap-2">
-                                                    <div className="w-6 h-6 border-2 border-[#0B5FA5]/30 border-t-[#0B5FA5] rounded-full animate-spin" />
-                                                    <span className="text-xs text-gray-400">Segmenting...</span>
+                                                <div className="rounded-lg border border-[var(--border-default)] w-full h-[200px] bg-[var(--bg-tertiary)] flex flex-col items-center justify-center gap-2">
+                                                    <div className="w-6 h-6 border-2 border-[var(--accent)]/30 border-t-[#0B5FA5] rounded-full animate-spin" />
+                                                    <span className="text-xs text-[var(--text-muted)]">Segmenting...</span>
                                                 </div>
                                             )}
                                             {r.status === "done" && r.maskUrl && (
-                                                <img src={r.maskUrl} alt={`Mask: ${r.inputName}`} className="rounded-lg border border-[#0B5FA5]/20 w-full object-contain max-h-[350px] bg-gray-100" />
+                                                <img src={r.maskUrl} alt={`Mask: ${r.inputName}`} className="rounded-lg border border-[var(--accent)]/20 w-full object-contain max-h-[350px] bg-[var(--bg-secondary)]" />
                                             )}
                                             {r.status === "error" && (
                                                 <div className="rounded-lg border border-red-200 w-full h-[200px] bg-red-50 flex flex-col items-center justify-center gap-1">
@@ -664,18 +664,18 @@ export default function Upload() {
 
                 {/* Sidebar */}
                 <div className="space-y-4">
-                    <div className="bg-white rounded-lg border border-gray-200 p-4 shadow-sm">
-                        <h3 className="text-sm font-semibold text-gray-900 mb-3">Analysis Type</h3>
-                        <div className="space-y-2">
+                    <div className="bg-[var(--bg-card)] backdrop-blur-md rounded-lg border border-[var(--border-default)] p-5 shadow-sm">
+                        <h3 className="text-sm font-semibold text-[var(--text-primary)] mb-4">Analysis Type</h3>
+                        <div className="space-y-3">
                             {ANALYSIS_TYPES.map(at => (
                                 <label
                                     key={at.id}
-                                    className={`block p-3 rounded-lg border cursor-pointer transition-colors ${analysisType === at.id ? "border-[#0B5FA5] bg-blue-50/40" : "border-gray-200 hover:border-gray-300"}`}
+                                    className={`block p-4 rounded-lg border cursor-pointer transition-colors ${analysisType === at.id ? "border-[var(--accent)] bg-[var(--accent-dim)]/40" : "border-[var(--border-default)] hover:border-[var(--border-default)]"}`}
                                 >
                                     <input type="radio" name="analysis" value={at.id} checked={analysisType === at.id}
                                         onChange={() => { setAnalysisType(at.id); clearResults(); }} className="sr-only" />
-                                    <p className="text-xs font-medium text-gray-900">{at.label}</p>
-                                    <p className="text-[10px] text-gray-400 mt-0.5">{at.desc}</p>
+                                    <p className="text-sm font-medium text-[var(--text-primary)]">{at.label}</p>
+                                    <p className="text-xs text-[var(--text-muted)] mt-1">{at.desc}</p>
                                 </label>
                             ))}
                         </div>
@@ -684,7 +684,7 @@ export default function Upload() {
                     <button
                         onClick={handleSubmit}
                         disabled={!canSubmit}
-                        className={`w-full py-2.5 rounded-lg text-sm font-semibold transition-colors ${canSubmit ? "bg-[#0B5FA5] text-white hover:bg-[#094d87]" : "bg-gray-200 text-gray-400 cursor-not-allowed"}`}
+                        className={`w-full py-2.5 rounded-lg text-sm font-semibold transition-colors ${canSubmit ? "bg-[var(--accent)] text-white hover:bg-[#094d87]" : "bg-[var(--bg-tertiary)] text-[var(--text-muted)] cursor-not-allowed"}`}
                     >
                         {processing
                             ? progress || "Processing..."
@@ -703,37 +703,39 @@ export default function Upload() {
                     )}
 
                     {analysisType === "segment" ? (
-                        <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 space-y-2">
-                            <p className="text-[10px] text-blue-700 font-medium">🧠 AI Segmentation</p>
-                            <p className="text-[10px] text-blue-600">
+                        <div className="bg-[var(--bg-card)] border border-[var(--accent)]/30 rounded-lg p-4 space-y-3">
+                            <p className="text-xs text-[var(--accent)] font-medium">🧠 AI Segmentation</p>
+                            <p className="text-xs text-[var(--text-muted)] leading-relaxed">
                                 Sends each image to the Unified Cartographer model on HuggingFace. Images are processed one at a time. Max 4.5 MB per file.
                             </p>
-                            <div className="border-t border-blue-200 pt-2">
-                                <p className="text-[10px] text-blue-700 font-medium mb-1">Color Legend:</p>
+                            <div className="border-t border-[var(--border-default)] pt-3">
+                                <p className="text-xs text-[var(--text-secondary)] font-medium mb-2">Color Legend:</p>
+                                <div className="space-y-1.5">
                                 {MASK_LEGEND.map(l => (
-                                    <div key={l.label} className="flex items-center gap-1.5 mb-0.5">
-                                        <span className="w-2.5 h-2.5 rounded-sm" style={{ background: l.color }} />
-                                        <span className="text-[10px] text-blue-600">{l.label}</span>
+                                    <div key={l.label} className="flex items-center gap-2.5">
+                                        <span className="w-3 h-3 rounded-sm shrink-0" style={{ background: l.color }} />
+                                        <span className="text-xs text-[var(--text-muted)]">{l.label}</span>
                                     </div>
                                 ))}
+                                </div>
                             </div>
                         </div>
                     ) : analysisType === "change" ? (
-                        <div className="bg-orange-50 border border-orange-200 rounded-lg p-3 space-y-2">
-                            <p className="text-[10px] text-orange-700 font-medium">🔍 Change Detection</p>
-                            <p className="text-[10px] text-orange-600">
+                        <div className="bg-[var(--bg-card)] border border-orange-500/30 rounded-lg p-4 space-y-3">
+                            <p className="text-xs text-orange-400 font-medium">🔍 Change Detection</p>
+                            <p className="text-xs text-[var(--text-muted)] leading-relaxed">
                                 Upload two images of the same area from different time periods. The AI model (Urban Change Detector) compares them semantically to detect construction, demolition, and land use changes.
                             </p>
-                            <div className="border-t border-orange-200 pt-2">
-                                <p className="text-[10px] text-orange-700 font-medium mb-1">Parameters:</p>
-                                <p className="text-[10px] text-orange-600">• <strong>Volume Knob</strong>: Higher = more sensitive</p>
-                                <p className="text-[10px] text-orange-600">• <strong>Threshold</strong>: Lower = detects subtle changes</p>
+                            <div className="border-t border-[var(--border-default)] pt-3">
+                                <p className="text-xs text-[var(--text-secondary)] font-medium mb-1.5">Parameters:</p>
+                                <p className="text-xs text-[var(--text-muted)] leading-relaxed">• <strong>Volume Knob</strong>: Higher = more sensitive</p>
+                                <p className="text-xs text-[var(--text-muted)] leading-relaxed">• <strong>Threshold</strong>: Lower = detects subtle changes</p>
                             </div>
                         </div>
                     ) : (
-                        <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3">
-                            <p className="text-[10px] text-yellow-700 font-medium">⚡ Backend Pipeline</p>
-                            <p className="text-[10px] text-yellow-600 mt-1">
+                        <div className="bg-[var(--bg-card)] border border-yellow-500/30 rounded-lg p-4">
+                            <p className="text-xs text-yellow-400 font-medium">⚡ Backend Pipeline</p>
+                            <p className="text-xs text-[var(--text-muted)] mt-1.5 leading-relaxed">
                                 Analysis runs on HuggingFace Spaces using Unified Cartographer & Urban Change Detector models.
                             </p>
                         </div>

@@ -17,7 +17,7 @@ const LOGS_DATA = [
 
 const DISTRICTS_FILTER = ["All", "Visakhapatnam", "Vijayawada", "Guntur", "Anantapur", "Nellore"];
 const TYPES_FILTER = ["All", "Change Detection", "Property Survey", "Mask Update", "New Construction", "Monthly Analysis", "Water Body Change", "Land Use Change"];
-const STATUS_COLORS = { "Completed": "bg-green-100 text-green-700", "Review": "bg-yellow-100 text-yellow-700", "Verified": "bg-blue-100 text-blue-700" };
+const STATUS_COLORS = { "Completed": "bg-green-500/20 text-green-400", "Review": "bg-yellow-500/20 text-yellow-400", "Verified": "bg-blue-500/20 text-blue-400" };
 
 export default function DataLogs() {
     const [distFilter, setDistFilter] = useState("All");
@@ -45,12 +45,12 @@ export default function DataLogs() {
 
     return (
         <div className="space-y-6">
-            <div className="bg-white rounded-lg border border-gray-200 p-4 sm:p-5 shadow-sm flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+            <div className="bg-[var(--bg-card)] backdrop-blur-md rounded-lg border border-[var(--border-default)] p-4 sm:p-5 shadow-sm flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
                 <div>
-                    <h2 className="text-lg sm:text-xl font-bold text-gray-900">Data Logs</h2>
-                    <p className="text-sm text-gray-500 mt-1">Change detection and analysis history</p>
+                    <h2 className="text-lg sm:text-xl font-bold text-[var(--text-primary)]">Data Logs</h2>
+                    <p className="text-sm text-[var(--text-muted)] mt-1">Change detection and analysis history</p>
                 </div>
-                <button onClick={exportCSV} className="inline-flex items-center gap-1.5 px-4 py-2 bg-[#0B5FA5] text-white text-sm font-medium rounded-lg hover:bg-[#094d87] transition-colors">
+                <button onClick={exportCSV} className="inline-flex items-center gap-1.5 px-4 py-2 bg-[var(--accent)] text-white text-sm font-medium rounded-lg hover:bg-[#094d87] transition-colors">
                     📥 Export CSV
                 </button>
             </div>
@@ -58,41 +58,41 @@ export default function DataLogs() {
             {/* Filters */}
             <div className="flex flex-wrap gap-3">
                 <select value={distFilter} onChange={e => { setDistFilter(e.target.value); setPage(0); }}
-                    className="bg-white border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#0B5FA5]">
+                    className="bg-[var(--bg-card)] text-[var(--text-primary)] border border-[var(--border-default)] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-[var(--accent)]">
                     {DISTRICTS_FILTER.map(d => <option key={d} value={d}>{d === "All" ? "All Districts" : d}</option>)}
                 </select>
                 <select value={typeFilter} onChange={e => { setTypeFilter(e.target.value); setPage(0); }}
-                    className="bg-white border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#0B5FA5]">
+                    className="bg-[var(--bg-card)] text-[var(--text-primary)] border border-[var(--border-default)] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-[var(--accent)]">
                     {TYPES_FILTER.map(t => <option key={t} value={t}>{t === "All" ? "All Types" : t}</option>)}
                 </select>
-                <span className="text-xs text-gray-400 self-center">{filtered.length} results</span>
+                <span className="text-xs text-[var(--text-muted)] self-center">{filtered.length} results</span>
             </div>
 
             {/* Summary */}
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                <div className="bg-white rounded-lg border border-gray-200 p-4 shadow-sm">
-                    <p className="text-xs text-gray-400">Total Entries</p>
-                    <p className="text-xl font-bold text-gray-900">{filtered.length}</p>
+                <div className="bg-[var(--bg-card)] backdrop-blur-md rounded-lg border border-[var(--border-default)] p-4 shadow-sm">
+                    <p className="text-xs text-[var(--text-muted)]">Total Entries</p>
+                    <p className="text-xl font-bold text-[var(--text-primary)]">{filtered.length}</p>
                 </div>
-                <div className="bg-white rounded-lg border border-gray-200 p-4 shadow-sm">
-                    <p className="text-xs text-gray-400">Total Changes</p>
-                    <p className="text-xl font-bold text-[#0B5FA5]">{filtered.reduce((s, l) => s + l.changes, 0).toLocaleString()}</p>
+                <div className="bg-[var(--bg-card)] backdrop-blur-md rounded-lg border border-[var(--border-default)] p-4 shadow-sm">
+                    <p className="text-xs text-[var(--text-muted)]">Total Changes</p>
+                    <p className="text-xl font-bold text-[var(--accent)]">{filtered.reduce((s, l) => s + l.changes, 0).toLocaleString()}</p>
                 </div>
-                <div className="bg-white rounded-lg border border-gray-200 p-4 shadow-sm">
-                    <p className="text-xs text-gray-400">Completed</p>
+                <div className="bg-[var(--bg-card)] backdrop-blur-md rounded-lg border border-[var(--border-default)] p-4 shadow-sm">
+                    <p className="text-xs text-[var(--text-muted)]">Completed</p>
                     <p className="text-xl font-bold text-green-600">{filtered.filter(l => l.status === "Completed").length}</p>
                 </div>
-                <div className="bg-white rounded-lg border border-gray-200 p-4 shadow-sm">
-                    <p className="text-xs text-gray-400">Under Review</p>
+                <div className="bg-[var(--bg-card)] backdrop-blur-md rounded-lg border border-[var(--border-default)] p-4 shadow-sm">
+                    <p className="text-xs text-[var(--text-muted)]">Under Review</p>
                     <p className="text-xl font-bold text-yellow-600">{filtered.filter(l => l.status === "Review").length}</p>
                 </div>
             </div>
 
             {/* Table */}
-            <div className="bg-white rounded-lg border border-gray-200 shadow-sm overflow-hidden">
+            <div className="bg-[var(--bg-card)] backdrop-blur-md rounded-lg border border-[var(--border-default)] shadow-sm overflow-hidden">
                 <div className="overflow-x-auto">
                     <table className="w-full text-sm">
-                        <thead className="bg-gray-50 text-gray-600">
+                        <thead className="bg-[var(--bg-tertiary)] text-[var(--text-muted)]">
                             <tr>
                                 <th className="py-2.5 px-4 text-left font-medium">Date</th>
                                 <th className="py-2.5 px-4 text-left font-medium">District</th>
@@ -104,22 +104,22 @@ export default function DataLogs() {
                                 <th className="py-2.5 px-4 text-center font-medium">Export</th>
                             </tr>
                         </thead>
-                        <tbody className="divide-y divide-gray-100">
+                        <tbody className="divide-y divide-[var(--border-default)]">
                             {paged.map(l => (
-                                <tr key={l.id} className="hover:bg-gray-50 transition-colors">
-                                    <td className="py-2.5 px-4 text-xs text-gray-600">{l.date}</td>
-                                    <td className="py-2.5 px-4 font-medium text-gray-900 text-xs">{l.district}</td>
+                                <tr key={l.id} className="hover:bg-[var(--bg-tertiary)] transition-colors">
+                                    <td className="py-2.5 px-4 text-xs text-[var(--text-muted)]">{l.date}</td>
+                                    <td className="py-2.5 px-4 font-medium text-[var(--text-primary)] text-xs">{l.district}</td>
                                     <td className="py-2.5 px-4 text-xs">{l.type}</td>
-                                    <td className="py-2.5 px-4 text-xs text-gray-600 max-w-[180px] truncate">{l.area}</td>
+                                    <td className="py-2.5 px-4 text-xs text-[var(--text-muted)] max-w-[180px] truncate">{l.area}</td>
                                     <td className="py-2.5 px-4 text-right text-xs font-semibold">{l.changes}</td>
-                                    <td className="py-2.5 px-4 text-center text-[10px] text-gray-500">{l.method}</td>
+                                    <td className="py-2.5 px-4 text-center text-[10px] text-[var(--text-muted)]">{l.method}</td>
                                     <td className="py-2.5 px-4 text-center">
-                                        <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium ${STATUS_COLORS[l.status] || "bg-gray-100 text-gray-600"}`}>
+                                        <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium ${STATUS_COLORS[l.status] || "bg-[var(--bg-secondary)] text-[var(--text-muted)]"}`}>
                                             ● {l.status}
                                         </span>
                                     </td>
                                     <td className="py-2.5 px-4 text-center">
-                                        <button className="text-[#0B5FA5] hover:text-[#094d87] text-xs font-medium">🖼️ Image</button>
+                                        <button className="text-[var(--accent)] hover:text-[#094d87] text-xs font-medium">🖼️ Image</button>
                                     </td>
                                 </tr>
                             ))}
@@ -127,10 +127,10 @@ export default function DataLogs() {
                     </table>
                 </div>
                 {totalPages > 1 && (
-                    <div className="flex items-center justify-between px-4 py-3 border-t border-gray-100">
-                        <button onClick={() => setPage(p => Math.max(0, p - 1))} disabled={page === 0} className="text-xs text-[#0B5FA5] hover:text-[#094d87] disabled:text-gray-300">← Previous</button>
-                        <span className="text-xs text-gray-400">Page {page + 1} of {totalPages}</span>
-                        <button onClick={() => setPage(p => Math.min(totalPages - 1, p + 1))} disabled={page >= totalPages - 1} className="text-xs text-[#0B5FA5] hover:text-[#094d87] disabled:text-gray-300">Next →</button>
+                    <div className="flex items-center justify-between px-4 py-3 border-t border-[var(--border-default)]">
+                        <button onClick={() => setPage(p => Math.max(0, p - 1))} disabled={page === 0} className="text-xs text-[var(--accent)] hover:text-[#094d87] disabled:text-gray-300">← Previous</button>
+                        <span className="text-xs text-[var(--text-muted)]">Page {page + 1} of {totalPages}</span>
+                        <button onClick={() => setPage(p => Math.min(totalPages - 1, p + 1))} disabled={page >= totalPages - 1} className="text-xs text-[var(--accent)] hover:text-[#094d87] disabled:text-gray-300">Next →</button>
                     </div>
                 )}
             </div>

@@ -148,31 +148,32 @@ export default function Home() {
     }, [selectedDistrict]);
 
     return (
-        <div className="space-y-6">
+        <div className="fade-in" style={{ display: "flex", flexDirection: "column", gap: "24px" }}>
             {/* Header with selectors */}
-            <div className="bg-white rounded-lg border border-gray-200 p-4 sm:p-5 shadow-sm">
-                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+            <div className="dash-section">
+                <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", justifyContent: "space-between", gap: "12px" }}>
                     <div>
-                        <h2 className="text-lg sm:text-xl font-bold text-gray-900">
+                        <h2 style={{ fontSize: "18px", fontWeight: 800, color: "var(--text-primary)" }}>
                             Dashboard — {selectedDistrict || "Andhra Pradesh"} Urban Monitoring
                         </h2>
-                        <p className="text-sm text-gray-500 mt-1">
+                        <p style={{ fontSize: "13px", color: "var(--text-muted)", marginTop: "4px" }}>
                             AI-powered property identification and land use mapping statistics
                         </p>
                     </div>
-                    <div className="flex items-center gap-3">
+                    <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
                         <div>
-                            <label className="text-[10px] font-medium text-gray-400 block mb-0.5">STATE</label>
-                            <select disabled className="bg-gray-100 border border-gray-200 rounded-lg px-3 py-1.5 text-sm text-gray-700">
+                            <label style={{ fontSize: "10px", fontWeight: 600, color: "var(--text-muted)", display: "block", marginBottom: "4px", textTransform: "uppercase", letterSpacing: "0.8px" }}>STATE</label>
+                            <select disabled className="dark-select" style={{ width: "auto" }}>
                                 <option>Andhra Pradesh</option>
                             </select>
                         </div>
                         <div>
-                            <label className="text-[10px] font-medium text-gray-400 block mb-0.5">DISTRICT</label>
+                            <label style={{ fontSize: "10px", fontWeight: 600, color: "var(--text-muted)", display: "block", marginBottom: "4px", textTransform: "uppercase", letterSpacing: "0.8px" }}>DISTRICT</label>
                             <select
                                 value={selectedDistrict}
                                 onChange={e => setSelectedDistrict(e.target.value)}
-                                className="bg-white border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#0B5FA5]"
+                                className="dark-select"
+                                style={{ width: "auto" }}
                             >
                                 <option value="">All Districts</option>
                                 {DISTRICT_NAMES.map(d => <option key={d} value={d}>{d}</option>)}
@@ -183,102 +184,104 @@ export default function Home() {
             </div>
 
             {/* Stat cards */}
-            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))", gap: "12px" }}>
                 {STATS.map((s) => (
                     <StatCard key={s.label} {...s} />
                 ))}
             </div>
 
             {/* Charts + Map */}
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "16px" }}>
                 {/* Bar chart */}
-                <div className="bg-white rounded-lg border border-gray-200 p-4 shadow-sm">
-                    <h3 className="text-sm font-semibold text-gray-900 mb-3">Properties by District</h3>
+                <div className="dash-section">
+                    <div className="dash-section-title">Properties by District</div>
                     <ResponsiveContainer width="100%" height={220}>
                         <BarChart data={districtBarData} layout="vertical" margin={{ left: 0, right: 10 }}>
-                            <XAxis type="number" tick={{ fontSize: 10 }} tickFormatter={v => `${(v / 1000).toFixed(0)}k`} />
-                            <YAxis type="category" dataKey="name" tick={{ fontSize: 10 }} width={90} />
-                            <Tooltip formatter={v => v.toLocaleString()} />
-                            <Bar dataKey="Properties" fill="#0B5FA5" radius={[0, 4, 4, 0]} />
+                            <XAxis type="number" tick={{ fontSize: 10, fill: '#64748b' }} tickFormatter={v => `${(v / 1000).toFixed(0)}k`} />
+                            <YAxis type="category" dataKey="name" tick={{ fontSize: 10, fill: '#94a3b8' }} width={90} />
+                            <Tooltip formatter={v => v.toLocaleString()} contentStyle={{ background: '#1e293b', border: '1px solid rgba(71,85,105,0.4)', borderRadius: '6px', color: '#f1f5f9' }} />
+                            <Bar dataKey="Properties" fill="#14b8a6" radius={[0, 4, 4, 0]} />
                         </BarChart>
                     </ResponsiveContainer>
                 </div>
 
                 {/* Mini map */}
-                <div className="bg-white rounded-lg border border-gray-200 shadow-sm overflow-hidden">
-                    <div className="p-4 pb-2">
-                        <h3 className="text-sm font-semibold text-gray-900">
+                <div className="dash-section" style={{ padding: 0, overflow: "hidden" }}>
+                    <div style={{ padding: "16px 16px 8px" }}>
+                        <div className="dash-section-title" style={{ marginBottom: 0 }}>
                             {selectedDistrict || "Andhra Pradesh"} Overview
-                        </h3>
+                        </div>
                     </div>
                     <div ref={mapContainerRef} style={{ height: "240px", width: "100%" }} />
                 </div>
 
                 {/* Pie chart */}
-                <div className="bg-white rounded-lg border border-gray-200 p-4 shadow-sm">
-                    <h3 className="text-sm font-semibold text-gray-900 mb-3">Land Use Distribution</h3>
+                <div className="dash-section">
+                    <div className="dash-section-title">Land Use Distribution</div>
                     <ResponsiveContainer width="100%" height={220}>
                         <PieChart>
                             <Pie data={data.landUse} cx="50%" cy="50%" innerRadius={50} outerRadius={80} dataKey="value" paddingAngle={2}>
                                 {data.landUse.map((e, i) => <Cell key={i} fill={e.color} />)}
                             </Pie>
-                            <Legend iconSize={8} wrapperStyle={{ fontSize: 10 }} />
-                            <Tooltip formatter={v => `${v}%`} />
+                            <Legend iconSize={8} wrapperStyle={{ fontSize: 10, color: '#94a3b8' }} />
+                            <Tooltip formatter={v => `${v}%`} contentStyle={{ background: '#1e293b', border: '1px solid rgba(71,85,105,0.4)', borderRadius: '6px', color: '#f1f5f9' }} />
                         </PieChart>
                     </ResponsiveContainer>
                 </div>
             </div>
 
             {/* Monthly trend */}
-            <div className="bg-white rounded-lg border border-gray-200 p-4 shadow-sm">
-                <h3 className="text-sm font-semibold text-gray-900 mb-3">Monthly Property Identification Trend</h3>
+            <div className="dash-section">
+                <div className="dash-section-title">Monthly Property Identification Trend</div>
                 <ResponsiveContainer width="100%" height={200}>
                     <AreaChart data={data.monthly} margin={{ left: 10, right: 10, top: 5 }}>
-                        <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
-                        <XAxis dataKey="month" tick={{ fontSize: 11 }} />
-                        <YAxis tick={{ fontSize: 10 }} tickFormatter={v => v >= 1000000 ? `${(v / 1000000).toFixed(2)}M` : `${(v / 1000).toFixed(0)}k`} />
-                        <Tooltip formatter={v => v.toLocaleString()} />
-                        <Area type="monotone" dataKey="properties" stroke="#0B5FA5" fill="#0B5FA520" strokeWidth={2} />
+                        <CartesianGrid strokeDasharray="3 3" stroke="rgba(71,85,105,0.3)" />
+                        <XAxis dataKey="month" tick={{ fontSize: 11, fill: '#94a3b8' }} />
+                        <YAxis tick={{ fontSize: 10, fill: '#64748b' }} tickFormatter={v => v >= 1000000 ? `${(v / 1000000).toFixed(2)}M` : `${(v / 1000).toFixed(0)}k`} />
+                        <Tooltip formatter={v => v.toLocaleString()} contentStyle={{ background: '#1e293b', border: '1px solid rgba(71,85,105,0.4)', borderRadius: '6px', color: '#f1f5f9' }} />
+                        <Area type="monotone" dataKey="properties" stroke="#14b8a6" fill="rgba(20,184,166,0.15)" strokeWidth={2} />
                     </AreaChart>
                 </ResponsiveContainer>
             </div>
 
             {/* District table */}
-            <div className="bg-white rounded-lg border border-gray-200 shadow-sm overflow-hidden">
-                <div className="p-4 border-b border-gray-100">
-                    <h3 className="text-sm font-semibold text-gray-900">District-wise Summary</h3>
+            <div className="dash-section" style={{ padding: 0, overflow: "hidden" }}>
+                <div style={{ padding: "16px", borderBottom: "1px solid var(--border-default)" }}>
+                    <div className="dash-section-title" style={{ marginBottom: 0 }}>District-wise Summary</div>
                 </div>
-                <div className="overflow-x-auto">
-                    <table className="w-full text-sm">
-                        <thead className="bg-gray-50 text-gray-600">
-                            <tr>
-                                <th className="py-2.5 px-4 text-left font-medium">District</th>
-                                <th className="py-2.5 px-4 text-right font-medium">Properties</th>
-                                <th className="py-2.5 px-4 text-right font-medium">Open Plots</th>
-                                <th className="py-2.5 px-4 text-right font-medium">Water Bodies</th>
-                                <th className="py-2.5 px-4 text-right font-medium">Changes</th>
-                                <th className="py-2.5 px-4 text-center font-medium">Status</th>
+                <div style={{ overflowX: "auto" }}>
+                    <table style={{ width: "100%", fontSize: "13px", borderCollapse: "collapse" }}>
+                        <thead>
+                            <tr style={{ background: "var(--bg-tertiary)" }}>
+                                <th style={{ padding: "10px 16px", textAlign: "left", fontWeight: 600, color: "var(--text-muted)", fontSize: "11px", textTransform: "uppercase", letterSpacing: "0.5px" }}>District</th>
+                                <th style={{ padding: "10px 16px", textAlign: "right", fontWeight: 600, color: "var(--text-muted)", fontSize: "11px", textTransform: "uppercase", letterSpacing: "0.5px" }}>Properties</th>
+                                <th style={{ padding: "10px 16px", textAlign: "right", fontWeight: 600, color: "var(--text-muted)", fontSize: "11px", textTransform: "uppercase", letterSpacing: "0.5px" }}>Open Plots</th>
+                                <th style={{ padding: "10px 16px", textAlign: "right", fontWeight: 600, color: "var(--text-muted)", fontSize: "11px", textTransform: "uppercase", letterSpacing: "0.5px" }}>Water Bodies</th>
+                                <th style={{ padding: "10px 16px", textAlign: "right", fontWeight: 600, color: "var(--text-muted)", fontSize: "11px", textTransform: "uppercase", letterSpacing: "0.5px" }}>Changes</th>
+                                <th style={{ padding: "10px 16px", textAlign: "center", fontWeight: 600, color: "var(--text-muted)", fontSize: "11px", textTransform: "uppercase", letterSpacing: "0.5px" }}>Status</th>
                             </tr>
                         </thead>
-                        <tbody className="divide-y divide-gray-100">
+                        <tbody>
                             {DISTRICT_NAMES.map(name => {
                                 const d = DISTRICT_DATA[name];
                                 const isSelected = selectedDistrict === name;
                                 return (
                                     <tr key={name}
-                                        className={`hover:bg-gray-50 transition-colors cursor-pointer ${isSelected ? "bg-blue-50" : ""}`}
+                                        style={{ cursor: "pointer", borderBottom: "1px solid rgba(71,85,105,0.2)", background: isSelected ? "var(--accent-dim)" : "transparent", transition: "background 0.15s" }}
                                         onClick={() => setSelectedDistrict(isSelected ? "" : name)}
+                                        onMouseEnter={e => { if (!isSelected) e.currentTarget.style.background = 'rgba(20,184,166,0.05)'; }}
+                                        onMouseLeave={e => { if (!isSelected) e.currentTarget.style.background = 'transparent'; }}
                                     >
-                                        <td className="py-2.5 px-4 font-medium text-gray-900">
-                                            {isSelected && <span className="text-[#0B5FA5] mr-1">▶</span>}
+                                        <td style={{ padding: "10px 16px", fontWeight: 600, color: "var(--text-primary)" }}>
+                                            {isSelected && <span style={{ color: "var(--accent)", marginRight: "4px" }}>▶</span>}
                                             {name}
                                         </td>
-                                        <td className="py-2.5 px-4 text-right">{d.stats.properties}</td>
-                                        <td className="py-2.5 px-4 text-right">{d.stats.plots}</td>
-                                        <td className="py-2.5 px-4 text-right">{d.stats.water}</td>
-                                        <td className="py-2.5 px-4 text-right">{d.stats.changes}</td>
-                                        <td className="py-2.5 px-4 text-center">
-                                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-700">
+                                        <td style={{ padding: "10px 16px", textAlign: "right", color: "var(--text-secondary)", fontFamily: "var(--font-mono)", fontSize: "12px" }}>{d.stats.properties}</td>
+                                        <td style={{ padding: "10px 16px", textAlign: "right", color: "var(--text-secondary)", fontFamily: "var(--font-mono)", fontSize: "12px" }}>{d.stats.plots}</td>
+                                        <td style={{ padding: "10px 16px", textAlign: "right", color: "var(--text-secondary)", fontFamily: "var(--font-mono)", fontSize: "12px" }}>{d.stats.water}</td>
+                                        <td style={{ padding: "10px 16px", textAlign: "right", color: "var(--text-secondary)", fontFamily: "var(--font-mono)", fontSize: "12px" }}>{d.stats.changes}</td>
+                                        <td style={{ padding: "10px 16px", textAlign: "center" }}>
+                                            <span style={{ display: "inline-flex", alignItems: "center", gap: "4px", padding: "2px 10px", borderRadius: "12px", fontSize: "11px", fontWeight: 600, background: "var(--green-dim)", color: "var(--green)" }}>
                                                 ● Active
                                             </span>
                                         </td>
