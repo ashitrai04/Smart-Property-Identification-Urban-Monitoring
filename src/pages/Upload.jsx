@@ -1,10 +1,11 @@
-import React, { useState, useRef } from "react";
+import React, { useState, useRef, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { fromBlob } from "geotiff";
 import proj4 from "proj4";
 
-const SEGMENTATION_API = "https://asashit-smart-property-segformer.hf.space/predict";
-const CHANGE_DETECTION_API = "https://asashit-smart-property-segformer.hf.space/change-detection";
+const SEG_SPACE_BASE = "https://asashit-smart-property-segformer.hf.space";
+const SEGMENTATION_API = `${SEG_SPACE_BASE}/predict`;
+const CHANGE_DETECTION_API = `${SEG_SPACE_BASE}/change-detection`;
 const MAX_FILE_SIZE = 4.5 * 1024 * 1024; // 4.5 MB
 
 const ANALYSIS_TYPES = [
@@ -133,6 +134,12 @@ async function maskToTransparentDataUrl(b64png) {
 
 export default function Upload() {
     const navigate = useNavigate();
+
+    // Wake the SegFormer Space on mount so the first analysis isn't blocked by
+    // a Hugging Face cold start (free Spaces sleep after inactivity).
+    useEffect(() => {
+        try { fetch(`${SEG_SPACE_BASE}/api/health`, { cache: "no-store" }).catch(() => {}); } catch (_) {}
+    }, []);
     const [files, setFiles] = useState([]);
     const [analysisType, setAnalysisType] = useState("segment");
     const [processing, setProcessing] = useState(false);
