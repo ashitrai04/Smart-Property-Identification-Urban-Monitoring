@@ -99,6 +99,18 @@ CLASS_LAYER_MAP = {
 }
 LAYER_CLASS_MAP = {v: k for k, v in CLASS_LAYER_MAP.items()}
 
+# The source GPKG mis-files water (and a few roads) under class_id 1 (buildings)
+# but tags the real type in `fclass`. We classify by fclass so the waterbodies/
+# roads layers return the right features and buildings doesn't double-count them.
+WATER_FCLASS = ["water", "riverbank", "reservoir", "wetland", "pond", "lake",
+                "basin", "dock", "canal", "stream", "river", "lagoon",
+                "glacier", "wastewater"]
+ROAD_FCLASS = ["motorway", "trunk", "primary", "secondary", "tertiary",
+               "unclassified", "residential", "service", "road", "living_street",
+               "track", "path", "footway", "cycleway", "pedestrian", "steps",
+               "bridleway", "motorway_link", "trunk_link", "primary_link",
+               "secondary_link", "tertiary_link"]
+
 # District metadata (centers & zoom for the UI)
 DISTRICT_META = {
     "visakhapatnam": {"center": [83.25, 17.93], "zoom": 11},
@@ -231,13 +243,36 @@ def _gdf_to_geojson_string(gdf):
     return gdf.to_json()
 
 
-def _filter_features(gdf, class_id=None, bbox_str=None, zoom=None, limit=None):
-    """Filter GeoDataFrame by class, bbox, and zoom-based limits."""
+def _filter_features(gdf, layer=None, class_id=None, bbox_str=None, zoom=None, limit=None):
+    """Filter GeoDataFrame by layer (fclass-aware), bbox, and zoom-based limits."""
     if gdf is None or len(gdf) == 0:
         return gdf
 
-    # Filter by class
-    if class_id is not None and "class_id" in gdf.columns:
+    has_class = "class_id" in gdf.columns
+    fc = gdf["fclass"].astype(str).str.lower() if "fclass" in gdf.columns else None
+
+    # fclass-aware layer filtering (falls back to plain class_id when needed)
+    if layer and has_class:
+        if layer == "waterbodies":
+            mask = (gdf["class_id"] == 5)
+            if fc is not None:
+                mask = mask | fc.isin(WATER_FCLASS)
+            gdf = gdf[mask]
+        elif layer == "roads":
+            mask = (gdf["class_id"] == 4)
+            if fc is not None:
+                mask = mask | fc.isin(ROAD_FCLASS)
+            gdf = gdf[mask]
+        elif layer == "buildings":
+            mask = (gdf["class_id"] == 1)
+            if fc is not None:
+                mask = mask & ~fc.isin(WATER_FCLASS) & ~fc.isin(ROAD_FCLASS)
+            gdf = gdf[mask]
+        elif layer == "openareas":
+            gdf = gdf[gdf["class_id"] == 6]
+        elif class_id is not None:
+            gdf = gdf[gdf["class_id"] == class_id]
+    elif class_id is not None and has_class:
         gdf = gdf[gdf["class_id"] == class_id]
 
     # Filter by bounding box using spatial index (.cx)
@@ -345,7 +380,7 @@ async def get_district_layer(name: str, layer: str, bbox: str = Query(None), zoo
     data = _load_district(name)
     gdf = data.get("features", gpd.GeoDataFrame())
 
-    filtered = _filter_features(gdf, class_id=class_id, bbox_str=bbox, zoom=zoom, limit=limit)
+    filtered = _filter_features(gdf, layer=layer, class_id=class_id, bbox_str=bbox, zoom=zoom, limit=limit)
     
     return Response(content=_gdf_to_geojson_string(filtered), media_type="application/json")
 
