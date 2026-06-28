@@ -6,10 +6,33 @@ import proj4 from "proj4";
 const SEG_SPACE_BASE = "https://asashit-smart-property-segformer.hf.space";
 const SEGMENTATION_API = `${SEG_SPACE_BASE}/predict`;
 const CHANGE_DETECTION_API = `${SEG_SPACE_BASE}/change-detection`;
-const MAX_FILE_SIZE = 4.5 * 1024 * 1024; // 4.5 MB
+const PRESIGN_API = `${SEG_SPACE_BASE}/r2/presign`;
+const PREDICT_URL_API = `${SEG_SPACE_BASE}/predict-url`;
+const CHANGE_URL_API = `${SEG_SPACE_BASE}/change-detection-url`;
+const R2_DELETE_API = `${SEG_SPACE_BASE}/r2/delete`;
+const MAX_FILE_SIZE = 500 * 1024 * 1024;   // 500 MB hard cap
+const DIRECT_LIMIT = 4 * 1024 * 1024;      // ≤4 MB → POST directly; larger → via Cloudflare R2
+
+// Upload a (large) file to Cloudflare R2 via a presigned PUT, return the temp object key
+async function uploadToR2(file) {
+    const ct = file.type || "application/octet-stream";
+    const pres = await fetch(`${PRESIGN_API}?filename=${encodeURIComponent(file.name)}&content_type=${encodeURIComponent(ct)}`);
+    if (!pres.ok) throw new Error(`Could not get upload URL (${pres.status})`);
+    const { key, put_url, content_type } = await pres.json();
+    const put = await fetch(put_url, { method: "PUT", headers: { "Content-Type": content_type }, body: file });
+    if (!put.ok) throw new Error(`Upload to storage failed (${put.status})`);
+    return key;
+}
+
+async function deleteTempKeys(keys) {
+    if (!keys || !keys.length) return;
+    try {
+        await fetch(R2_DELETE_API, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ keys }) });
+    } catch (_) { /* best effort */ }
+}
 
 const ANALYSIS_TYPES = [
-    { id: "segment", label: "AI Segmentation", desc: "Run AI segmentation on satellite/drone imagery (max 4.5 MB per image)" },
+    { id: "segment", label: "AI Segmentation", desc: "Run AI segmentation on satellite/drone imagery (up to 500 MB per image)" },
     { id: "change", label: "Change Detection", desc: "Compare past & present satellite images to detect urban changes" },
     { id: "boundary", label: "Boundary Analysis", desc: "Upload a shapefile boundary for land use analysis" },
     { id: "mask", label: "Mask Overlay", desc: "Upload a mask TIFF for change detection comparison" },
@@ -39,6 +62,8 @@ async function fileToPreviewUrl(file) {
         return URL.createObjectURL(file);
     }
     if (/\.(tif|tiff)$/.test(name)) {
+        // Big GeoTIFFs: skip the full-raster preview (would freeze the browser) — show placeholder
+        if (file.size > 30 * 1024 * 1024) return null;
         try {
             const tiff = await fromBlob(file);
             const image = await tiff.getImage();
@@ -135,10 +160,25 @@ async function maskToTransparentDataUrl(b64png) {
 export default function Upload() {
     const navigate = useNavigate();
 
+    // Temp R2 object keys created this session (deleted on next run + on unload)
+    const tempKeysRef = useRef([]);
+
     // Wake the SegFormer Space on mount so the first analysis isn't blocked by
     // a Hugging Face cold start (free Spaces sleep after inactivity).
     useEffect(() => {
         try { fetch(`${SEG_SPACE_BASE}/api/health`, { cache: "no-store" }).catch(() => {}); } catch (_) {}
+    }, []);
+
+    // Auto-delete any temporary uploads when the page is refreshed/closed
+    useEffect(() => {
+        const handler = () => {
+            const keys = tempKeysRef.current;
+            if (keys && keys.length) {
+                try { navigator.sendBeacon(R2_DELETE_API, new Blob([JSON.stringify({ keys })], { type: "application/json" })); } catch (_) {}
+            }
+        };
+        window.addEventListener("beforeunload", handler);
+        return () => window.removeEventListener("beforeunload", handler);
     }, []);
     const [files, setFiles] = useState([]);
     const [analysisType, setAnalysisType] = useState("segment");
@@ -169,11 +209,23 @@ export default function Upload() {
 
     const removeFile = (idx) => { setFiles(prev => prev.filter((_, i) => i !== idx)); };
 
-    // ── Send one image to the segmentation API ──
+    // ── Send one image to the segmentation API (direct for small, R2 for large) ──
     const segmentOneFile = async (file) => {
-        const formData = new FormData();
-        formData.append("file", file);
-        const resp = await fetch(SEGMENTATION_API, { method: "POST", body: formData });
+        let resp;
+        if (file.size > DIRECT_LIMIT) {
+            setProgress(`Uploading ${file.name} to temporary storage…`);
+            const key = await uploadToR2(file);
+            tempKeysRef.current.push(key);
+            setProgress(`Analyzing ${file.name}…`);
+            resp = await fetch(PREDICT_URL_API, {
+                method: "POST", headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ key, filename: file.name }),
+            });
+        } else {
+            const formData = new FormData();
+            formData.append("file", file);
+            resp = await fetch(SEGMENTATION_API, { method: "POST", body: formData });
+        }
         if (!resp.ok) {
             const errText = await resp.text().catch(() => "Unknown error");
             throw new Error(`API ${resp.status}: ${errText}`);
@@ -198,9 +250,13 @@ export default function Upload() {
 
         const oversized = imageFiles.filter(f => f.size > MAX_FILE_SIZE);
         if (oversized.length > 0) {
-            setError(`${oversized.length} file(s) exceed 4.5 MB limit: ${oversized.map(f => f.name).join(", ")}`);
+            setError(`${oversized.length} file(s) exceed the 500 MB limit: ${oversized.map(f => f.name).join(", ")}`);
             return;
         }
+
+        // Delete any temp uploads from a previous run (auto-cleanup on next upload)
+        await deleteTempKeys(tempKeysRef.current);
+        tempKeysRef.current = [];
 
         setSegResults([]);
         abortRef.current = false;
@@ -254,14 +310,14 @@ export default function Upload() {
             setError("Please upload both a PAST and a PRESENT image for change detection.");
             return;
         }
-        if (cdPastFile.size > MAX_FILE_SIZE) {
-            setError(`Past image (${cdPastFile.name}) exceeds 4.5 MB limit.`);
+        if (cdPastFile.size > MAX_FILE_SIZE || cdPresentFile.size > MAX_FILE_SIZE) {
+            setError("Each image must be under the 500 MB limit.");
             return;
         }
-        if (cdPresentFile.size > MAX_FILE_SIZE) {
-            setError(`Present image (${cdPresentFile.name}) exceeds 4.5 MB limit.`);
-            return;
-        }
+
+        // Auto-cleanup previous temp uploads
+        await deleteTempKeys(tempKeysRef.current);
+        tempKeysRef.current = [];
 
         setProgress("Generating previews...");
         const pastUrl = await fileToPreviewUrl(cdPastFile);
@@ -269,13 +325,26 @@ export default function Upload() {
 
         setCdResult({ pastUrl, presentUrl, changeUrl: null, status: "processing" });
 
-        setProgress("🧠 Segmenting both images & comparing masks…");
         try {
             // Our SegFormer Space segments BOTH images and diffs their masks server-side
-            const form = new FormData();
-            form.append("past", cdPastFile);
-            form.append("present", cdPresentFile);
-            const resp = await fetch(CHANGE_DETECTION_API, { method: "POST", body: form });
+            const big = cdPastFile.size > DIRECT_LIMIT || cdPresentFile.size > DIRECT_LIMIT;
+            let resp;
+            if (big) {
+                setProgress("Uploading images to temporary storage…");
+                const past_key = await uploadToR2(cdPastFile); tempKeysRef.current.push(past_key);
+                const present_key = await uploadToR2(cdPresentFile); tempKeysRef.current.push(present_key);
+                setProgress("🧠 Segmenting both images & comparing masks…");
+                resp = await fetch(CHANGE_URL_API, {
+                    method: "POST", headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ past_key, present_key, past_filename: cdPastFile.name, present_filename: cdPresentFile.name }),
+                });
+            } else {
+                setProgress("🧠 Segmenting both images & comparing masks…");
+                const form = new FormData();
+                form.append("past", cdPastFile);
+                form.append("present", cdPresentFile);
+                resp = await fetch(CHANGE_DETECTION_API, { method: "POST", body: form });
+            }
             if (!resp.ok) {
                 const errText = await resp.text().catch(() => "Unknown error");
                 throw new Error(`API ${resp.status}: ${errText}`);
@@ -453,7 +522,7 @@ export default function Upload() {
                             <p className="text-xs text-[var(--text-muted)] mt-1">or click to browse • multiple files supported</p>
                             <p className="text-[10px] text-[var(--text-muted)] mt-2">Accepts: .jpg, .png, .tif, .tiff, .shp, .shx, .dbf, .prj, .geojson, .zip</p>
                             {analysisType === "segment" && (
-                                <p className="text-[10px] text-[var(--accent)] mt-1 font-medium">🧠 Upload multiple satellite tiles — each will be processed sequentially (max 4.5 MB each)</p>
+                                <p className="text-[10px] text-[var(--accent)] mt-1 font-medium">🧠 Upload multiple satellite tiles — processed sequentially (up to 500 MB each; large files stream via temporary cloud storage)</p>
                             )}
                             <input id="file-input" type="file" multiple accept={ACCEPTED} onChange={handleFileInput} className="hidden" />
                         </div>
@@ -789,7 +858,7 @@ export default function Upload() {
                         <div className="bg-[var(--bg-card)] border border-[var(--accent)]/30 rounded-lg p-4 space-y-3">
                             <p className="text-xs text-[var(--accent)] font-medium">🧠 AI Segmentation</p>
                             <p className="text-xs text-[var(--text-muted)] leading-relaxed">
-                                Sends each image to the Unified Cartographer model on HuggingFace. Images are processed one at a time. Max 4.5 MB per file.
+                                Sends each image to the SegFormer model on HuggingFace. Images are processed one at a time. Up to 500 MB per file (large files upload to temporary cloud storage and auto-delete on refresh or next run).
                             </p>
                             <div className="border-t border-[var(--border-default)] pt-3">
                                 <p className="text-xs text-[var(--text-secondary)] font-medium mb-2">Color Legend:</p>
