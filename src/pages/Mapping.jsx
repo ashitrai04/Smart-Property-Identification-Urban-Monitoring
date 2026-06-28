@@ -404,6 +404,14 @@ export default function Mapping() {
     const statsPanelRef = useRef(null);
     const statsAbortRef = useRef(null);                       // cancels stale stats requests on redraw
 
+    // ── Detection overlay (from Upload & Analysis → "Plot on Map") ──
+    const [detectionOverlay, setDetectionOverlay] = useState(null); // { url, bounds, name }
+    const [detectionOpacity, setDetectionOpacity] = useState(0.85);
+    const detectionOverlayRef = useRef(null);
+    const addDetectionRef = useRef(null);
+    const DET_SOURCE = 'detection-overlay-src';
+    const DET_LAYER = 'detection-overlay-layer';
+
     // Warm the (Hugging Face) backend on mount so the first AOI analysis isn't
     // blocked by a cold start.
     useEffect(() => { warmBackend(); }, []);
@@ -454,6 +462,10 @@ export default function Mapping() {
             if (aoiFeaturesRef.current && renderAOIRef.current) {
                 try { renderAOIRef.current(map, aoiFeaturesRef.current); } catch (_) { }
             }
+            // Re-apply detection overlay after a base-map rebuild
+            if (detectionOverlayRef.current && addDetectionRef.current) {
+                try { addDetectionRef.current(map, detectionOverlayRef.current, false); } catch (_) { }
+            }
         });
         return () => {
             mapRef.current = null;
@@ -465,6 +477,64 @@ export default function Mapping() {
         // NOTE: only `baseMap` here. maskOn/droneOn must NOT be deps — recreating the
         // map on every layer toggle was erasing the drawn AOI and all loaded layers.
     }, [baseMap]);
+
+    // ── Detection overlay (geo-referenced mask from Upload & Analysis) ──
+    const addDetectionOverlay = useCallback((map, payload, fit = true) => {
+        if (!map || !payload?.url || !payload?.bounds) return;
+        const { url, bounds } = payload;
+        const { west, south, east, north } = bounds;
+        const coordinates = [[west, north], [east, north], [east, south], [west, south]];
+        if (map.getSource(DET_SOURCE)) {
+            try { map.getSource(DET_SOURCE).updateImage({ url, coordinates }); } catch (_) { }
+        } else {
+            map.addSource(DET_SOURCE, { type: 'image', url, coordinates });
+        }
+        if (!map.getLayer(DET_LAYER)) {
+            map.addLayer({ id: DET_LAYER, type: 'raster', source: DET_SOURCE, paint: { 'raster-opacity': detectionOpacity, 'raster-resampling': 'nearest' } });
+        }
+        if (fit) {
+            try { map.fitBounds([[west, south], [east, north]], { padding: 60, duration: 1500 }); } catch (_) { }
+        }
+    }, [detectionOpacity]);
+
+    const removeDetectionOverlay = useCallback(() => {
+        const map = mapRef.current;
+        detectionOverlayRef.current = null;
+        setDetectionOverlay(null);
+        if (!map) return;
+        if (map.getLayer(DET_LAYER)) try { map.removeLayer(DET_LAYER); } catch (_) { }
+        if (map.getSource(DET_SOURCE)) try { map.removeSource(DET_SOURCE); } catch (_) { }
+    }, []);
+
+    // keep the load-handler's stable ref pointed at the latest function
+    useEffect(() => { addDetectionRef.current = addDetectionOverlay; });
+
+    // live opacity updates
+    useEffect(() => {
+        const map = mapRef.current;
+        if (map && map.getLayer(DET_LAYER)) {
+            try { map.setPaintProperty(DET_LAYER, 'raster-opacity', detectionOpacity); } catch (_) { }
+        }
+    }, [detectionOpacity]);
+
+    // consume a pending overlay handed over from the Upload & Analysis page (once)
+    useEffect(() => {
+        let raw;
+        try { raw = localStorage.getItem('pendingMapOverlay'); } catch (_) { return; }
+        if (!raw) return;
+        try {
+            const payload = JSON.parse(raw);
+            localStorage.removeItem('pendingMapOverlay');
+            detectionOverlayRef.current = payload;
+            setDetectionOverlay(payload);
+            const tryAdd = () => {
+                const map = mapRef.current;
+                if (map && map.isStyleLoaded()) addDetectionOverlay(map, payload, true);
+                else setTimeout(tryAdd, 300);
+            };
+            tryAdd();
+        } catch (e) { console.warn('detection overlay parse failed', e); }
+    }, [addDetectionOverlay]);
 
     // ── Sentinel LULC Functions ──
     const addSentinelLayer = useCallback((map) => {
@@ -1916,6 +1986,34 @@ export default function Mapping() {
                         </div>
                     </div>
                 </Draggable>
+            )}
+
+            {/* Detection overlay control (from Upload & Analysis) */}
+            {detectionOverlay && (
+                <div className="absolute bottom-16 left-3 z-20 w-64 max-w-[calc(100vw-24px)] rounded-xl bg-[var(--bg-primary)]/95 backdrop-blur-md text-white border border-[var(--border-default)] shadow-2xl" style={{ boxShadow: '0 10px 30px rgba(0,0,0,0.6)' }}>
+                    <div className="px-3.5 py-2.5 border-b border-[var(--border-default)] bg-white/5 rounded-t-xl flex items-center gap-2">
+                        <span className="text-sm shrink-0">🗺️</span>
+                        <span className="text-[11px] font-bold tracking-[0.1em] uppercase text-[var(--text-primary)] truncate flex-1">Detection Overlay</span>
+                        <button onClick={removeDetectionOverlay} title="Remove overlay" className="text-red-400 hover:text-red-300 text-xs">✕</button>
+                    </div>
+                    <div className="p-3.5 space-y-2">
+                        <p className="text-[10px] text-[var(--text-secondary)] truncate" title={detectionOverlay.name}>{detectionOverlay.name}</p>
+                        <div>
+                            <label className="text-[10px] text-[var(--text-muted)] flex items-center justify-between mb-1">
+                                <span>Opacity</span><span>{Math.round(detectionOpacity * 100)}%</span>
+                            </label>
+                            <input type="range" min="0.1" max="1" step="0.05" value={detectionOpacity}
+                                onChange={e => setDetectionOpacity(parseFloat(e.target.value))}
+                                className="w-full h-1.5 rounded-lg appearance-none cursor-pointer accent-[var(--accent)] bg-white/15" />
+                        </div>
+                        <button
+                            onClick={() => { const m = mapRef.current; const b = detectionOverlay.bounds; if (m && b) m.fitBounds([[b.west, b.south], [b.east, b.north]], { padding: 60, duration: 1200 }); }}
+                            className="w-full py-1.5 text-[10px] font-medium text-[var(--text-accent)] bg-[var(--accent)]/10 border border-[var(--accent)]/20 rounded-md hover:bg-[var(--accent)]/20 transition-colors"
+                        >
+                            ↗ Zoom to overlay
+                        </button>
+                    </div>
+                </div>
             )}
 
             {/* Loading indicator */}

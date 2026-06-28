@@ -1,8 +1,10 @@
 import React, { useState, useRef } from "react";
+import { useNavigate } from "react-router-dom";
 import { fromBlob } from "geotiff";
+import proj4 from "proj4";
 
-const SEGMENTATION_API = "https://amrender-segformer-b5.hf.space/predict";
-const CHANGE_DETECTION_API = "https://amrender-urban-change-detector.hf.space/api/process_temporal_change";
+const SEGMENTATION_API = "https://asashit-smart-property-segformer.hf.space/predict";
+const CHANGE_DETECTION_API = "https://asashit-smart-property-segformer.hf.space/change-detection";
 const MAX_FILE_SIZE = 4.5 * 1024 * 1024; // 4.5 MB
 
 const ANALYSIS_TYPES = [
@@ -20,10 +22,10 @@ const MASK_LEGEND = [
 ];
 
 const CHANGE_LEGEND = [
-    { label: "New Construction / Urban Growth", color: "#00FFFF" },
-    { label: "Demolished / Cleared", color: "#EF4444" },
-    { label: "Vegetation Loss", color: "#F59E0B" },
-    { label: "Land Use Change", color: "#8B5CF6" },
+    { key: "new_construction", label: "New Construction", color: "#00FFFF" },
+    { key: "demolished", label: "Demolished / Cleared", color: "#EF4444" },
+    { key: "new_road", label: "New Road / Access", color: "#F59E0B" },
+    { key: "land_use_change", label: "Other Land-Use Change", color: "#8B5CF6" },
     { label: "No Change", color: "transparent", border: true },
 ];
 
@@ -72,7 +74,65 @@ async function fileToPreviewUrl(file) {
     return URL.createObjectURL(file);
 }
 
+// ── EPSG code → proj4 definition (handles UTM/WGS84 + Web Mercator) ──
+function epsgToProj(code) {
+    code = Number(code);
+    if (!code || code === 4326) return "EPSG:4326";
+    if (code === 3857 || code === 900913 || code === 102100) return "EPSG:3857";
+    if (code >= 32601 && code <= 32660) return `+proj=utm +zone=${code - 32600} +datum=WGS84 +units=m +no_defs`;
+    if (code >= 32701 && code <= 32760) return `+proj=utm +zone=${code - 32700} +south +datum=WGS84 +units=m +no_defs`;
+    return "EPSG:4326";
+}
+
+// ── Read a GeoTIFF's geographic bounds (lng/lat), reprojecting if needed ──
+async function getTifWgs84Bounds(file) {
+    try {
+        const tiff = await fromBlob(file);
+        const image = await tiff.getImage();
+        const [minX, minY, maxX, maxY] = image.getBoundingBox();
+        const gk = (typeof image.getGeoKeys === "function" ? image.getGeoKeys() : image.geoKeys) || {};
+        const epsg = gk.ProjectedCSTypeGeoKey || gk.GeographicTypeGeoKey || 4326;
+        const src = epsgToProj(epsg);
+        if (!isFinite(minX) || !isFinite(minY)) return null;
+        if (src !== "EPSG:4326") {
+            const [w, s] = proj4(src, "EPSG:4326", [minX, minY]);
+            const [e, n] = proj4(src, "EPSG:4326", [maxX, maxY]);
+            return { west: w, south: s, east: e, north: n };
+        }
+        // already lng/lat — sanity check range
+        if (Math.abs(minX) > 180 || Math.abs(minY) > 90) return null;
+        return { west: minX, south: minY, east: maxX, north: maxY };
+    } catch (e) {
+        console.warn("GeoTIFF bounds read failed:", e);
+        return null;
+    }
+}
+
+// ── Convert a colored mask PNG (black background) → transparent-background PNG data URL ──
+async function maskToTransparentDataUrl(b64png) {
+    return new Promise((resolve) => {
+        const img = new Image();
+        img.onload = () => {
+            const c = document.createElement("canvas");
+            c.width = img.width; c.height = img.height;
+            const ctx = c.getContext("2d");
+            ctx.drawImage(img, 0, 0);
+            const d = ctx.getImageData(0, 0, c.width, c.height);
+            const p = d.data;
+            for (let i = 0; i < p.length; i += 4) {
+                if (p[i] < 12 && p[i + 1] < 12 && p[i + 2] < 12) p[i + 3] = 0; // black bg → transparent
+                else p[i + 3] = 205;
+            }
+            ctx.putImageData(d, 0, 0);
+            resolve(c.toDataURL("image/png"));
+        };
+        img.onerror = () => resolve(null);
+        img.src = `data:image/png;base64,${b64png}`;
+    });
+}
+
 export default function Upload() {
+    const navigate = useNavigate();
     const [files, setFiles] = useState([]);
     const [analysisType, setAnalysisType] = useState("segment");
     const [processing, setProcessing] = useState(false);
@@ -112,9 +172,13 @@ export default function Upload() {
             throw new Error(`API ${resp.status}: ${errText}`);
         }
         const data = await resp.json();
-        // API returns { master_map_base64, raw_mask_base64 } as JPEG base64
+        // API returns { master_map_base64 (overlay), raw_mask_base64 (colored mask), stats }
         const b64 = data.master_map_base64 || data.raw_mask_base64;
-        return `data:image/jpeg;base64,${b64}`;
+        return {
+            maskUrl: `data:image/png;base64,${b64}`,
+            rawMaskB64: data.raw_mask_base64 || data.master_map_base64,
+            stats: data.stats || null,
+        };
     };
 
     // ── Process multiple images sequentially ──
@@ -139,13 +203,15 @@ export default function Upload() {
             const file = imageFiles[i];
             setProgress(`Processing ${i + 1} of ${imageFiles.length}: ${file.name}...`);
 
+            const isTif = /\.(tif|tiff)$/i.test(file.name);
             const inputUrl = await fileToPreviewUrl(file);
-            setSegResults(prev => [...prev, { inputName: file.name, inputUrl, maskUrl: null, status: "processing" }]);
+            const bounds = isTif ? await getTifWgs84Bounds(file) : null; // geo-bounds for map overlay
+            setSegResults(prev => [...prev, { inputName: file.name, inputUrl, maskUrl: null, isTif, bounds, status: "processing" }]);
 
             try {
-                const maskUrl = await segmentOneFile(file);
+                const { maskUrl, rawMaskB64, stats } = await segmentOneFile(file);
                 setSegResults(prev => prev.map((r, idx) =>
-                    idx === prev.length - 1 ? { ...r, maskUrl, status: "done" } : r
+                    idx === prev.length - 1 ? { ...r, maskUrl, rawMaskB64, stats, status: "done" } : r
                 ));
             } catch (err) {
                 setSegResults(prev => prev.map((r, idx) =>
@@ -154,6 +220,25 @@ export default function Upload() {
             }
         }
         setProgress("");
+    };
+
+    // ── Plot a TIF's detection mask onto the Mapping page (geo-referenced overlay) ──
+    const plotOnMap = async (r) => {
+        if (!r.rawMaskB64 || !r.bounds) {
+            setError("This image has no geo-reference (only GeoTIFFs can be plotted on the map).");
+            return;
+        }
+        setProgress("Preparing geo-referenced overlay…");
+        try {
+            const overlayUrl = await maskToTransparentDataUrl(r.rawMaskB64);
+            const payload = { url: overlayUrl, bounds: r.bounds, name: r.inputName, ts: Date.now() };
+            localStorage.setItem("pendingMapOverlay", JSON.stringify(payload));
+            setProgress("");
+            navigate("/mapping");
+        } catch (e) {
+            setProgress("");
+            setError("Could not prepare overlay: " + e.message);
+        }
     };
 
     // ── Change Detection ──
@@ -177,86 +262,26 @@ export default function Upload() {
 
         setCdResult({ pastUrl, presentUrl, changeUrl: null, status: "processing" });
 
-        setProgress("📡 Preparing images...");
+        setProgress("🧠 Segmenting both images & comparing masks…");
         try {
-            const GRADIO_BASE = "https://amrender-urban-change-detector.hf.space";
-
-            // Convert TIF files to PNG blobs, pass other formats through
-            const fileToPngBlob = async (file) => {
-                const name = file.name.toLowerCase();
-                if (/\.(tif|tiff)$/.test(name)) {
-                    // Convert TIF → canvas → PNG blob
-                    const previewDataUrl = await fileToPreviewUrl(file);
-                    if (previewDataUrl) {
-                        const resp = await fetch(previewDataUrl);
-                        return new File([await resp.blob()], file.name.replace(/\.(tif|tiff)$/i, ".png"), { type: "image/png" });
-                    }
-                }
-                return file;
-            };
-
-            const pastBlob = await fileToPngBlob(cdPastFile);
-            const presentBlob = await fileToPngBlob(cdPresentFile);
-
-            // Step 1: Upload files to Gradio server
-            setProgress("📡 Uploading images to AI server...");
-            const uploadFile = async (file) => {
-                const form = new FormData();
-                form.append("files", file);
-                const resp = await fetch(`${GRADIO_BASE}/gradio_api/upload`, { method: "POST", body: form });
-                if (!resp.ok) throw new Error(`Upload failed: ${resp.status}`);
-                const paths = await resp.json();
-                return paths[0]; // server file path like "/tmp/gradio/.../filename.png"
-            };
-
-            const pastPath = await uploadFile(pastBlob);
-            const presentPath = await uploadFile(presentBlob);
-
-            // Step 2: Submit processing job → get event_id
-            setProgress("📡 Submitting to Urban Change Detector AI...");
-            const callResp = await fetch(`${GRADIO_BASE}/gradio_api/call/process_temporal_change`, {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                    data: [
-                        { path: pastPath, orig_name: pastBlob.name, size: pastBlob.size, mime_type: "image/png", is_stream: false, meta: { _type: "gradio.FileData" } },
-                        { path: presentPath, orig_name: presentBlob.name, size: presentBlob.size, mime_type: "image/png", is_stream: false, meta: { _type: "gradio.FileData" } },
-                    ],
-                }),
-            });
-            if (!callResp.ok) {
-                const errText = await callResp.text().catch(() => "Unknown error");
-                throw new Error(`API call failed ${callResp.status}: ${errText}`);
+            // Our SegFormer Space segments BOTH images and diffs their masks server-side
+            const form = new FormData();
+            form.append("past", cdPastFile);
+            form.append("present", cdPresentFile);
+            const resp = await fetch(CHANGE_DETECTION_API, { method: "POST", body: form });
+            if (!resp.ok) {
+                const errText = await resp.text().catch(() => "Unknown error");
+                throw new Error(`API ${resp.status}: ${errText}`);
             }
-            const { event_id } = await callResp.json();
-            if (!event_id) throw new Error("No event_id returned");
-
-            // Step 3: Get SSE result stream
-            setProgress("📡 AI is analyzing changes... please wait...");
-            const sseResp = await fetch(`${GRADIO_BASE}/gradio_api/call/process_temporal_change/${event_id}`);
-            if (!sseResp.ok) throw new Error(`Result fetch failed: ${sseResp.status}`);
-            const sseText = await sseResp.text();
-
-            // Parse SSE — find the "data:" line with JSON array of image objects
-            let changeUrl = null;
-            for (const line of sseText.split("\n")) {
-                if (line.startsWith("data:")) {
-                    try {
-                        const data = JSON.parse(line.slice(5).trim());
-                        if (Array.isArray(data) && data.length > 0 && data[0]?.url) {
-                            changeUrl = data[0].url; // Growth Highlighted change map
-                            break;
-                        }
-                    } catch (e) { /* skip non-JSON data lines */ }
-                }
-            }
-
-            if (!changeUrl) throw new Error("No change map returned. Response: " + sseText.slice(0, 200));
-
-            // Fetch the result image and display it
-            const imgResp = await fetch(changeUrl);
-            const blob = await imgResp.blob();
-            setCdResult(prev => ({ ...prev, changeUrl: URL.createObjectURL(blob), status: "done" }));
+            const data = await resp.json();
+            setCdResult(prev => ({
+                ...prev,
+                changeUrl: `data:image/png;base64,${data.change_map_base64}`,
+                pastMaskUrl: data.past_mask_base64 ? `data:image/png;base64,${data.past_mask_base64}` : null,
+                presentMaskUrl: data.present_mask_base64 ? `data:image/png;base64,${data.present_mask_base64}` : null,
+                stats: data.stats || null,
+                status: "done",
+            }));
         } catch (err) {
             setCdResult(prev => ({ ...prev, status: "error", error: err.message }));
         }
@@ -570,6 +595,29 @@ export default function Upload() {
                                         </a>
                                     </div>
                                 )}
+
+                                {/* Change statistics */}
+                                {cdResult.status === "done" && cdResult.stats && (
+                                    <div className="mt-4 border-t border-[var(--border-default)] pt-3">
+                                        <p className="text-[10px] text-[var(--text-muted)] font-medium mb-2">CHANGE SUMMARY (% of area)</p>
+                                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                                            {CHANGE_LEGEND.filter(l => l.key).map(l => (
+                                                <div key={l.key} className="bg-[var(--bg-tertiary)] rounded-lg p-2">
+                                                    <div className="flex items-center gap-1.5 mb-0.5">
+                                                        <span className="w-2.5 h-2.5 rounded-sm shrink-0" style={{ background: l.color }} />
+                                                        <p className="text-[10px] text-[var(--text-muted)] truncate">{l.label}</p>
+                                                    </div>
+                                                    <p className="text-sm font-bold text-[var(--text-primary)]">
+                                                        {cdResult.stats[l.key]?.percent ?? 0}%
+                                                    </p>
+                                                </div>
+                                            ))}
+                                        </div>
+                                        <p className="text-[10px] text-[var(--text-muted)] mt-2">
+                                            Unchanged area: <span className="text-[var(--text-secondary)] font-medium">{cdResult.stats.no_change_percent}%</span>
+                                        </p>
+                                    </div>
+                                )}
                             </div>
                         </div>
                     )}
@@ -656,6 +704,34 @@ export default function Upload() {
                                             )}
                                         </div>
                                     </div>
+
+                                    {/* Class distribution stats */}
+                                    {r.status === "done" && r.stats && (
+                                        <div className="mt-3 grid grid-cols-2 sm:grid-cols-4 gap-2">
+                                            {Object.entries(r.stats).filter(([k]) => k !== "Background").map(([k, v]) => (
+                                                <div key={k} className="bg-[var(--bg-tertiary)] rounded-lg p-2">
+                                                    <p className="text-[10px] text-[var(--text-muted)] truncate">{k}</p>
+                                                    <p className="text-sm font-bold text-[var(--text-primary)]">{v.percent}%</p>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
+
+                                    {/* Plot on Map (GeoTIFF only) */}
+                                    {r.status === "done" && r.isTif && (
+                                        r.bounds ? (
+                                            <button
+                                                onClick={() => plotOnMap(r)}
+                                                className="mt-3 w-full py-2 rounded-lg text-xs font-semibold bg-[var(--accent)] text-white hover:bg-[#094d87] transition-colors flex items-center justify-center gap-2"
+                                            >
+                                                🗺️ Plot Detection Overlay on Map
+                                            </button>
+                                        ) : (
+                                            <p className="mt-3 text-[10px] text-[var(--text-muted)] italic">
+                                                This GeoTIFF has no embedded geo-reference, so it can't be placed on the map.
+                                            </p>
+                                        )
+                                    )}
                                 </div>
                             ))}
                         </div>
