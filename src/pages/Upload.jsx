@@ -13,14 +13,25 @@ const R2_DELETE_API = `${SEG_SPACE_BASE}/r2/delete`;
 const MAX_FILE_SIZE = 500 * 1024 * 1024;   // 500 MB hard cap
 const DIRECT_LIMIT = 4 * 1024 * 1024;      // ≤4 MB → POST directly; larger → via Cloudflare R2
 
-// Upload a (large) file to Cloudflare R2 via a presigned PUT, return the temp object key
-async function uploadToR2(file) {
+// Upload a (large) file to Cloudflare R2 via a presigned PUT, return the temp object key.
+// Uses XHR so we can report real upload progress (fetch can't). onProgress(loaded, total).
+async function uploadToR2(file, onProgress) {
     const ct = file.type || "application/octet-stream";
     const pres = await fetch(`${PRESIGN_API}?filename=${encodeURIComponent(file.name)}&content_type=${encodeURIComponent(ct)}`);
     if (!pres.ok) throw new Error(`Could not get upload URL (${pres.status})`);
     const { key, put_url, content_type } = await pres.json();
-    const put = await fetch(put_url, { method: "PUT", headers: { "Content-Type": content_type }, body: file });
-    if (!put.ok) throw new Error(`Upload to storage failed (${put.status})`);
+    await new Promise((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+        xhr.open("PUT", put_url);
+        xhr.setRequestHeader("Content-Type", content_type);
+        xhr.upload.onprogress = (e) => { if (e.lengthComputable && onProgress) onProgress(e.loaded, e.total); };
+        xhr.onload = () => (xhr.status >= 200 && xhr.status < 300)
+            ? resolve()
+            : reject(new Error(`Upload to storage failed (HTTP ${xhr.status})`));
+        xhr.onerror = () => reject(new Error("Upload blocked — check the bucket's CORS policy (see setup)."));
+        xhr.ontimeout = () => reject(new Error("Upload timed out."));
+        xhr.send(file);
+    });
     return key;
 }
 
@@ -189,6 +200,17 @@ export default function Upload() {
     const [dummyResult, setDummyResult] = useState(null);
     const abortRef = useRef(false);
 
+    // ── Upload progress (for large files going through R2) ──
+    const [uploadPct, setUploadPct] = useState(null);   // null = no active upload
+    const [uploadLabel, setUploadLabel] = useState("");
+    const [uploadBytes, setUploadBytes] = useState(null); // { loaded, total }
+    const onUpload = (label) => (loaded, total) => {
+        setUploadLabel(label);
+        setUploadBytes({ loaded, total });
+        setUploadPct(total ? Math.round((loaded / total) * 100) : 0);
+    };
+    const resetUpload = () => { setUploadPct(null); setUploadLabel(""); setUploadBytes(null); };
+
     // ── Change Detection state ──
     const [cdPastFile, setCdPastFile] = useState(null);
     const [cdPresentFile, setCdPresentFile] = useState(null);
@@ -213,10 +235,11 @@ export default function Upload() {
     const segmentOneFile = async (file) => {
         let resp;
         if (file.size > DIRECT_LIMIT) {
-            setProgress(`Uploading ${file.name} to temporary storage…`);
-            const key = await uploadToR2(file);
+            setProgress(`Uploading ${file.name}…`);
+            const key = await uploadToR2(file, onUpload(`Uploading ${file.name}`));
+            resetUpload();
             tempKeysRef.current.push(key);
-            setProgress(`Analyzing ${file.name}…`);
+            setProgress(`Analyzing ${file.name}… (this can take ~10–40s)`);
             resp = await fetch(PREDICT_URL_API, {
                 method: "POST", headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ key, filename: file.name }),
@@ -330,9 +353,11 @@ export default function Upload() {
             const big = cdPastFile.size > DIRECT_LIMIT || cdPresentFile.size > DIRECT_LIMIT;
             let resp;
             if (big) {
-                setProgress("Uploading images to temporary storage…");
-                const past_key = await uploadToR2(cdPastFile); tempKeysRef.current.push(past_key);
-                const present_key = await uploadToR2(cdPresentFile); tempKeysRef.current.push(present_key);
+                setProgress("Uploading PAST image…");
+                const past_key = await uploadToR2(cdPastFile, onUpload("Uploading PAST image")); tempKeysRef.current.push(past_key);
+                setProgress("Uploading PRESENT image…");
+                const present_key = await uploadToR2(cdPresentFile, onUpload("Uploading PRESENT image")); tempKeysRef.current.push(present_key);
+                resetUpload();
                 setProgress("🧠 Segmenting both images & comparing masks…");
                 resp = await fetch(CHANGE_URL_API, {
                     method: "POST", headers: { "Content-Type": "application/json" },
@@ -401,6 +426,7 @@ export default function Upload() {
         } else {
             await runDummyAnalysis();
         }
+        resetUpload();
         setProcessing(false);
     };
 
@@ -412,6 +438,7 @@ export default function Upload() {
         setCdPastFile(null);
         setCdPresentFile(null);
         setError(null);
+        resetUpload();
     };
 
     const completedCount = segResults.filter(r => r.status === "done").length;
@@ -548,6 +575,27 @@ export default function Upload() {
                                     </div>
                                 ))}
                             </div>
+                        </div>
+                    )}
+
+                    {/* Upload progress (large files via R2) */}
+                    {uploadPct !== null && (
+                        <div className="bg-[var(--bg-card)] backdrop-blur-md rounded-lg border border-[var(--accent)]/30 p-4 shadow-sm">
+                            <div className="flex items-center justify-between mb-2">
+                                <span className="text-xs font-medium text-[var(--text-primary)] flex items-center gap-2">
+                                    <span className="w-3 h-3 border-2 border-[var(--accent)]/30 border-t-[var(--accent)] rounded-full animate-spin" />
+                                    {uploadLabel || "Uploading…"}
+                                </span>
+                                <span className="text-xs font-bold text-[var(--accent)]">{uploadPct}%</span>
+                            </div>
+                            <div className="w-full h-2 bg-[var(--bg-tertiary)] rounded-full overflow-hidden">
+                                <div className="h-full bg-[var(--accent)] transition-all duration-150" style={{ width: `${uploadPct}%` }} />
+                            </div>
+                            {uploadBytes && (
+                                <p className="text-[10px] text-[var(--text-muted)] mt-1.5">
+                                    {(uploadBytes.loaded / 1048576).toFixed(1)} / {(uploadBytes.total / 1048576).toFixed(1)} MB uploaded to temporary cloud storage…
+                                </p>
+                            )}
                         </div>
                     )}
 
