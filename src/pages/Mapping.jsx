@@ -409,6 +409,7 @@ export default function Mapping() {
     const [detectionOpacity, setDetectionOpacity] = useState(0.85);
     const detectionOverlayRef = useRef(null);
     const addDetectionRef = useRef(null);
+    const detPanelRef = useRef(null); // draggable handle for the overlay control
     const DET_SOURCE = 'detection-overlay-src';
     const DET_LAYER = 'detection-overlay-layer';
 
@@ -1988,12 +1989,13 @@ export default function Mapping() {
                 </Draggable>
             )}
 
-            {/* Detection overlay control (from Upload & Analysis) */}
+            {/* Detection overlay control (from Upload & Analysis) — draggable */}
             {detectionOverlay && (
-                <div className="absolute bottom-16 left-3 z-20 w-64 max-w-[calc(100vw-24px)] rounded-xl bg-[var(--bg-primary)]/95 backdrop-blur-md text-white border border-[var(--border-default)] shadow-2xl" style={{ boxShadow: '0 10px 30px rgba(0,0,0,0.6)' }}>
-                    <div className="px-3.5 py-2.5 border-b border-[var(--border-default)] bg-white/5 rounded-t-xl flex items-center gap-2">
+                <Draggable nodeRef={detPanelRef} handle=".det-drag-handle" bounds="parent">
+                <div ref={detPanelRef} className="absolute bottom-28 right-3 z-30 w-64 max-w-[calc(100vw-24px)] rounded-xl bg-[var(--bg-primary)]/95 backdrop-blur-md text-white border border-[var(--border-default)] shadow-2xl" style={{ boxShadow: '0 10px 30px rgba(0,0,0,0.6)' }}>
+                    <div className="det-drag-handle cursor-move px-3.5 py-2.5 border-b border-[var(--border-default)] bg-white/5 rounded-t-xl flex items-center gap-2">
                         <span className="text-sm shrink-0">🗺️</span>
-                        <span className="text-[11px] font-bold tracking-[0.1em] uppercase text-[var(--text-primary)] truncate flex-1">Detection Overlay</span>
+                        <span className="text-[11px] font-bold tracking-[0.1em] uppercase text-[var(--text-primary)] truncate flex-1 select-none">Detection Overlay</span>
                         <button onClick={removeDetectionOverlay} title="Remove overlay" className="text-red-400 hover:text-red-300 text-xs">✕</button>
                     </div>
                     <div className="p-3.5 space-y-2">
@@ -2014,6 +2016,7 @@ export default function Mapping() {
                         </button>
                     </div>
                 </div>
+                </Draggable>
             )}
 
             {/* Loading indicator */}
