@@ -422,7 +422,7 @@ _TILE_CACHE_MAX = 500  # ~50MB of tiles
 
 EMPTY_PNG = b'\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01\x08\x06\x00\x00\x00\x1f\x15\xc4\x89\x00\x00\x00\nIDATx\x9cc\x00\x01\x00\x00\x05\x00\x01\r\n\xb4\x00\x00\x00\x00IEND\xaeB`\x82'
 
-# Legend-matching colormap
+# Legend-matching colormap (default: 1-3 = building confidence tiers, 4 road, 5 water, 6 open)
 RASTER_COLORMAP = {
     1: (220, 38, 38, 200),    # Dark Red — Buildings High
     2: (249, 115, 22, 200),   # Orange — Buildings Med
@@ -430,6 +430,18 @@ RASTER_COLORMAP = {
     4: (234, 179, 8, 220),    # Yellow — Roads
     5: (59, 130, 246, 200),   # Blue — Waterbodies
     6: (156, 163, 175, 180),  # Gray — Open Areas
+}
+
+# Visakhapatnam raster uses a different class scheme: 1 = building, 2 = road, 3 = water.
+VIZAG_COLORMAP = {
+    1: (220, 38, 38, 200),    # Red    — Buildings
+    2: (234, 179, 8, 220),    # Yellow — Roads
+    3: (59, 130, 246, 200),   # Blue   — Waterbodies
+}
+
+# Per-district colormap overrides
+DISTRICT_COLORMAPS = {
+    "visakhapatnam": VIZAG_COLORMAP,
 }
 
 
@@ -459,8 +471,9 @@ async def get_raster_tile(name: str, z: int, x: int, y: int):
             
             h, w = band.shape
             rgba = np.zeros((h, w, 4), dtype=np.uint8)
-            
-            for val, color in RASTER_COLORMAP.items():
+
+            colormap = DISTRICT_COLORMAPS.get(name, RASTER_COLORMAP)
+            for val, color in colormap.items():
                 mask = band == val
                 rgba[mask] = color
             

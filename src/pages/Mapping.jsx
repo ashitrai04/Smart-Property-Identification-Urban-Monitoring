@@ -357,7 +357,7 @@ export default function Mapping() {
     const [selectedDistrict, setSelectedDistrict] = useState(null);
     // Note: If you implement village-level feature server later
     const [selectedVillage, setSelectedVillage] = useState("");
-    const [baseMap, setBaseMap] = useState("dark-v11");
+    const [baseMap, setBaseMap] = useState("satellite-streets-v12");
     const [loading, setLoading] = useState(null);
     const [coords, setCoords] = useState(null);
     const [panelOpen, setPanelOpen] = useState(true);
@@ -975,7 +975,8 @@ export default function Mapping() {
 
         // Use API_BASE from our mapLayers util
         const { API_BASE } = await import("../utils/mapLayers");
-        const tileUrl = `${API_BASE}/api/districts/${encodeURIComponent(distKey)}/raster/tiles/{z}/{x}/{y}.png`;
+        // ?v bump busts old cached tiles (e.g. after the Visakhapatnam colormap fix)
+        const tileUrl = `${API_BASE}/api/districts/${encodeURIComponent(distKey)}/raster/tiles/{z}/{x}/{y}.png?v=2`;
 
         if (!map.getSource(MASK_SOURCE_ID)) {
             map.addSource(MASK_SOURCE_ID, {
@@ -1645,20 +1646,6 @@ export default function Mapping() {
                                         </button>
                                     </div>
 
-                                    {/* Custom LULC toggle using Sentinel */}
-                                    <label className="flex items-center justify-between py-2.5 px-3 rounded-lg hover:bg-white/5 cursor-pointer mb-2 border border-white/5 bg-white/5">
-                                        <div className="flex items-center gap-2.5 min-w-0">
-                                            <span className="text-sm shrink-0">🌍</span>
-                                            <span className="text-[12px] font-semibold text-[var(--accent)] truncate">Land Covers (LULC)</span>
-                                        </div>
-                                        <div
-                                            className={`w-8 h-4 rounded-full relative transition-colors ${showSentinel ? "bg-[var(--accent)]" : "bg-white/20"}`}
-                                            onClick={() => setShowSentinel(!showSentinel)}
-                                        >
-                                            <div className={`absolute top-0.5 w-3 h-3 rounded-full bg-white shadow transition-all ${showSentinel ? "left-4.5" : "left-0.5"}`} />
-                                        </div>
-                                    </label>
-
                                     {/* Mask toggle */}
                                     {currentDist.hasMask && (
                                         <label className="flex items-center gap-3 py-2.5 px-3 rounded-lg hover:bg-white/5 cursor-pointer mb-1">
@@ -1767,20 +1754,6 @@ export default function Mapping() {
                                 </div>
                             </div>
 
-                            {/* Sentinel LULC Legend */}
-                            {showSentinel && (
-                                <div className="px-5 py-4 border-t border-white/10 shrink-0 bg-[var(--bg-secondary)]/60">
-                                    <p className="text-[10px] uppercase tracking-[0.12em] text-white/50 mb-3">LULC Categories</p>
-                                    <div className="grid grid-cols-2 gap-y-3 gap-x-4">
-                                        {LAND_COVER_LEGEND.map(lc => (
-                                            <div key={lc.label} className="flex items-center gap-2.5">
-                                                <span className="w-3 h-3 rounded-sm shrink-0" style={{ background: lc.color }} />
-                                                <span className="text-xs text-white/80">{lc.label}</span>
-                                            </div>
-                                        ))}
-                                    </div>
-                                </div>
-                            )}
                         </div>
                     </div>
                 </Draggable>
