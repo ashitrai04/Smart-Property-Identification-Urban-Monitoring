@@ -1,45 +1,71 @@
-import React, { useState, useMemo } from "react";
+import { useState, useMemo, useEffect, useCallback } from "react";
+import { fetchActivities, supabaseEnabled } from "../lib/activityLog";
 
-const LOGS_DATA = [
-    { id: 1, date: "2025-02-28", district: "Visakhapatnam", type: "Change Detection", area: "Ward 42 — Maddilapalem", changes: 47, status: "Completed", method: "Sentinel-2" },
-    { id: 2, date: "2025-02-25", district: "Vijayawada", type: "Property Survey", area: "Zone B — Benz Circle", changes: 128, status: "Completed", method: "Drone Imagery" },
-    { id: 3, date: "2025-02-20", district: "Guntur", type: "Mask Update", area: "Nagarampalem Ward", changes: 33, status: "Completed", method: "Satellite Mask" },
-    { id: 4, date: "2025-02-18", district: "Visakhapatnam", type: "New Construction", area: "Gajuwaka Industrial", changes: 212, status: "Review", method: "AI Segmentation" },
-    { id: 5, date: "2025-02-15", district: "Nellore", type: "Water Body Change", area: "Mypadu Beach Rd", changes: 8, status: "Completed", method: "NDWI Analysis" },
-    { id: 6, date: "2025-02-12", district: "Anantapur", type: "Land Use Change", area: "Penukonda Highway", changes: 56, status: "Completed", method: "Sentinel-2" },
-    { id: 7, date: "2025-02-10", district: "Visakhapatnam", type: "Road Extension", area: "Beach Road Flyover", changes: 19, status: "Verified", method: "Drone Imagery" },
-    { id: 8, date: "2025-02-08", district: "Guntur", type: "Open Plot Survey", area: "AT Agraharam", changes: 91, status: "Completed", method: "AI Segmentation" },
-    { id: 9, date: "2025-01-30", district: "Vijayawada", type: "Monthly Analysis", area: "Full District", changes: 347, status: "Completed", method: "Multi-source" },
-    { id: 10, date: "2025-01-28", district: "Visakhapatnam", type: "Monthly Analysis", area: "Full District", changes: 521, status: "Completed", method: "Multi-source" },
-    { id: 11, date: "2025-01-25", district: "Nellore", type: "Encroachment Detect", area: "Canal Zone", changes: 14, status: "Review", method: "AI Segmentation" },
-    { id: 12, date: "2025-01-22", district: "Anantapur", type: "Monthly Analysis", area: "Full District", changes: 189, status: "Completed", method: "Multi-source" },
-];
+const TYPE_ICONS = {
+    "AI Segmentation": "🧠",
+    "Change Detection": "🔍",
+    "AOI Analysis": "📐",
+    "Boundary Upload": "🗺️",
+    "Report Generated": "📄",
+};
+const STATUS_COLORS = {
+    Completed: "bg-green-500/20 text-green-400",
+    Failed: "bg-red-500/20 text-red-400",
+};
 
-const DISTRICTS_FILTER = ["All", "Visakhapatnam", "Vijayawada", "Guntur", "Anantapur", "Nellore"];
-const TYPES_FILTER = ["All", "Change Detection", "Property Survey", "Mask Update", "New Construction", "Monthly Analysis", "Water Body Change", "Land Use Change"];
-const STATUS_COLORS = { "Completed": "bg-green-500/20 text-green-400", "Review": "bg-yellow-500/20 text-yellow-400", "Verified": "bg-blue-500/20 text-blue-400" };
+function metricsSummary(m) {
+    if (!m || typeof m !== "object") return "—";
+    return Object.entries(m).slice(0, 3).map(([k, v]) => `${k}: ${v}`).join(" · ");
+}
 
 export default function DataLogs() {
+    const [rows, setRows] = useState([]);
+    const [source, setSource] = useState("local");
+    const [loading, setLoading] = useState(true);
     const [distFilter, setDistFilter] = useState("All");
     const [typeFilter, setTypeFilter] = useState("All");
     const [page, setPage] = useState(0);
-    const perPage = 8;
+    const perPage = 10;
+
+    const load = useCallback(async () => {
+        setLoading(true);
+        const { rows: r, source: s } = await fetchActivities({ limit: 300 });
+        setRows(r); setSource(s); setLoading(false);
+    }, []);
+
+    useEffect(() => {
+        load();
+        // live-update when any page logs a new activity
+        const onNew = () => load();
+        window.addEventListener("sp-activity", onNew);
+        return () => window.removeEventListener("sp-activity", onNew);
+    }, [load]);
+
+    const districts = useMemo(() => ["All", ...Array.from(new Set(rows.map(r => r.district).filter(Boolean)))], [rows]);
+    const types = useMemo(() => ["All", ...Array.from(new Set(rows.map(r => r.type).filter(Boolean)))], [rows]);
 
     const filtered = useMemo(() =>
-        LOGS_DATA.filter(l => (distFilter === "All" || l.district === distFilter) && (typeFilter === "All" || l.type === typeFilter)),
-        [distFilter, typeFilter]);
+        rows.filter(r => (distFilter === "All" || r.district === distFilter) && (typeFilter === "All" || r.type === typeFilter)),
+        [rows, distFilter, typeFilter]);
 
     const paged = filtered.slice(page * perPage, (page + 1) * perPage);
-    const totalPages = Math.ceil(filtered.length / perPage);
+    const totalPages = Math.max(1, Math.ceil(filtered.length / perPage));
+
+    const counts = useMemo(() => ({
+        seg: filtered.filter(r => r.type === "AI Segmentation").length,
+        cd: filtered.filter(r => r.type === "Change Detection").length,
+        aoi: filtered.filter(r => r.type === "AOI Analysis" || r.type === "Boundary Upload").length,
+        failed: filtered.filter(r => r.status === "Failed").length,
+    }), [filtered]);
 
     const exportCSV = () => {
-        const headers = ["Date", "District", "Type", "Area", "Changes", "Status", "Method"];
-        const rows = filtered.map(l => [l.date, l.district, l.type, l.area, l.changes, l.status, l.method]);
-        const csv = [headers, ...rows].map(r => r.join(",")).join("\n");
-        const blob = new Blob([csv], { type: "text/csv" });
+        const headers = ["Timestamp", "Type", "District", "Target", "Metrics", "Status"];
+        const esc = (v) => `"${String(v ?? "").replace(/"/g, '""')}"`;
+        const lines = filtered.map(r => [r.created_at, r.type, r.district || "", r.area || "", metricsSummary(r.metrics), r.status].map(esc).join(","));
+        const blob = new Blob([[headers.join(","), ...lines].join("\n")], { type: "text/csv" });
         const a = document.createElement("a");
         a.href = URL.createObjectURL(blob);
-        a.download = `data_logs_${new Date().toISOString().slice(0, 10)}.csv`;
+        a.download = `activity_logs_${new Date().toISOString().slice(0, 10)}.csv`;
         a.click();
     };
 
@@ -48,89 +74,108 @@ export default function DataLogs() {
             <div className="bg-[var(--bg-card)] backdrop-blur-md rounded-lg border border-[var(--border-default)] p-4 sm:p-5 shadow-sm flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
                 <div>
                     <h2 className="text-lg sm:text-xl font-bold text-[var(--text-primary)]">Data Logs</h2>
-                    <p className="text-sm text-[var(--text-muted)] mt-1">Change detection and analysis history</p>
+                    <p className="text-sm text-[var(--text-muted)] mt-1">
+                        Every analysis run on this platform, recorded automatically — segmentations, change detections, AOI analyses and reports.
+                    </p>
                 </div>
-                <button onClick={exportCSV} className="inline-flex items-center gap-1.5 px-4 py-2 bg-[var(--accent)] text-white text-sm font-medium rounded-lg hover:bg-[#094d87] transition-colors">
-                    📥 Export CSV
-                </button>
+                <div className="flex items-center gap-2">
+                    <span className={`text-[10px] px-2 py-1 rounded-full font-medium ${supabaseEnabled ? "bg-green-500/15 text-green-400" : "bg-yellow-500/15 text-yellow-500"}`}
+                        title={supabaseEnabled ? "Logs are synced to Supabase" : "Add VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY to sync logs to the cloud (see docs/SUPABASE_SETUP.md)"}>
+                        {supabaseEnabled ? "● Cloud sync: on" : "● Cloud sync: off (local only)"}
+                    </span>
+                    <button onClick={load} className="px-3 py-2 text-sm border border-[var(--border-default)] rounded-lg text-[var(--text-secondary)] hover:border-[var(--accent)] transition-colors">↻ Refresh</button>
+                    <button onClick={exportCSV} disabled={!filtered.length}
+                        className="inline-flex items-center gap-1.5 px-4 py-2 bg-[var(--accent)] text-white text-sm font-medium rounded-lg hover:bg-[#094d87] transition-colors disabled:opacity-40">
+                        📥 Export CSV
+                    </button>
+                </div>
             </div>
 
             {/* Filters */}
             <div className="flex flex-wrap gap-3">
                 <select value={distFilter} onChange={e => { setDistFilter(e.target.value); setPage(0); }}
                     className="bg-[var(--bg-card)] text-[var(--text-primary)] border border-[var(--border-default)] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-[var(--accent)]">
-                    {DISTRICTS_FILTER.map(d => <option key={d} value={d}>{d === "All" ? "All Districts" : d}</option>)}
+                    {districts.map(d => <option key={d} value={d}>{d === "All" ? "All Districts" : d}</option>)}
                 </select>
                 <select value={typeFilter} onChange={e => { setTypeFilter(e.target.value); setPage(0); }}
                     className="bg-[var(--bg-card)] text-[var(--text-primary)] border border-[var(--border-default)] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-[var(--accent)]">
-                    {TYPES_FILTER.map(t => <option key={t} value={t}>{t === "All" ? "All Types" : t}</option>)}
+                    {types.map(t => <option key={t} value={t}>{t === "All" ? "All Types" : t}</option>)}
                 </select>
-                <span className="text-xs text-[var(--text-muted)] self-center">{filtered.length} results</span>
+                <span className="text-xs text-[var(--text-muted)] self-center">{filtered.length} entries · {source === "supabase" ? "cloud" : "this browser"}</span>
             </div>
 
-            {/* Summary */}
+            {/* Summary — real counts */}
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                <div className="bg-[var(--bg-card)] backdrop-blur-md rounded-lg border border-[var(--border-default)] p-4 shadow-sm">
-                    <p className="text-xs text-[var(--text-muted)]">Total Entries</p>
-                    <p className="text-xl font-bold text-[var(--text-primary)]">{filtered.length}</p>
-                </div>
-                <div className="bg-[var(--bg-card)] backdrop-blur-md rounded-lg border border-[var(--border-default)] p-4 shadow-sm">
-                    <p className="text-xs text-[var(--text-muted)]">Total Changes</p>
-                    <p className="text-xl font-bold text-[var(--accent)]">{filtered.reduce((s, l) => s + l.changes, 0).toLocaleString()}</p>
-                </div>
-                <div className="bg-[var(--bg-card)] backdrop-blur-md rounded-lg border border-[var(--border-default)] p-4 shadow-sm">
-                    <p className="text-xs text-[var(--text-muted)]">Completed</p>
-                    <p className="text-xl font-bold text-green-600">{filtered.filter(l => l.status === "Completed").length}</p>
-                </div>
-                <div className="bg-[var(--bg-card)] backdrop-blur-md rounded-lg border border-[var(--border-default)] p-4 shadow-sm">
-                    <p className="text-xs text-[var(--text-muted)]">Under Review</p>
-                    <p className="text-xl font-bold text-yellow-600">{filtered.filter(l => l.status === "Review").length}</p>
-                </div>
+                {[
+                    ["AI Segmentations", counts.seg, "text-[var(--accent)]"],
+                    ["Change Detections", counts.cd, "text-blue-400"],
+                    ["AOI / Boundary Analyses", counts.aoi, "text-purple-400"],
+                    ["Failed Runs", counts.failed, counts.failed ? "text-red-400" : "text-[var(--text-primary)]"],
+                ].map(([label, n, color]) => (
+                    <div key={label} className="bg-[var(--bg-card)] backdrop-blur-md rounded-lg border border-[var(--border-default)] p-4 shadow-sm">
+                        <p className="text-xs text-[var(--text-muted)]">{label}</p>
+                        <p className={`text-xl font-bold ${color}`}>{n}</p>
+                    </div>
+                ))}
             </div>
 
             {/* Table */}
             <div className="bg-[var(--bg-card)] backdrop-blur-md rounded-lg border border-[var(--border-default)] shadow-sm overflow-hidden">
-                <div className="overflow-x-auto">
-                    <table className="w-full text-sm">
-                        <thead className="bg-[var(--bg-tertiary)] text-[var(--text-muted)]">
-                            <tr>
-                                <th className="py-2.5 px-4 text-left font-medium">Date</th>
-                                <th className="py-2.5 px-4 text-left font-medium">District</th>
-                                <th className="py-2.5 px-4 text-left font-medium">Type</th>
-                                <th className="py-2.5 px-4 text-left font-medium">Area</th>
-                                <th className="py-2.5 px-4 text-right font-medium">Changes</th>
-                                <th className="py-2.5 px-4 text-center font-medium">Method</th>
-                                <th className="py-2.5 px-4 text-center font-medium">Status</th>
-                                <th className="py-2.5 px-4 text-center font-medium">Export</th>
-                            </tr>
-                        </thead>
-                        <tbody className="divide-y divide-[var(--border-default)]">
-                            {paged.map(l => (
-                                <tr key={l.id} className="hover:bg-[var(--bg-tertiary)] transition-colors">
-                                    <td className="py-2.5 px-4 text-xs text-[var(--text-muted)]">{l.date}</td>
-                                    <td className="py-2.5 px-4 font-medium text-[var(--text-primary)] text-xs">{l.district}</td>
-                                    <td className="py-2.5 px-4 text-xs">{l.type}</td>
-                                    <td className="py-2.5 px-4 text-xs text-[var(--text-muted)] max-w-[180px] truncate">{l.area}</td>
-                                    <td className="py-2.5 px-4 text-right text-xs font-semibold">{l.changes}</td>
-                                    <td className="py-2.5 px-4 text-center text-[10px] text-[var(--text-muted)]">{l.method}</td>
-                                    <td className="py-2.5 px-4 text-center">
-                                        <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium ${STATUS_COLORS[l.status] || "bg-[var(--bg-secondary)] text-[var(--text-muted)]"}`}>
-                                            ● {l.status}
-                                        </span>
-                                    </td>
-                                    <td className="py-2.5 px-4 text-center">
-                                        <button className="text-[var(--accent)] hover:text-[#094d87] text-xs font-medium">🖼️ Image</button>
-                                    </td>
+                {loading ? (
+                    <div className="p-10 text-center text-sm text-[var(--text-muted)]">
+                        <span className="inline-block w-5 h-5 border-2 border-[var(--accent)]/30 border-t-[var(--accent)] rounded-full animate-spin align-middle mr-2" />
+                        Loading activity…
+                    </div>
+                ) : filtered.length === 0 ? (
+                    <div className="p-10 text-center space-y-2">
+                        <p className="text-3xl">🗂️</p>
+                        <p className="text-sm font-medium text-[var(--text-primary)]">No activity recorded yet</p>
+                        <p className="text-xs text-[var(--text-muted)] max-w-md mx-auto">
+                            This log fills up as you use the platform: run an <strong>AI Segmentation</strong> or <strong>Change Detection</strong> in Upload &amp; Analysis,
+                            draw an <strong>Area of Interest</strong> on the Mapping page, or generate a <strong>DSS report</strong> — each run appears here with its real results.
+                        </p>
+                    </div>
+                ) : (
+                    <div className="overflow-x-auto">
+                        <table className="w-full text-sm">
+                            <thead className="bg-[var(--bg-tertiary)] text-[var(--text-muted)]">
+                                <tr>
+                                    <th className="py-2.5 px-4 text-left font-medium">When</th>
+                                    <th className="py-2.5 px-4 text-left font-medium">Type</th>
+                                    <th className="py-2.5 px-4 text-left font-medium">District</th>
+                                    <th className="py-2.5 px-4 text-left font-medium">Target</th>
+                                    <th className="py-2.5 px-4 text-left font-medium">Results</th>
+                                    <th className="py-2.5 px-4 text-center font-medium">Status</th>
                                 </tr>
-                            ))}
-                        </tbody>
-                    </table>
-                </div>
+                            </thead>
+                            <tbody className="divide-y divide-[var(--border-default)]">
+                                {paged.map(r => (
+                                    <tr key={r.id} className="hover:bg-[var(--bg-tertiary)] transition-colors">
+                                        <td className="py-2.5 px-4 text-xs text-[var(--text-muted)] whitespace-nowrap">
+                                            {new Date(r.created_at).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" })}
+                                        </td>
+                                        <td className="py-2.5 px-4 text-xs font-medium text-[var(--text-primary)] whitespace-nowrap">
+                                            {TYPE_ICONS[r.type] || "•"} {r.type}
+                                        </td>
+                                        <td className="py-2.5 px-4 text-xs">{r.district || "—"}</td>
+                                        <td className="py-2.5 px-4 text-xs text-[var(--text-muted)] max-w-[200px] truncate" title={r.area || ""}>{r.area || "—"}</td>
+                                        <td className="py-2.5 px-4 text-xs text-[var(--text-secondary)] max-w-[260px] truncate" title={metricsSummary(r.metrics)}>{metricsSummary(r.metrics)}</td>
+                                        <td className="py-2.5 px-4 text-center">
+                                            <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium ${STATUS_COLORS[r.status] || "bg-[var(--bg-secondary)] text-[var(--text-muted)]"}`}>
+                                                ● {r.status}
+                                            </span>
+                                        </td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+                )}
                 {totalPages > 1 && (
                     <div className="flex items-center justify-between px-4 py-3 border-t border-[var(--border-default)]">
-                        <button onClick={() => setPage(p => Math.max(0, p - 1))} disabled={page === 0} className="text-xs text-[var(--accent)] hover:text-[#094d87] disabled:text-gray-300">← Previous</button>
+                        <button onClick={() => setPage(p => Math.max(0, p - 1))} disabled={page === 0} className="text-xs text-[var(--accent)] hover:text-[#094d87] disabled:opacity-40">← Previous</button>
                         <span className="text-xs text-[var(--text-muted)]">Page {page + 1} of {totalPages}</span>
-                        <button onClick={() => setPage(p => Math.min(totalPages - 1, p + 1))} disabled={page >= totalPages - 1} className="text-xs text-[var(--accent)] hover:text-[#094d87] disabled:text-gray-300">Next →</button>
+                        <button onClick={() => setPage(p => Math.min(totalPages - 1, p + 1))} disabled={page >= totalPages - 1} className="text-xs text-[var(--accent)] hover:text-[#094d87] disabled:opacity-40">Next →</button>
                     </div>
                 )}
             </div>

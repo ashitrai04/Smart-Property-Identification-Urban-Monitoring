@@ -1,0 +1,10 @@
+flowchart TD
+    U[User Browser] --> FE[Vercel - React/Vite/Mapbox Web App<br/>smart-property-identification-urban.vercel.app]
+    FE -->|small image POST| SEG[HF Space: SegFormer-B5 API<br/>FastAPI Docker, CPU<br/>/predict, /change-detection]
+    FE -->|large image >4MB| R2[(Cloudflare R2<br/>temp/ presigned PUT)]
+    R2 --> SEG2[HF Space /predict-url, /change-detection-url<br/>reads object from R2]
+    FE -->|LULC vectors/tiles| BE[HF Space: Data Backend<br/>FastAPI, GeoJSON + raster tiles]
+    BE --> R2DATA[(Cloudflare R2<br/>district GPKG + raster datasets)]
+    SEG --> FE
+    SEG2 --> FE
+    BE --> FE

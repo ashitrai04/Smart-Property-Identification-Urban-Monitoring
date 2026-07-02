@@ -1,0 +1,15 @@
+flowchart TD
+    EB[Amazon EventBridge Cron] --> M1[Monthly: Vijayawada + Vizag urban]
+    EB --> Q1[Quarterly: all 5 districts]
+    EB --> A1[Annual: full YoY]
+    M1 --> LAM[AWS Lambda Job Orchestrator]
+    Q1 --> LAM
+    A1 --> LAM
+    LAM --> SQS[SQS District Jobs] --> EP[SageMaker Endpoint ml.g4dn.xlarge - T4 GPU]
+    S3M[(S3 Model Registry best_model.pth)] --> EP
+    S3I[(S3 Imagery chips)] --> EP
+    EP --> PROC[Per-district: normalize -> TTA -> V4 post -> change detection] --> EXP[Export GeoTIFF + SHP + PNG]
+    EXP --> S3R[(S3 Results versioned)]
+    S3R --> AGOL[ArcGIS Online layer update - arcgis Python API]
+    S3R --> SNS[SNS email notification]
+    AGOL --> WEB[Web App via REST API]

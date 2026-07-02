@@ -1,0 +1,10 @@
+flowchart TD
+    I[Input 3x512x512] --> S1[Stage 1: 128x128 x64<br/>OverlapPatchEmbed + EffAttn R=8 + MixFFN x3]
+    S1 --> S2[Stage 2: 64x64 x128<br/>EffAttn R=4 x6]
+    S2 --> S3[Stage 3: 32x32 x320<br/>EffAttn R=2 x40]
+    S3 --> S4[Stage 4: 16x16 x512<br/>EffAttn R=1 x3]
+    S1 --> H[All-MLP Decode Head<br/>unify to 768ch, concat]
+    S2 --> H
+    S3 --> H
+    S4 --> H
+    H --> C[Classifier 768 -> 5] --> U[Bilinear Upsample to 512x512x5] --> O[Softmax per-pixel]

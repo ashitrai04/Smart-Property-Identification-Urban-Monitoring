@@ -1,0 +1,14 @@
+flowchart TD
+    I[Input Image padded to /32] --> O1[Original]
+    I --> O2[HFlip]
+    I --> O3[VFlip]
+    I --> O4[HFlip + VFlip]
+    O1 --> F1[Forward -> Softmax]
+    O2 --> F2[Forward -> Un-flip -> Softmax]
+    O3 --> F3[Forward -> Un-flip -> Softmax]
+    O4 --> F4[Forward -> Un-flip -> Softmax]
+    F1 --> AV[Average 4 Probability Maps]
+    F2 --> AV
+    F3 --> AV
+    F4 --> AV
+    AV --> AR[Argmax -> Final Prediction]

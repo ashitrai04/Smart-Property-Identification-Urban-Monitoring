@@ -1,0 +1,6 @@
+flowchart TD
+    O[Model Output Logits B,5,512,512] --> CE[Weighted Cross-Entropy 40%<br/>auto class weights + 2x road, label smoothing 0.05]
+    O --> FT[Focal Tversky 60%<br/>softmax -> one-hot -> Tversky a=0.3 b=0.7, focal g=0.75]
+    CE --> SUM[L = 0.4*CE + 0.6*FT]
+    FT --> SUM
+    SUM --> BP[Backprop + GradScaler FP16 + GradClip 1.0 + AdamW]

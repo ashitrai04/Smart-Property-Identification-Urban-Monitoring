@@ -1,0 +1,23 @@
+flowchart TD
+    subgraph RAW[Raw Data]
+      R1[High-Res Satellite Imagery<br/>1m GSD, 3-band RGB]
+      R2[OSM Southern India Export<br/>Buildings, Roads, Water, Landuse]
+      R3[Google Open Buildings<br/>ML-detected footprints]
+    end
+    R2 --> Q1
+    R3 --> Q1
+    subgraph QGIS[QGIS Processing]
+      Q1[Vector Merging<br/>OSM + Google] --> Q2[CRS Reprojection / Alignment]
+      Q2 --> Q3[Class Definition<br/>8-class schema] --> Q4[Rasterization to GeoTIFF masks]
+    end
+    R1 --> C1
+    Q4 --> C1
+    subgraph CHIP[Chipping & Pairing]
+      C1[Image Chipping 512x512] --> C2[Image-Mask Pairing & Co-registration]
+    end
+    C2 --> CL
+    subgraph CLEAN[Cleaning & Balancing]
+      CL[CRS consistency check] --> CL2[Corrupt tile removal]
+      CL2 --> CL3[No-Data filter: drop >80% background] --> CL4[Class balance audit]
+    end
+    CL4 --> F[Final Dataset<br/>18,240 chips · 5 districts · 5-class taxonomy]

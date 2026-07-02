@@ -1,0 +1,4 @@
+flowchart LR
+    A[Raw GeoTIFF<br/>uint8/uint16] --> B[Stage 1: Percentile Stretch<br/>clip px to P2..P98 per band -> 0..1]
+    B --> C[Stage 2: ImageNet Standardize<br/>mean .485,.456,.406 / std .229,.224,.225]
+    C --> D[Normalized Float32 Tensor 3xHxW]

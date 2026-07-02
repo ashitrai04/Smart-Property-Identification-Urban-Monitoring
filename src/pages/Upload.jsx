@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { fromBlob } from "geotiff";
 import proj4 from "proj4";
+import { logActivity } from "../lib/activityLog";
 import { registerTour, unregisterTour, fetchFile as tourFetchFile } from "../tour/tourBus";
 
 const SEG_SPACE_BASE = "https://asashit-smart-property-segformer.hf.space";
@@ -300,10 +301,14 @@ export default function Upload() {
                 setSegResults(prev => prev.map((r, idx) =>
                     idx === prev.length - 1 ? { ...r, maskUrl, rawMaskB64, stats, status: "done" } : r
                 ));
+                const m = {};
+                if (stats) Object.entries(stats).forEach(([k, v]) => { if (k !== "Background") m[k] = `${v.percent}%`; });
+                logActivity({ type: "AI Segmentation", district: "Custom Upload", area: file.name, status: "Completed", metrics: m, meta: { sizeKB: Math.round(file.size / 1024), geotiff: isTif } });
             } catch (err) {
                 setSegResults(prev => prev.map((r, idx) =>
                     idx === prev.length - 1 ? { ...r, status: "error", error: err.message } : r
                 ));
+                logActivity({ type: "AI Segmentation", district: "Custom Upload", area: file.name, status: "Failed", meta: { error: String(err.message).slice(0, 160) } });
             }
         }
         setProgress("");
@@ -384,8 +389,21 @@ export default function Upload() {
                 stats: data.stats || null,
                 status: "done",
             }));
+            const s = data.stats || {};
+            logActivity({
+                type: "Change Detection", district: "Custom Upload",
+                area: `${cdPastFile.name} → ${cdPresentFile.name}`, status: "Completed",
+                metrics: {
+                    "New Construction": `${s.new_construction?.percent ?? 0}%`,
+                    "Demolished": `${s.demolished?.percent ?? 0}%`,
+                    "New Road": `${s.new_road?.percent ?? 0}%`,
+                    "Other Change": `${s.land_use_change?.percent ?? 0}%`,
+                    "Unchanged": `${s.no_change_percent ?? 0}%`,
+                },
+            });
         } catch (err) {
             setCdResult(prev => ({ ...prev, status: "error", error: err.message }));
+            logActivity({ type: "Change Detection", district: "Custom Upload", area: `${cdPastFile?.name} → ${cdPresentFile?.name}`, status: "Failed", meta: { error: String(err.message).slice(0, 160) } });
         }
         setProgress("");
     };

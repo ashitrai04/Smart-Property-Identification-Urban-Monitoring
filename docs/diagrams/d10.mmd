@@ -1,0 +1,6 @@
+flowchart LR
+    T1[T1 Satellite Image - past] --> S1[SegFormer-B5 + TTA + V4] --> M1[LULC Map T1]
+    T2[T2 Satellite Image - present] --> S2[SegFormer-B5 + TTA + V4] --> M2[LULC Map T2]
+    M1 --> CM[Pixel-wise Class Transition Matrix T1 -> T2]
+    M2 --> CM
+    CM --> CL[Change Classification] --> OUT[Change Map: PNG / GeoTIFF / GeoJSON + stats]

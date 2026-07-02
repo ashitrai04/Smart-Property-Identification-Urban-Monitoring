@@ -1,0 +1,7 @@
+flowchart TD
+    A[TTA-averaged probabilities] --> B[Argmax -> Prediction]
+    B --> W[WATER: morph close/open, remove <64px, fill holes]
+    W --> R[ROAD: morph close, gap bridge, skeletonize, distance-transform width, gaussian smooth, min width]
+    R --> BL[BUILDING: morph close, confidence gate >=0.35, remove small, solidity-based regularize]
+    BL --> OP[OPEN LAND: morph close, remove <64px]
+    OP --> F[Final LULC]

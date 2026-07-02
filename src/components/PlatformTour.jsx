@@ -152,8 +152,8 @@ const STEPS = [
       desc: "The <strong>DSS</strong> turns analysis into official reports. Pick the <strong>district</strong>, set the <strong>reporting period</strong>, and tick the <strong>data types</strong> to include — watch each field being filled.",
       script: [
           { sel: '[data-tour="dss-district"] select', select: "Vijayawada", wait: 1300 },
-          { sel: '[data-tour="dss-dates"] > div:nth-child(1) input', input: "2026-01-01", wait: 1000 },
-          { sel: '[data-tour="dss-dates"] > div:nth-child(2) input', input: "2026-03-31", wait: 1000 },
+          { sel: '[data-tour="dss-dates"] > div:nth-child(1) input', input: new Date(Date.now() - 90 * 86400000).toISOString().slice(0, 10), wait: 1000 },
+          { sel: '[data-tour="dss-dates"] > div:nth-child(2) input', input: new Date().toISOString().slice(0, 10), wait: 1000 },
           { sel: '[data-tour="dss-datatypes"] label', click: true, wait: 1100 },
       ], hold: 4500 },
 

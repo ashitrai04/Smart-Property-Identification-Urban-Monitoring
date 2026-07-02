@@ -1,0 +1,31 @@
+flowchart TD
+    subgraph IN[1 · Data Ingestion]
+      A1[512x512 GeoTIFF Satellite Chips<br/>1m / 50cm GSD] --> A3
+      A2[Co-registered Label Masks<br/>8 to 5 class remap] --> A3[Image-Mask Pairs]
+    end
+    A3 --> P
+    subgraph P[2 · Preprocessing]
+      P1[Percentile Normalization<br/>2-98% stretch per band] --> P2[ImageNet Standardization]
+      P2 --> P3[Multi-Scale Augmentation<br/>resize, crop, elastic, colour, noise, flip, rotate]
+    end
+    P --> M
+    subgraph M[3 · SegFormer-B5 ~84M]
+      M1[Hierarchical Transformer Encoder<br/>4 stages] --> M2[MLP Decode Head<br/>768ch to 5 classes]
+      M2 --> M3[Bilinear Upsample to 512x512x5]
+    end
+    M --> L
+    subgraph L[4 · Combined Loss]
+      L1[Focal Tversky 60%] --> L3[L = 0.4*CE + 0.6*FT]
+      L2[Weighted CE + Label Smoothing 40%] --> L3
+    end
+    M --> T
+    subgraph T[5 · TTA Inference]
+      T1[4-Way Flip Averaging] --> T2[Softmax Average to Argmax]
+    end
+    T --> V
+    subgraph V[6 · V4 Post-Processing]
+      V1[Water priority] --> V2[Road: gap-bridge + skeleton width norm]
+      V2 --> V3[Building: convex-hull regularization]
+      V3 --> V4[Open land cleanup]
+    end
+    V --> D[7 · Deployment<br/>HF Spaces / Vercel / R2 - now<br/>AWS SageMaker + ArcGIS - target]

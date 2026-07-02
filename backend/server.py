@@ -363,8 +363,38 @@ async def get_boundary(name: str):
     return Response(content=_gdf_to_geojson_string(bdf), media_type="application/json")
 
 
-@app.get("/api/districts/{name}/{layer}")
+# NOTE: this route MUST be defined before /{layer}, otherwise "stats" is
+# swallowed by the layer catch-all and this endpoint is unreachable.
+@app.get("/api/districts/{name}/stats")
+async def get_stats(name: str):
+    """Real per-layer statistics for a district (fclass-aware, matches the layer endpoints)."""
+    name = name.lower()
+    data = _load_district(name)
+    gdf = data.get("features", gpd.GeoDataFrame())
 
+    stats = {}
+    total_area = 0.0
+    if len(gdf) > 0 and "class_id" in gdf.columns:
+        for lname in ["buildings", "roads", "waterbodies", "openareas"]:
+            subset = _filter_features(gdf, layer=lname)
+            layer_stats = {"count": int(len(subset))}
+            if len(subset) > 0 and "area_m2" in subset.columns:
+                areas = subset["area_m2"].dropna()
+                if len(areas) > 0:
+                    layer_stats["total_area_m2"] = float(areas.sum())
+                    layer_stats["avg_area_m2"] = float(areas.mean())
+                    total_area += float(areas.sum())
+            if lname == "roads" and len(subset) > 0 and "fclass" in subset.columns:
+                layer_stats["road_types"] = {str(k): int(v) for k, v in
+                                             subset["fclass"].value_counts().head(10).items()}
+            stats[lname] = layer_stats
+    stats["boundary"] = {"count": int(len(data.get("boundary", [])))}
+
+    return {"district": name, "total_features": int(len(gdf)),
+            "total_classified_area_m2": total_area, "stats": stats}
+
+
+@app.get("/api/districts/{name}/{layer}")
 async def get_district_layer(name: str, layer: str, bbox: str = Query(None), zoom: float = Query(None), limit: int = Query(None)):
     """Get GeoJSON for a specific layer, optionally filtered by bbox and zoom."""
     name = name.lower()
@@ -383,37 +413,6 @@ async def get_district_layer(name: str, layer: str, bbox: str = Query(None), zoo
     filtered = _filter_features(gdf, layer=layer, class_id=class_id, bbox_str=bbox, zoom=zoom, limit=limit)
     
     return Response(content=_gdf_to_geojson_string(filtered), media_type="application/json")
-
-
-@app.get("/api/districts/{name}/stats")
-async def get_stats(name: str):
-    """Get feature statistics for a district."""
-    name = name.lower()
-    data = _load_district(name)
-    gdf = data.get("features", gpd.GeoDataFrame())
-
-    stats = {}
-    if "class_id" in gdf.columns:
-        for cls_id, lname in CLASS_LAYER_MAP.items():
-            subset = gdf[gdf["class_id"] == cls_id]
-            layer_stats = {"count": len(subset)}
-
-            # Area stats for buildings
-            if "area_m2" in subset.columns and cls_id == 1:
-                areas = subset["area_m2"].dropna()
-                if len(areas) > 0:
-                    layer_stats["total_area_m2"] = float(areas.sum())
-                    layer_stats["avg_area_m2"] = float(areas.mean())
-                    layer_stats["min_area_m2"] = float(areas.min())
-                    layer_stats["max_area_m2"] = float(areas.max())
-
-            # Road types
-            if "fclass" in subset.columns and cls_id == 4:
-                layer_stats["road_types"] = subset["fclass"].value_counts().to_dict()
-
-            stats[lname] = layer_stats
-
-    return {"district": name, "stats": stats}
 
 
 # ── Tile cache: stores rendered PNG bytes keyed by (district, z, x, y) ──

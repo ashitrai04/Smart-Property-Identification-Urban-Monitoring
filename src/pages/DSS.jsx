@@ -2,36 +2,22 @@ import React, { useState, useRef, useEffect } from "react";
 import mapboxgl from "mapbox-gl";
 import "mapbox-gl/dist/mapbox-gl.css";
 import {
-    BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer,
-    PieChart, Pie, Cell, Legend,
+    BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell,
 } from "recharts";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import { registerTour, unregisterTour } from "../tour/tourBus";
+import { API_BASE } from "../utils/mapLayers";
+import { fetchActivitiesInRange, logActivity } from "../lib/activityLog";
 
 const MAPBOX_TOKEN = import.meta.env.VITE_MAPBOX_TOKEN;
 
 const DISTRICTS_LIST = [
-    { 
-        name: "Visakhapatnam", 
-        center: [83.25, 17.93], 
-        zoom: 11,
-        featureServer: "https://services5.arcgis.com/73n8CSGpSSyHr1T9/arcgis/rest/services/final_visakhapatnam/FeatureServer"
-    },
-    { 
-        name: "Vijayawada", 
-        center: [80.62, 16.51], 
-        zoom: 11,
-        featureServer: null 
-    },
-    { 
-        name: "Guntur", 
-        center: [80.45, 16.30], 
-        zoom: 11,
-        featureServer: "https://services5.arcgis.com/73n8CSGpSSyHr1T9/arcgis/rest/services/guntur_layer/FeatureServer" 
-    },
-    { name: "Anantapur", center: [77.60, 14.68], zoom: 10, featureServer: null },
-    { name: "Nellore", center: [79.99, 14.44], zoom: 10, featureServer: null },
+    { name: "Visakhapatnam", key: "visakhapatnam", center: [83.25, 17.93], zoom: 11 },
+    { name: "Vijayawada", key: "vijayawada", center: [80.62, 16.51], zoom: 11 },
+    { name: "Guntur", key: "guntur", center: [80.45, 16.30], zoom: 11 },
+    { name: "Anantapur", key: "anantapur", center: [77.60, 14.68], zoom: 10 },
+    { name: "Nellore", key: "nellore", center: [79.99, 14.44], zoom: 10 },
 ];
 
 const DATA_TYPES = [
@@ -43,91 +29,76 @@ const DATA_TYPES = [
     "Building Footprints",
 ];
 
-async function generateReport(districtName, dateFrom, dateTo) {
-    const distData = DISTRICTS_LIST.find(d => d.name === districtName);
-    const fsUrl = distData?.featureServer;
+// Real validation metrics of the deployed SegFormer-B5 model (technical report)
+const MODEL_CARD = {
+    name: "SegFormer-B5 (84M params)",
+    miou: 0.5474,
+    classIoU: { Background: 0.880, Building: 0.430, Road: 0.431, Water: 0.635, "Open Land": 0.281 },
+};
 
-    let totalProperties = 0;
-    let openPlots = 0;
-    let waterBodies = 0;
-    let builtUpAreaSqMeters = 0;
+const km2 = (m2) => (m2 > 0 ? (m2 / 1e6).toFixed(2) : null);
 
-    if (fsUrl) {
-        try {
-            const fetchCount = async (layerId) => {
-                const res = await fetch(`${fsUrl}/${layerId}/query?where=1=1&returnCountOnly=true&f=json`);
-                if (!res.ok) return 0;
-                const data = await res.json();
-                return data.count || 0;
-            };
+/**
+ * Build a report from REAL sources only:
+ *  - district inventory from the platform backend (/districts/{key} + /stats)
+ *  - platform activity (AI runs, AOI analyses) actually recorded in the period
+ */
+async function generateReport(district, dateFrom, dateTo) {
+    const key = district.key;
 
-            const fetchAreaSum = async (layerId) => {
-                const outStats = JSON.stringify([{
-                    statisticType: "sum",
-                    onStatisticField: "Shape__Area",
-                    outStatisticFieldName: "TotalArea"
-                }]);
-                const res = await fetch(`${fsUrl}/${layerId}/query?where=1=1&outStatistics=${encodeURIComponent(outStats)}&f=json`);
-                if (!res.ok) return 0;
-                const data = await res.json();
-                return data.features?.[0]?.attributes?.TotalArea || 0;
-            };
+    const [meta, stats] = await Promise.all([
+        fetch(`${API_BASE}/api/districts/${key}`).then(r => r.ok ? r.json() : null).catch(() => null),
+        fetch(`${API_BASE}/api/districts/${key}/stats`).then(r => r.ok ? r.json() : null).catch(() => null),
+    ]);
+    const s = stats?.stats || {};
+    const counts = meta?.layer_counts || {};
 
-            const [bldgCount, plotsCount, waterCount, bldgArea] = await Promise.all([
-                fetchCount(1),
-                fetchCount(2),
-                fetchCount(4),
-                fetchAreaSum(1)
-            ]);
+    const buildings = s.buildings?.count ?? counts.buildings ?? 0;
+    const waterbodies = s.waterbodies?.count ?? counts.waterbodies ?? 0;
+    const openareas = s.openareas?.count ?? counts.openareas ?? 0;
+    const roads = s.roads?.count ?? counts.roads ?? 0;
+    const builtAreaKm2 = km2(s.buildings?.total_area_m2 || 0);
+    const avgPropM2 = s.buildings?.avg_area_m2 ? Math.round(s.buildings.avg_area_m2) : null;
 
-            totalProperties = bldgCount || Math.floor(120000 + Math.random() * 50000);
-            openPlots = plotsCount || Math.floor(25000 + Math.random() * 15000);
-            waterBodies = waterCount || Math.floor(80 + Math.random() * 100);
-            builtUpAreaSqMeters = bldgArea;
+    // Real platform activity in the reporting period (this district + custom uploads)
+    const { rows: activity, source: activitySource } = await fetchActivitiesInRange(dateFrom, dateTo, { district: district.name });
 
-        } catch (err) {
-            console.error("Failed to fetch real data from ArcGIS:", err);
-            totalProperties = 154238;
-            openPlots = 32150;
-            waterBodies = 145;
-            builtUpAreaSqMeters = 85400000;
-        }
-    } else {
-        totalProperties = districtName === "Vijayawada" ? 185420 : 124500;
-        openPlots = districtName === "Vijayawada" ? 42100 : 21000;
-        waterBodies = districtName === "Vijayawada" ? 112 : 85;
-        builtUpAreaSqMeters = districtName === "Vijayawada" ? 112500000 : 65000000;
+    const byType = {};
+    activity.forEach(r => { byType[r.type] = (byType[r.type] || 0) + 1; });
+
+    // Aggregate REAL change-detection results recorded in the period
+    const cdRuns = activity.filter(r => r.type === "Change Detection" && r.status === "Completed" && r.metrics);
+    const cdAvg = {};
+    if (cdRuns.length) {
+        const keys = ["New Construction", "Demolished", "New Road", "Other Change", "Unchanged"];
+        keys.forEach(k => {
+            const vals = cdRuns.map(r => parseFloat(r.metrics[k])).filter(v => !Number.isNaN(v));
+            if (vals.length) cdAvg[k] = +(vals.reduce((a, b) => a + b, 0) / vals.length).toFixed(2);
+        });
     }
 
+    // Real monthly activity distribution
+    const monthly = {};
+    activity.forEach(r => {
+        const d = new Date(r.created_at);
+        const label = d.toLocaleString("en", { month: "short", year: "2-digit" });
+        monthly[label] = (monthly[label] || 0) + 1;
+    });
+
     return {
-        district: districtName,
+        district: district.name, key,
         generatedAt: new Date().toLocaleString(),
-        summary: {
-            "Total Properties": totalProperties.toLocaleString(),
-            "Open Plots": openPlots.toLocaleString(),
-            "Water Bodies": waterBodies.toLocaleString(),
-            "Road Length (km)": "1,450", 
-            "Built-up Area (km²)": builtUpAreaSqMeters > 0 ? (builtUpAreaSqMeters / 1000000).toFixed(2) : "112.50",
-            "Green Cover (%)": "28.4",
-            "AI Confidence (%)": "94.8",
+        period: { from: dateFrom, to: dateTo },
+        backendOnline: !!(meta || stats),
+        inventory: {
+            buildings, waterbodies, openareas, roads,
+            builtAreaKm2, avgPropM2,
+            totalFeatures: stats?.total_features ?? meta?.total_features ?? 0,
+            roadTypes: s.roads?.road_types || null,
         },
-        changes: {
-            newConstructions: districtName === "Vijayawada" ? 420 : 150,
-            expansions: districtName === "Vijayawada" ? 850 : 320,
-            encroachments: districtName === "Vijayawada" ? 45 : 12,
-            boundaryMods: districtName === "Vijayawada" ? 110 : 85,
-        },
-        landUse: [
-            { name: "Built-up", value: 35, color: "#d97706" },
-            { name: "Vegetation", value: 25, color: "#16a34a" },
-            { name: "Agriculture", value: 20, color: "#65a30d" },
-            { name: "Water", value: 8, color: "#2563eb" },
-            { name: "Barren", value: 12, color: "#9ca3af" },
-        ],
-        monthly: [
-            { month: "Jan 2025", changes: districtName === "Vijayawada" ? 640 : 210 },
-            { month: "Feb 2025", changes: districtName === "Vijayawada" ? 785 : 357 },
-        ],
+        activity, activitySource, byType,
+        cd: { runs: cdRuns.length, avg: cdAvg },
+        monthly: Object.entries(monthly).map(([month, runs]) => ({ month, runs })),
     };
 }
 
@@ -135,8 +106,8 @@ export default function DSS() {
     const [selectedState] = useState("Andhra Pradesh");
     const [selectedDistrict, setSelectedDistrict] = useState("");
     const [selectedDataTypes, setSelectedDataTypes] = useState(["Land Use Classification"]);
-    const [dateFrom, setDateFrom] = useState("2025-01-01");
-    const [dateTo, setDateTo] = useState("2025-02-28");
+    const [dateFrom, setDateFrom] = useState(() => new Date(Date.now() - 90 * 86400000).toISOString().slice(0, 10));
+    const [dateTo, setDateTo] = useState(() => new Date().toISOString().slice(0, 10));
     const [report, setReport] = useState(null);
     const [generating, setGenerating] = useState(false);
 
@@ -170,10 +141,25 @@ export default function DSS() {
 
     const handleGenerate = async () => {
         if (!selectedDistrict) return;
+        const dist = DISTRICTS_LIST.find(d => d.name === selectedDistrict);
+        if (!dist) return;
         setGenerating(true);
-        // We added dates as params to generateReport
-        const newReport = await generateReport(selectedDistrict, dateFrom, dateTo);
-        setReport(newReport);
+        try {
+            const newReport = await generateReport(dist, dateFrom, dateTo);
+            setReport(newReport);
+            logActivity({
+                type: "Report Generated", district: dist.name, area: "Full District",
+                status: "Completed",
+                metrics: {
+                    Buildings: newReport.inventory.buildings,
+                    "Water Bodies": newReport.inventory.waterbodies,
+                    "Activity entries": newReport.activity.length,
+                },
+                meta: { period: `${dateFrom} → ${dateTo}` },
+            });
+        } catch (e) {
+            console.error("report failed:", e);
+        }
         setGenerating(false);
     };
 
@@ -190,6 +176,7 @@ export default function DSS() {
 
     const exportReport = () => {
         if (!report) return;
+        const inv = report.inventory;
 
         const doc = new jsPDF();
         const margin = 20;
@@ -198,8 +185,8 @@ export default function DSS() {
 
         const addHeader = (title) => {
             doc.addPage();
-            doc.setFillColor(11, 95, 165); // #0B5FA5
-            doc.rect(0, 0, pageWidth, 25, 'F');
+            doc.setFillColor(11, 95, 165);
+            doc.rect(0, 0, pageWidth, 25, "F");
             doc.setTextColor(255, 255, 255);
             doc.setFont("helvetica", "bold");
             doc.setFontSize(16);
@@ -207,238 +194,161 @@ export default function DSS() {
             doc.setTextColor(0, 0, 0);
             startY = 40;
         };
-
-        const renderText = (textArray, fontSize = 11, fontStyle = "normal", indent = 0) => {
+        const renderText = (arr, fontSize = 11, fontStyle = "normal", indent = 0) => {
             doc.setFont("helvetica", fontStyle);
             doc.setFontSize(fontSize);
-            textArray.forEach((textBlob) => {
-                const lines = doc.splitTextToSize(textBlob, pageWidth - margin * 2 - indent);
+            arr.forEach(blob => {
+                const lines = doc.splitTextToSize(blob, pageWidth - margin * 2 - indent);
                 lines.forEach(line => {
-                    if (startY > doc.internal.pageSize.height - 20) {
-                        doc.addPage();
-                        startY = margin;
-                    }
+                    if (startY > doc.internal.pageSize.height - 20) { doc.addPage(); startY = margin; }
                     doc.text(line, margin + indent, startY);
-                    startY += (fontSize >= 14 ? 8 : 6); 
+                    startY += (fontSize >= 14 ? 8 : 6);
                 });
-                startY += 4; // Paragraph spacing
+                startY += 4;
             });
             startY += 4;
         };
+        const table = (head, body, opts = {}) => {
+            autoTable(doc, {
+                startY, head: [head], body, theme: "striped",
+                headStyles: { fillColor: [11, 95, 165] },
+                margin: { left: margin, right: margin }, ...opts,
+            });
+            startY = doc.lastAutoTable.finalY + 10;
+        };
 
-        // --- TITLE PAGE ---
+        // ── Title page ──
         doc.setFillColor(240, 245, 250);
-        doc.rect(0, 0, pageWidth, doc.internal.pageSize.height, 'F');
+        doc.rect(0, 0, pageWidth, doc.internal.pageSize.height, "F");
         doc.setTextColor(11, 95, 165);
         doc.setFont("helvetica", "bold");
         doc.setFontSize(26);
-        doc.text("TECHNICAL PROJECT REPORT", pageWidth / 2, 70, { align: "center" });
-
+        doc.text("DISTRICT ANALYSIS REPORT", pageWidth / 2, 70, { align: "center" });
         doc.setFontSize(18);
         doc.setTextColor(50, 50, 50);
-        const titleText = doc.splitTextToSize("AI-Enabled Smart Property Identification and Urban Monitoring System", pageWidth - 40);
-        doc.text(titleText, pageWidth / 2, 90, { align: "center" });
-
+        doc.text(doc.splitTextToSize("AI-Enabled Smart Property Identification and Urban Monitoring System", pageWidth - 40), pageWidth / 2, 90, { align: "center" });
         doc.setFontSize(14);
         doc.setFont("helvetica", "normal");
         doc.text(`District: ${report.district}`, pageWidth / 2, 130, { align: "center" });
         doc.text(`State: ${selectedState}`, pageWidth / 2, 140, { align: "center" });
-        doc.text(`Analysis Period: ${dateFrom} to ${dateTo}`, pageWidth / 2, 150, { align: "center" });
-
+        doc.text(`Reporting Period: ${report.period.from} to ${report.period.to}`, pageWidth / 2, 150, { align: "center" });
         doc.setFontSize(12);
         doc.setFont("helvetica", "italic");
         doc.text(`Generated On: ${report.generatedAt}`, pageWidth / 2, 190, { align: "center" });
-
         doc.setFont("helvetica", "bold");
-        doc.setFontSize(14);
+        doc.setFontSize(13);
         doc.setTextColor(11, 95, 165);
-        doc.text("System Generated Output for Urban Local Body (ULB) Officials", pageWidth / 2, 230, { align: "center" });
+        doc.text("System-Generated Output for Urban Local Body (ULB) Officials", pageWidth / 2, 230, { align: "center" });
         doc.setTextColor(0, 0, 0);
 
-        // --- 1. EXECUTIVE SUMMARY ---
+        // ── 1. Executive Summary ──
         addHeader("1. Executive Summary");
-        renderText(["Overview of Analysis Performed:"], 12, "bold");
         renderText([
-            "This report encapsulates the findings of the AI-Enabled Smart Property Identification and Urban Monitoring System.",
-            `Over the targeted analysis period (${dateFrom} to ${dateTo}), an automated assessment of ${report.district} was conducted using a compilation of satellite imagery, UAV (drone) data grids, and existing municipal GIS layers.`,
-            "The system executed rigorous deep-learning models to map land use characteristics, identify individual property footprints, and track structural changes against authoritative cadastral databases."
+            `This report is generated from the platform's live district database and the analysis activity actually performed on the platform between ${report.period.from} and ${report.period.to}.`,
         ]);
-        renderText(["Key Findings:"], 12, "bold");
+        renderText(["Key figures (live database):"], 12, "bold");
         renderText([
-            `• Successfully isolated ${report.summary["Total Properties"]} definitive properties in the district.`,
-            `• Ascertained a total built-up area equating to ${report.summary["Built-up Area (km²)"]} km².`,
-            `• Model confidence for property and anomaly extraction averaged at ${report.summary["AI Confidence (%)"]}%`
-        ]);
-        renderText(["Summary of Detected Changes:"], 12, "bold");
+            `• ${inv.buildings.toLocaleString()} building footprints on record${inv.builtAreaKm2 ? `, totalling ${inv.builtAreaKm2} km² of built-up area` : ""}.`,
+            inv.avgPropM2 ? `• Average property footprint: ${inv.avgPropM2} m².` : null,
+            `• ${inv.waterbodies.toLocaleString()} water bodies and ${inv.openareas.toLocaleString()} open plots on record.`,
+            `• ${report.activity.length} analysis activities recorded on the platform in the reporting period.`,
+        ].filter(Boolean));
+        renderText(["Model provenance:"], 12, "bold");
         renderText([
-            `A rigorous temporal difference algorithm flagged a total of ${report.changes.newConstructions} new constructions, ${report.changes.expansions} structural expansions, and ${report.changes.encroachments} distinct encroachments requiring immediate ULB verification.`
+            `Detections are produced by ${MODEL_CARD.name}, validated at an overall mIoU of ${MODEL_CARD.miou} on a held-out set of 2,736 chips across five AP districts (per-class IoU is listed in Section 2).`,
         ]);
 
-        // --- 2. DATA SOURCES & ANALYSIS SCOPE ---
-        addHeader("2. Data Sources & Analysis Scope");
-        renderText(["Satellite Imagery Details:"], 12, "bold");
-        renderText(["Multispectral, sub-meter high-resolution orbital imagery forms the primary foundation. Imagery was pre-processed for orthorectification and radiometric consistency."]);
-        renderText(["Drone Imagery Coverage:"], 12, "bold");
-        renderText(["Targeted UAV operations executing grid-pattern photogrammetry over major development corridors provided complementary highly-granular (<10cm/pixel) datasets."]);
-        renderText(["GIS Layers Used:"], 12, "bold");
+        // ── 2. Data Sources & Model ──
+        addHeader("2. Data Sources & Model");
+        renderText(["Data sources used by the platform:"], 12, "bold");
         renderText([
-            "The analytical pipeline integrated the following municipal layers for spatial intersection:",
-            "• Zoning schemas and master-plan boundaries",
-            "• Prescriptive road network centrelines",
-            "• Baseline cadastral properties and plot boundaries",
-            "• Water body conservation buffers"
+            "• Satellite imagery: ESRI World Imagery (R&D licensing; 1m/50cm GSD commercial imagery planned for production).",
+            "• Label provenance: OpenStreetMap vectors (southern India) + Google Open Buildings footprints, rasterized via a QGIS pipeline.",
+            "• District vector/raster layers served from the platform backend (GeoPackage per district, Cloudflare R2 storage).",
         ]);
-        renderText(["Historical Imagery Comparison Period:"], 12, "bold");
-        renderText([`The temporal baseline utilized imagery from ${dateFrom}, extracting deviations mapped in imagery proceeding up until ${dateTo}.`]);
+        renderText(["Model validation metrics (real, from training):"], 12, "bold");
+        table(["Class", "IoU"], Object.entries(MODEL_CARD.classIoU).map(([k, v]) => [k, v.toFixed(3)]).concat([["Overall mIoU", MODEL_CARD.miou.toFixed(4)]]));
 
-        // --- 3. PROPERTY IDENTIFICATION RESULTS ---
-        addHeader("3. Property Identification Results");
-        renderText(["The AI structural extraction module yielded the following consolidated statistics:"]);
-        
-        const identData = [
-            ['Metric', 'Aggregated Value'],
-            ['Total Detected Properties', report.summary["Total Properties"]],
-            ['Open Plots Identified', report.summary["Open Plots"]],
-            ['Water Bodies Detected', report.summary["Water Bodies"]],
-            ['Built-up Area Statistics', `${report.summary["Built-up Area (km²)"]} km²`],
-            ['Overall AI Confidence Level', `${report.summary["AI Confidence (%)"]}%`]
-        ];
-        autoTable(doc, {
-            startY: startY,
-            head: [identData[0]],
-            body: identData.slice(1),
-            theme: 'striped',
-            headStyles: { fillColor: [11, 95, 165] },
-            margin: { left: margin, right: margin }
-        });
-        startY = doc.lastAutoTable.finalY + 10;
+        // ── 3. District Inventory ──
+        addHeader("3. District Inventory (Live Database)");
+        renderText([`Feature inventory for ${report.district} as currently held in the platform database:`]);
+        table(["Metric", "Value"], [
+            ["Building footprints", inv.buildings.toLocaleString()],
+            ["Built-up area", inv.builtAreaKm2 ? `${inv.builtAreaKm2} km²` : "—"],
+            ["Average property footprint", inv.avgPropM2 ? `${inv.avgPropM2} m²` : "—"],
+            ["Water bodies", inv.waterbodies.toLocaleString()],
+            ["Open plots", inv.openareas.toLocaleString()],
+            ["Road features", inv.roads.toLocaleString()],
+            ["Total classified features", inv.totalFeatures.toLocaleString()],
+        ]);
+        if (inv.roadTypes && Object.keys(inv.roadTypes).length) {
+            renderText(["Road classification breakdown:"], 12, "bold");
+            table(["Road class", "Count"], Object.entries(inv.roadTypes).map(([k, v]) => [k, String(v)]));
+        }
+        if (!inv.openareas && !inv.roads) {
+            renderText(["Note: open-plot and road vector coverage for this district is still being ingested; counts will populate as dataset cleaning completes."], 9, "italic");
+        }
 
-        renderText(["Land Use Classification Distribution:"], 12, "bold");
-        const landUseData = [['Classification', 'Coverage (%)']];
-        report.landUse.forEach(lu => landUseData.push([lu.name, `${lu.value}%`]));
-        autoTable(doc, {
-            startY: startY,
-            head: [landUseData[0]],
-            body: landUseData.slice(1),
-            theme: 'striped',
-            headStyles: { fillColor: [11, 95, 165] },
-            margin: { left: margin, right: margin }
-        });
-        startY = doc.lastAutoTable.finalY + 10;
+        // ── 4. Change Detection (real runs) ──
+        addHeader("4. Change Detection Summary");
+        if (report.cd.runs > 0) {
+            renderText([`${report.cd.runs} change-detection ${report.cd.runs === 1 ? "analysis was" : "analyses were"} performed on the platform in this period. Averaged results:`]);
+            table(["Change category", "Avg. share of analysed area"], Object.entries(report.cd.avg).map(([k, v]) => [k, `${v}%`]));
+        } else {
+            renderText([
+                "No change-detection analyses were recorded on the platform during this reporting period.",
+                "To populate this section, run past-vs-present comparisons in Upload & Analysis → Change Detection; each run is logged automatically and aggregated here.",
+            ]);
+        }
 
-        // --- 4. TEMPORAL CHANGE DETECTION SUMMARY ---
-        addHeader("4. Temporal Change Detection Summary");
-        renderText(["Comparative analysis against historical bounds identifies deviations emphasizing developmental activity and irregularities."]);
+        // ── 5. Platform Activity Log (real) ──
+        addHeader("5. Platform Activity Log");
+        if (report.activity.length) {
+            renderText([`${report.activity.length} recorded activities in the period (${report.activitySource === "supabase" ? "cloud-synced log" : "this browser's local log"}):`]);
+            table(["Date", "Type", "Target", "Result", "Status"],
+                report.activity.slice(0, 25).map(r => [
+                    new Date(r.created_at).toLocaleDateString(),
+                    r.type,
+                    (r.area || r.district || "—").slice(0, 34),
+                    r.metrics ? Object.entries(r.metrics).slice(0, 2).map(([k, v]) => `${k}: ${v}`).join(", ").slice(0, 40) : "—",
+                    r.status,
+                ]), { styles: { fontSize: 8 } });
+            if (report.activity.length > 25) renderText([`(showing the 25 most recent of ${report.activity.length})`], 9, "italic");
+        } else {
+            renderText(["No platform activity was recorded in this period."]);
+        }
 
-        const temporalData = [
-            ['Change Category', 'Count'],
-            ['Number of New Constructions', report.changes.newConstructions.toLocaleString()],
-            ['Number of Expansions', report.changes.expansions.toLocaleString()],
-            ['Number of Encroachments', report.changes.encroachments.toLocaleString()],
-            ['Boundary Modifications Detected', report.changes.boundaryMods.toLocaleString()]
-        ];
-        autoTable(doc, {
-            startY: startY,
-            head: [temporalData[0]],
-            body: temporalData.slice(1),
-            theme: 'striped',
-            headStyles: { fillColor: [11, 95, 165] },
-            margin: { left: margin, right: margin }
-        });
-        startY = doc.lastAutoTable.finalY + 10;
+        // ── 6. Governance Insights ──
+        addHeader("6. Governance Insights & Decision Support");
+        renderText([
+            inv.avgPropM2 && inv.avgPropM2 < 120
+                ? `• The average footprint of ${inv.avgPropM2} m² indicates dense, small-parcel housing — ward-level AOI analysis (Mapping → Area of Interest) is recommended before regularization drives.`
+                : `• Use ward-level AOI analysis (Mapping → Area of Interest) to obtain per-parcel counts before field verification.`,
+            `• ${inv.waterbodies.toLocaleString()} monitored water bodies: run periodic change detection on their buffers to flag encroachment early.`,
+            report.cd.runs > 0
+                ? `• Averaged change results in this period show ${report.cd.avg["New Construction"] ?? 0}% new construction in analysed areas — prioritise field checks there.`
+                : `• Schedule monthly change-detection runs for high-growth wards so this report can quantify construction trends.`,
+            `• All figures above are reproducible: inventory from the live district database, activity from the platform log${report.activitySource === "supabase" ? " (cloud)" : " (local browser)"}.`,
+        ]);
 
-        renderText(["Month-wise Change Distribution:"], 12, "bold");
-        const monthlyData = [['Month', 'Change Items']];
-        report.monthly.forEach(m => monthlyData.push([m.month, m.changes.toString()]));
-        autoTable(doc, {
-            startY: startY,
-            head: [monthlyData[0]],
-            body: monthlyData.slice(1),
-            theme: 'striped',
-            headStyles: { fillColor: [11, 95, 165] },
-            margin: { left: margin, right: margin }
-        });
-        startY = doc.lastAutoTable.finalY + 10;
-
-        // --- 5. PROPERTY-LEVEL CHANGE LOG ---
-        addHeader("5. Property-Level Change Log (Sample Table Format)");
-        renderText(["The system maintains a comprehensive sub-property audit trace for identified deviations."]);
-
-        const sampleLog = [
-            ['Property ID', 'Geo-Coordinates', 'Prev Area', 'New Area', 'Change Type', 'Date', 'Status'],
-            ['VZA-W14-892', '16.509, 80.612', '120 sqm', '185 sqm', 'Expansion', '2025-01-14', 'Flagged'],
-            ['VZA-W22-105', '16.521, 80.641', '0 sqm', '210 sqm', 'New Const.', '2025-02-05', 'Verified'],
-            ['VZA-W08-334', '16.516, 80.632', '150 sqm', '165 sqm', 'Encroachment', '2025-02-18', 'Flagged']
-        ];
-        autoTable(doc, {
-            startY: startY,
-            head: [sampleLog[0]],
-            body: sampleLog.slice(1),
-            theme: 'grid',
-            headStyles: { fillColor: [11, 95, 165] },
-            styles: { fontSize: 8 },
-            margin: { left: margin, right: margin }
-        });
-        startY = doc.lastAutoTable.finalY + 10;
-        renderText(["Additional Data Captured per Entry: GIS Layer Reference (Cadastral), Record Update Date, Record Change Log reference hash."], 9, "italic");
-
-        // --- 6. GIS RECORD ALIGNMENT & UPDATES ---
-        addHeader("6. GIS Record Alignment & Updates");
-        renderText(["Matching logic with cadastral database:"], 12, "bold");
-        renderText(["Alignment relies on Intersection over Union (IoU) geometries. A spatial intersection query confirms if detected footprints exceed an 85% overlap with valid municipal parcels before validating consistency. Substantial threshold breaches form the basis for deviation reporting."]);
-        renderText(["Boundary Adjustment Summary:"], 12, "bold");
-        renderText(["A total of " + report.changes.boundaryMods + " footprint adjustments have been automatically queued to rectify geometric inconsistencies between ground truth imagery and outdated GIS segments."]);
-        renderText(["Attribute Updates Performed:"], 12, "bold");
-        renderText(["Properties flagged with updated utilization states (e.g., open plot to built-up) initiated automated tabular updates in the spatial schema."]);
-        renderText(["Version Control Tracking:"], 12, "bold");
-        renderText(["Each mutation triggers an archival of the superseded record, enforcing an immutable 'time-travel' capable database."]);
-
-        // --- 7. MULTI-LAYER GIS ANALYSIS ---
-        addHeader("7. Multi-Layer GIS Analysis");
-        renderText(["Overlay with Zoning Map:"], 12, "bold");
-        renderText(["Deviations inherently trigger spatial joins with designated zoning layers ensuring residential expansions avoid industrial or agricultural boundaries."]);
-        renderText(["Road Proximity Analysis:"], 12, "bold");
-        renderText(["Calculations indicate minimal infrastructural clearance buffers for new developments along the " + report.summary["Road Length (km)"] + " km registered network."]);
-        renderText(["Green Cover Impact & Water Body Encroachment Analysis:"], 12, "bold");
-        renderText([`The analysis confirmed ${report.changes.encroachments} structures compromising water body boundaries and ecological zones out of the district’s ${report.summary["Water Bodies"]} monitored water bodies.`]);
-
-        // --- 8. GOVERNANCE INSIGHTS & DECISION SUPPORT ---
-        addHeader("8. Governance Insights & Decision Support");
-        renderText(["High-Growth Zones:"], 12, "bold");
-        renderText(["The system flags concentrated structural activity within peri-urban limits recommending proactive master plan extensions."]);
-        renderText(["Encroachment Hotspots:"], 12, "bold");
-        renderText(["Clusters of encroachments near riparian paths dictate immediate site inspections to mitigate potential inundation risks."]);
-        renderText(["Areas Requiring Field Verification:"], 12, "bold");
-        renderText(["Over 65% of flagged 'New Constructions' currently demand municipal physical inspection protocols prior to issuing regularization notices."]);
-        renderText(["Planning Recommendations:"], 12, "bold");
-        renderText(["A strategic tax re-assessment is advised targeting confirmed 'Expansion' footprints outdating municipal registries."]);
-
-        // --- 9. AUDIT & TRACEABILITY SUMMARY ---
-        addHeader("9. Audit & Traceability Summary");
-        renderText(["Total Records Updated:"], 12, "bold");
-        renderText([`The analysis period initiated ${(report.changes.newConstructions + report.changes.expansions + report.changes.boundaryMods).toLocaleString()} transactional edits to the local GIS datastore.`]);
-        renderText(["Change History Preserved:"], 12, "bold");
-        renderText(["Lineage preservation protocols cataloged and hashed all superseded metadata preventing any anomalous geographical deletions."]);
-        renderText(["Traceability Confirmation:"], 12, "bold");
-        renderText(["The entire dataset, from raw optical intake to terminal vector commit, is fully documented, auditable, and structurally aligned with Department guidelines."]);
-
-        // --- FOOTER FOR ALL PAGES ---
+        // ── footer ──
         const pageCount = doc.internal.getNumberOfPages();
         for (let i = 1; i <= pageCount; i++) {
             doc.setPage(i);
             doc.setFontSize(8);
             doc.setFont("helvetica", "normal");
             doc.setTextColor(150);
-            
             doc.setDrawColor(200, 200, 200);
             doc.line(margin, doc.internal.pageSize.height - 15, pageWidth - margin, doc.internal.pageSize.height - 15);
-            
             doc.text("System Generated Output | ULB Official Documentation", margin, doc.internal.pageSize.height - 8);
-            doc.text(`Page ${i} of ${pageCount}`, pageWidth - margin, doc.internal.pageSize.height - 8, { align: 'right' });
+            doc.text(`Page ${i} of ${pageCount}`, pageWidth - margin, doc.internal.pageSize.height - 8, { align: "right" });
         }
 
-        doc.save(`Technical_Report_${report.district}_${new Date().toISOString().slice(0, 10)}.pdf`);
+        doc.save(`District_Report_${report.district}_${new Date().toISOString().slice(0, 10)}.pdf`);
     };
+
+    const typeChart = report ? Object.entries(report.byType).map(([type, n]) => ({ type: type.replace(" Detection", " Det."), n })) : [];
+    const BAR_COLORS = ["#14b8a6", "#3b82f6", "#f59e0b", "#8b5cf6", "#ef4444", "#10b981"];
 
     return (
         <div className="flex flex-col lg:flex-row w-full h-full">
@@ -451,7 +361,7 @@ export default function DSS() {
             <div className="w-full lg:w-[400px] shrink-0 bg-[var(--bg-secondary)] border-l border-[var(--border-default)] overflow-y-auto">
                 <div className="p-4 border-b border-[var(--border-default)] bg-gradient-to-r from-[var(--accent)] to-[#0a7a6a]">
                     <h2 className="text-base font-bold text-white">Decision Support System</h2>
-                    <p className="text-xs text-white/70 mt-0.5">Generate reports for areas of interest</p>
+                    <p className="text-xs text-white/70 mt-0.5">Reports from the live database & real platform activity</p>
                 </div>
 
                 <div className="p-4 space-y-3 border-b border-[var(--border-default)]" data-tour="dss-form">
@@ -506,43 +416,81 @@ export default function DSS() {
                     <div className="p-4 space-y-4">
                         <div className="flex flex-col gap-3">
                             <h3 className="text-sm font-bold text-[var(--text-primary)]">{report.district} Report Summary</h3>
-                            <button onClick={exportReport} 
+                            <button onClick={exportReport}
                                 className="w-full py-3 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm font-bold shadow-md transition-colors flex items-center justify-center gap-2">
-                                <span>📥 Download Full Project Report (PDF)</span>
+                                <span>📥 Download District Report (PDF)</span>
                             </button>
                         </div>
-                        <p className="text-[10px] text-[var(--text-muted)]">{report.generatedAt}</p>
+                        <p className="text-[10px] text-[var(--text-muted)]">
+                            {report.generatedAt} · inventory: {report.backendOnline ? "live database" : "backend unreachable"} · activity: {report.activitySource === "supabase" ? "cloud log" : "local log"}
+                        </p>
+
+                        {/* Real inventory tiles */}
                         <div className="grid grid-cols-2 gap-2">
-                            {Object.entries(report.summary).map(([k, v]) => (
+                            {[
+                                ["Buildings on record", report.inventory.buildings.toLocaleString()],
+                                ["Built-up area", report.inventory.builtAreaKm2 ? `${report.inventory.builtAreaKm2} km²` : "—"],
+                                ["Avg footprint", report.inventory.avgPropM2 ? `${report.inventory.avgPropM2} m²` : "—"],
+                                ["Water bodies", report.inventory.waterbodies.toLocaleString()],
+                                ["Open plots", report.inventory.openareas.toLocaleString()],
+                                ["Activity in period", report.activity.length],
+                            ].map(([k, v]) => (
                                 <div key={k} className="bg-[var(--bg-tertiary)] rounded-lg p-2">
                                     <p className="text-[10px] text-[var(--text-muted)]">{k}</p>
                                     <p className="text-sm font-bold text-[var(--text-primary)]">{v}</p>
                                 </div>
                             ))}
                         </div>
-                        <div>
-                            <p className="text-xs font-medium text-[var(--text-muted)] mb-2">Land Use Distribution</p>
-                            <ResponsiveContainer width="100%" height={160}>
-                                <PieChart>
-                                    <Pie data={report.landUse} cx="50%" cy="50%" innerRadius={35} outerRadius={60} dataKey="value" paddingAngle={2}>
-                                        {report.landUse.map((e, i) => <Cell key={i} fill={e.color} />)}
-                                    </Pie>
-                                    <Legend iconSize={6} wrapperStyle={{ fontSize: 9 }} />
-                                    <Tooltip formatter={v => `${v}%`} />
-                                </PieChart>
-                            </ResponsiveContainer>
+
+                        {/* Real change-detection aggregate */}
+                        <div className="bg-[var(--bg-tertiary)] rounded-lg p-3">
+                            <p className="text-xs font-medium text-[var(--text-secondary)] mb-1.5">Change Detection (this period)</p>
+                            {report.cd.runs > 0 ? (
+                                <div className="space-y-1">
+                                    <p className="text-[11px] text-[var(--text-muted)]">{report.cd.runs} run{report.cd.runs > 1 ? "s" : ""} · averaged share of analysed area:</p>
+                                    {Object.entries(report.cd.avg).map(([k, v]) => (
+                                        <div key={k} className="flex justify-between text-[11px]">
+                                            <span className="text-[var(--text-muted)]">{k}</span>
+                                            <span className="font-semibold text-[var(--text-primary)]">{v}%</span>
+                                        </div>
+                                    ))}
+                                </div>
+                            ) : (
+                                <p className="text-[11px] text-[var(--text-muted)]">No change-detection runs recorded in this period. Run one in Upload &amp; Analysis and it will appear here and in the PDF.</p>
+                            )}
                         </div>
-                        <div>
-                            <p className="text-xs font-medium text-[var(--text-muted)] mb-2">Monthly Changes</p>
-                            <ResponsiveContainer width="100%" height={120}>
-                                <BarChart data={report.monthly}>
-                                    <XAxis dataKey="month" tick={{ fontSize: 9 }} />
-                                    <YAxis tick={{ fontSize: 9 }} />
-                                    <Tooltip />
-                                    <Bar dataKey="changes" fill="#0B5FA5" radius={[3, 3, 0, 0]} />
-                                </BarChart>
-                            </ResponsiveContainer>
-                        </div>
+
+                        {/* Real activity mix */}
+                        {typeChart.length > 0 && (
+                            <div>
+                                <p className="text-xs font-medium text-[var(--text-muted)] mb-2">Platform activity in period (by type)</p>
+                                <ResponsiveContainer width="100%" height={140}>
+                                    <BarChart data={typeChart} layout="vertical" margin={{ left: 8 }}>
+                                        <XAxis type="number" allowDecimals={false} tick={{ fontSize: 9 }} />
+                                        <YAxis type="category" dataKey="type" width={110} tick={{ fontSize: 9 }} />
+                                        <Tooltip />
+                                        <Bar dataKey="n" radius={[0, 3, 3, 0]}>
+                                            {typeChart.map((_, i) => <Cell key={i} fill={BAR_COLORS[i % BAR_COLORS.length]} />)}
+                                        </Bar>
+                                    </BarChart>
+                                </ResponsiveContainer>
+                            </div>
+                        )}
+
+                        {/* Real monthly activity */}
+                        {report.monthly.length > 0 && (
+                            <div>
+                                <p className="text-xs font-medium text-[var(--text-muted)] mb-2">Monthly activity</p>
+                                <ResponsiveContainer width="100%" height={120}>
+                                    <BarChart data={report.monthly}>
+                                        <XAxis dataKey="month" tick={{ fontSize: 9 }} />
+                                        <YAxis allowDecimals={false} tick={{ fontSize: 9 }} />
+                                        <Tooltip />
+                                        <Bar dataKey="runs" fill="#14b8a6" radius={[3, 3, 0, 0]} />
+                                    </BarChart>
+                                </ResponsiveContainer>
+                            </div>
+                        )}
                     </div>
                 )}
             </div>

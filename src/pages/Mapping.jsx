@@ -8,6 +8,7 @@ import { addArcGISFeatureLayer, addLocalGeoJSONLayer, reloadVisibleLayers, remov
 import { parseAOIFile, getFeaturesBounds, computeTotalAreaKm2, unionGeometry, polygonCentroid } from "../utils/aoiUtils";
 import { registerTour, unregisterTour } from "../tour/tourBus";
 import { computeAOIStats, warmBackend } from "../utils/aoiStats";
+import { logActivity } from "../lib/activityLog";
 import { load as lercLoad, decode as lercDecode } from "lerc";
 import proj4 from "proj4";
 
@@ -1355,6 +1356,13 @@ export default function Mapping() {
             const stats = await computeAOIStats(key, features, controller.signal);
             if (controller.signal.aborted) return; // a newer request superseded this one
             setAoiStats(stats);
+            const t = stats?.totals || {};
+            logActivity({
+                type: "AOI Analysis", district: districtName,
+                area: `${features.length > 1 ? `${features.length} parcels · ` : ""}${t.areaKm2 ?? "?"} km²`,
+                status: "Completed",
+                metrics: { Buildings: t.buildings ?? 0, "Water Bodies": t.waterbodies ?? 0, "Roads (km)": t.roadKm ?? 0, "Area (km²)": t.areaKm2 ?? 0 },
+            });
         } catch (e) {
             if (e?.name === 'AbortError') return;  // superseded — ignore
             console.error('AOI stats failed:', e);
@@ -1475,12 +1483,14 @@ export default function Mapping() {
         try {
             const features = await parseAOIFile(file); // array of polygon features
             applyAOI(features);
+            logActivity({ type: "Boundary Upload", district: selectedDistrict || null, area: file.name, status: "Completed", metrics: { Parcels: features.length } });
         } catch (err) {
             console.error('AOI parse error:', err);
             alert(`Failed to parse AOI file: ${err.message}`);
+            logActivity({ type: "Boundary Upload", area: file.name, status: "Failed", meta: { error: String(err.message).slice(0, 160) } });
         }
         setLoading(null);
-    }, []);
+    }, [selectedDistrict]);
 
     // ── Clear AOI ──
     const clearAOI = useCallback(() => {

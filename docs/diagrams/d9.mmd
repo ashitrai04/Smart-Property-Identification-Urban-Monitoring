@@ -1,0 +1,10 @@
+flowchart LR
+    A[Road binary mask] --> B[Remove small blobs <120px]
+    B --> C[Morph close + Skeletonize to 1px centerline]
+    C --> D[Detect endpoints<br/>skeleton pixels with 1 neighbour]
+    D --> E[Estimate endpoint tangent<br/>walk 12px along skeleton]
+    E --> F[KDTree: candidate endpoint pairs within max_gap 150px]
+    F --> G[Angle-aware filter<br/>tangents face each other, tol 45 deg]
+    G --> H[Minimum Spanning Tree bridging<br/>Union-Find prevents loops]
+    H --> I[Draw bridges + re-dilate to road width]
+    I --> J[Continuous road network]
