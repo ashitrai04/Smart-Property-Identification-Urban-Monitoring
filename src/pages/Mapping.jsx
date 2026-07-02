@@ -1609,6 +1609,7 @@ export default function Mapping() {
                                     {BASE_MAPS.map(bm => (
                                         <button
                                             key={bm.id}
+                                            data-tour-bm={bm.id}
                                             onClick={() => setBaseMap(bm.id)}
                                             className={`px-1 py-2 text-[10px] rounded-lg flex flex-col items-center gap-1 transition-colors ${baseMap === bm.id ? "bg-[var(--accent)] text-white" : "bg-white/10 text-white/70 hover:bg-white/20"
                                                 }`}
@@ -1672,9 +1673,10 @@ export default function Mapping() {
 
                                     {/* Mask toggle */}
                                     {currentDist.hasMask && (
-                                        <label className="flex items-center gap-3 py-2.5 px-3 rounded-lg hover:bg-white/5 cursor-pointer mb-1">
+                                        <label className="flex items-center gap-3 py-2.5 px-3 rounded-lg hover:bg-white/5 cursor-pointer mb-1" data-tour="toggle-mask">
                                             <div className={`w-8 h-4 rounded-full relative transition-colors ${maskOn ? "bg-[var(--accent)]" : "bg-white/20"}`}
                                                 onClick={toggleMask}
+                                                data-tour="toggle-mask-knob"
                                             >
                                                 <div className={`absolute top-0.5 w-3 h-3 rounded-full bg-white shadow transition-all ${maskOn ? "left-4.5" : "left-0.5"}`} />
                                             </div>
@@ -1702,10 +1704,11 @@ export default function Mapping() {
                                             const layerId = `${currentDist.name.toLowerCase()}-${layer.name}`;
                                             const isOn = activeLayers[layerId];
                                             return (
-                                                <label key={layer.id} className="flex items-center gap-3 py-2.5 px-3 rounded-lg hover:bg-white/5 cursor-pointer">
+                                                <label key={layer.id} className="flex items-center gap-3 py-2.5 px-3 rounded-lg hover:bg-white/5 cursor-pointer" data-tour={`layer-${layer.name}`}>
                                                     <div
                                                         className={`w-8 h-4 rounded-full relative transition-colors shrink-0 ${isOn ? "bg-[var(--accent)]" : "bg-white/20"}`}
                                                         onClick={() => toggleLayer(currentDist, layer)}
+                                                        data-tour={`layer-${layer.name}-knob`}
                                                     >
                                                         <div className={`absolute top-0.5 w-3 h-3 rounded-full bg-white shadow transition-all ${isOn ? "left-4.5" : "left-0.5"}`} />
                                                     </div>
@@ -1848,6 +1851,7 @@ export default function Mapping() {
                                     Redraw
                                 </button>
                                 <button
+                                    data-tour="aoi-upload-btn"
                                     onClick={() => aoiFileInputRef.current?.click()}
                                     className="py-2 text-[11px] font-medium text-white/70 bg-white/5 border border-white/10 rounded-lg hover:bg-white/10 transition-colors"
                                 >
@@ -1860,6 +1864,7 @@ export default function Mapping() {
                         <div className="space-y-3">
                             <div className="grid grid-cols-2 gap-2.5">
                                 <button
+                                    data-tour="aoi-draw-btn"
                                     onClick={startDrawAOI}
                                     className="flex items-center justify-center gap-2 py-2.5 text-[11px] font-medium text-[var(--text-accent)] bg-[var(--accent)]/10 border border-[var(--accent)]/20 rounded-lg hover:bg-[var(--accent)]/20 transition-colors"
                                 >
@@ -1989,7 +1994,7 @@ export default function Mapping() {
             {/* Detection overlay control (from Upload & Analysis) — draggable */}
             {detectionOverlay && (
                 <Draggable nodeRef={detPanelRef} handle=".det-drag-handle" bounds="parent">
-                <div ref={detPanelRef} className="absolute bottom-28 right-3 z-30 w-64 max-w-[calc(100vw-24px)] rounded-xl bg-[var(--bg-primary)]/95 backdrop-blur-md text-white border border-[var(--border-default)] shadow-2xl" style={{ boxShadow: '0 10px 30px rgba(0,0,0,0.6)' }}>
+                <div ref={detPanelRef} data-tour="det-overlay" className="absolute bottom-28 right-3 z-30 w-64 max-w-[calc(100vw-24px)] rounded-xl bg-[var(--bg-primary)]/95 backdrop-blur-md text-white border border-[var(--border-default)] shadow-2xl" style={{ boxShadow: '0 10px 30px rgba(0,0,0,0.6)' }}>
                     <div className="det-drag-handle cursor-move px-3.5 py-2.5 border-b border-[var(--border-default)] bg-white/5 rounded-t-xl flex items-center gap-2">
                         <span className="text-sm shrink-0">🗺️</span>
                         <span className="text-[11px] font-bold tracking-[0.1em] uppercase text-[var(--text-primary)] truncate flex-1 select-none">Detection Overlay</span>

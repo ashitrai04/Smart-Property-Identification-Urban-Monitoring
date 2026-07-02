@@ -888,6 +888,7 @@ export default function Upload() {
                             {ANALYSIS_TYPES.map(at => (
                                 <label
                                     key={at.id}
+                                    data-tour={`atype-${at.id}`}
                                     className={`block p-4 rounded-lg border cursor-pointer transition-colors ${analysisType === at.id ? "border-[var(--accent)] bg-[var(--accent-dim)]/40" : "border-[var(--border-default)] hover:border-[var(--border-default)]"}`}
                                 >
                                     <input type="radio" name="analysis" value={at.id} checked={analysisType === at.id}

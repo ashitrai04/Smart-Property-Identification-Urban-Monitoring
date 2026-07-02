@@ -459,7 +459,7 @@ export default function DSS() {
                         <label className="text-xs font-medium text-[var(--text-muted)] block mb-1">State</label>
                         <input value={selectedState} disabled className="w-full bg-[var(--bg-primary)] text-[var(--text-primary)] text-sm border border-[var(--border-default)] rounded-lg px-3 py-2" />
                     </div>
-                    <div>
+                    <div data-tour="dss-district">
                         <label className="text-xs font-medium text-[var(--text-muted)] block mb-1">District</label>
                         <select value={selectedDistrict} onChange={e => setSelectedDistrict(e.target.value)}
                             className="w-full bg-[var(--bg-primary)] text-[var(--text-primary)] text-sm border border-[var(--border-default)] rounded-lg px-3 py-2 focus:outline-none focus:ring-1 focus:ring-[var(--accent)]">
@@ -467,7 +467,7 @@ export default function DSS() {
                             {DISTRICTS_LIST.map(d => <option key={d.name} value={d.name}>{d.name}</option>)}
                         </select>
                     </div>
-                    <div className="grid grid-cols-2 gap-2">
+                    <div className="grid grid-cols-2 gap-2" data-tour="dss-dates">
                         <div>
                             <label className="text-xs font-medium text-[var(--text-muted)] block mb-1">From</label>
                             <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)}
@@ -481,11 +481,11 @@ export default function DSS() {
                     </div>
                 </div>
 
-                <div className="p-4 border-b border-[var(--border-default)]">
+                <div className="p-4 border-b border-[var(--border-default)]" data-tour="dss-datatypes">
                     <label className="text-xs font-medium text-[var(--text-muted)] block mb-2">Data Types</label>
                     <div className="space-y-1.5">
                         {DATA_TYPES.map(dt => (
-                            <label key={dt} className="flex items-center gap-2 cursor-pointer">
+                            <label key={dt} className="flex items-center gap-2 cursor-pointer" data-tour={`dss-dt-${dt.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`}>
                                 <input type="checkbox" checked={selectedDataTypes.includes(dt)} onChange={() => toggleDataType(dt)}
                                     className="rounded border-[var(--border-default)] text-[var(--accent)] focus:ring-[#0B5FA5]" />
                                 <span className="text-xs text-[var(--text-secondary)]">{dt}</span>
