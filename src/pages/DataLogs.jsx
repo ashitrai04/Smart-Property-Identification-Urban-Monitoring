@@ -44,7 +44,7 @@ export default function DataLogs() {
     };
 
     return (
-        <div className="space-y-6">
+        <div className="space-y-6" data-tour="datalogs">
             <div className="bg-[var(--bg-card)] backdrop-blur-md rounded-lg border border-[var(--border-default)] p-4 sm:p-5 shadow-sm flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
                 <div>
                     <h2 className="text-lg sm:text-xl font-bold text-[var(--text-primary)]">Data Logs</h2>

@@ -3,6 +3,7 @@ import mapboxgl from "mapbox-gl";
 import "mapbox-gl/dist/mapbox-gl.css";
 import StatCard from "../components/StatCard";
 import { addArcGISFeatureLayer, removeLayerGroup } from "../utils/mapLayers";
+import { registerTour, unregisterTour } from "../tour/tourBus";
 import {
     BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer,
     PieChart, Pie, Cell, Legend, AreaChart, Area, CartesianGrid,
@@ -73,6 +74,12 @@ export default function Home() {
     const mapRef = useRef(null);
     const boundaryIdRef = useRef(null);
     const [selectedDistrict, setSelectedDistrict] = useState("");
+
+    // Expose district selection to the guided tour
+    useEffect(() => {
+        registerTour("home", { selectDistrict: (n) => setSelectedDistrict(n) });
+        return () => unregisterTour("home");
+    }, []);
 
     // Current data based on selection
     const data = selectedDistrict ? DISTRICT_DATA[selectedDistrict] : AP_TOTAL;
@@ -173,6 +180,7 @@ export default function Home() {
                                 value={selectedDistrict}
                                 onChange={e => setSelectedDistrict(e.target.value)}
                                 className="dark-select"
+                                data-tour="home-district"
                                 style={{ width: "auto" }}
                             >
                                 <option value="">All Districts</option>
@@ -245,7 +253,7 @@ export default function Home() {
             </div>
 
             {/* District table */}
-            <div className="dash-section" style={{ padding: 0, overflow: "hidden" }}>
+            <div className="dash-section" data-tour="home-summary" style={{ padding: 0, overflow: "hidden" }}>
                 <div style={{ padding: "16px", borderBottom: "1px solid var(--border-default)" }}>
                     <div className="dash-section-title" style={{ marginBottom: 0 }}>District-wise Summary</div>
                 </div>

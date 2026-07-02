@@ -6,6 +6,7 @@ import "@mapbox/mapbox-gl-draw/dist/mapbox-gl-draw.css";
 import Draggable from "react-draggable";
 import { addArcGISFeatureLayer, addLocalGeoJSONLayer, reloadVisibleLayers, removeLayerGroup } from "../utils/mapLayers";
 import { parseAOIFile, getFeaturesBounds, computeTotalAreaKm2, unionGeometry, polygonCentroid } from "../utils/aoiUtils";
+import { registerTour, unregisterTour } from "../tour/tourBus";
 import { computeAOIStats, warmBackend } from "../utils/aoiStats";
 import { load as lercLoad, decode as lercDecode } from "lerc";
 import proj4 from "proj4";
@@ -1541,6 +1542,24 @@ export default function Mapping() {
     }, []);
 
     // Get current district config
+    // Expose Mapping controls to the guided tour (re-register each render for fresh closures)
+    useEffect(() => {
+        registerTour("mapping", {
+            setBaseMap: (id) => setBaseMap(id),
+            selectDistrict: (n) => handleDistrictSelect(n),
+            toggleBoundary: () => {
+                const d = (DISTRICTS[selectedState] || []).find(x => x.name === selectedDistrict);
+                const b = d?.layers.find(l => l.isBoundary || l.name === "boundary");
+                if (d && b) toggleLayer(d, b);
+            },
+            toggleMask: () => toggleMask(),
+            drawDemoAOI: (feat) => applyAOI([feat]),
+            uploadParcels: async (file) => { const feats = await parseAOIFile(file); applyAOI(feats); },
+            selectParcel: (i) => focusParcel(i),
+        });
+    });
+    useEffect(() => () => unregisterTour("mapping"), []);
+
     const currentDist = (DISTRICTS[selectedState] || []).find(d => d.name === selectedDistrict);
 
     return (
@@ -1579,7 +1598,7 @@ export default function Mapping() {
 
                         <div className="flex-1 overflow-y-auto min-h-0 rounded-b-xl">
                             {/* Base Map */}
-                            <div className="px-5 py-4 border-b border-white/10 shrink-0">
+                            <div className="px-5 py-4 border-b border-white/10 shrink-0" data-tour="basemap">
                                 <p className="text-[10px] uppercase tracking-[0.12em] text-white/50 mb-2.5">Base Map</p>
                                 <div className="grid grid-cols-5 gap-1.5">
                                     {BASE_MAPS.map(bm => (
@@ -1614,7 +1633,7 @@ export default function Mapping() {
                             </div>
 
                             {/* District selector */}
-                            <div className="px-5 py-4 border-b border-[var(--border-default)] shrink-0">
+                            <div className="px-5 py-4 border-b border-[var(--border-default)] shrink-0" data-tour="map-district">
                                 <p className="text-[10px] uppercase tracking-[0.12em] text-[var(--text-muted)] mb-2">District</p>
                                 <div className="relative">
                                     <select
@@ -1635,7 +1654,7 @@ export default function Mapping() {
 
                             {/* District layers */}
                             {currentDist && (
-                                <div className="px-5 py-4 border-b border-[var(--border-default)] shrink-0">
+                                <div className="px-5 py-4 border-b border-[var(--border-default)] shrink-0" data-tour="map-layers">
                                     <div className="flex items-center justify-between mb-2.5">
                                         <p className="text-[10px] uppercase tracking-[0.12em] text-[var(--text-muted)] truncate pr-2">{currentDist.name} Layers</p>
                                         <button
@@ -1760,7 +1779,7 @@ export default function Mapping() {
             )}
 
             {/* ═══════════ AOI TOOLS — separate panel, top-right ═══════════ */}
-            <div className="absolute top-3 right-3 z-20 w-80 max-w-[calc(100vw-24px)] rounded-xl bg-[var(--bg-primary)]/95 backdrop-blur-md text-white border border-[var(--border-default)] shadow-2xl" style={{ boxShadow: '0 10px 30px rgba(0,0,0,0.6)' }}>
+            <div data-tour="aoi-panel" className="absolute top-3 right-3 z-20 w-80 max-w-[calc(100vw-24px)] rounded-xl bg-[var(--bg-primary)]/95 backdrop-blur-md text-white border border-[var(--border-default)] shadow-2xl" style={{ boxShadow: '0 10px 30px rgba(0,0,0,0.6)' }}>
                 {/* Header */}
                 <div className="px-4 py-3 border-b border-[var(--border-default)] bg-white/5 rounded-t-xl flex items-center gap-2.5">
                     <svg className="shrink-0" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><circle cx="12" cy="12" r="6" /><circle cx="12" cy="12" r="2" /></svg>
@@ -1866,7 +1885,7 @@ export default function Mapping() {
             {/* ═══════════ AOI STATISTICS — draggable popup ═══════════ */}
             {aoiActive && statsOpen && (
                 <Draggable nodeRef={statsPanelRef} handle=".stats-drag-handle" bounds="parent">
-                    <div ref={statsPanelRef} className="absolute top-64 right-3 z-30 w-80 max-w-[calc(100vw-24px)] rounded-xl bg-[var(--bg-primary)]/97 backdrop-blur-md text-white border border-[var(--border-default)] shadow-2xl flex flex-col max-h-[55vh]" style={{ boxShadow: '0 10px 30px rgba(0,0,0,0.6)' }}>
+                    <div ref={statsPanelRef} data-tour="aoi-stats" className="absolute top-64 right-3 z-30 w-80 max-w-[calc(100vw-24px)] rounded-xl bg-[var(--bg-primary)]/97 backdrop-blur-md text-white border border-[var(--border-default)] shadow-2xl flex flex-col max-h-[55vh]" style={{ boxShadow: '0 10px 30px rgba(0,0,0,0.6)' }}>
                         {/* Header (drag handle) */}
                         <div className="stats-drag-handle cursor-move px-4 py-3 rounded-t-xl border-b border-[var(--border-default)] bg-white/5 flex items-center justify-between gap-2">
                             <div className="flex items-center gap-2.5 min-w-0">

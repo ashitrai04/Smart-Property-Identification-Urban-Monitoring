@@ -2,4 +2,6 @@ backend/
 datasets/
 __pycache__/
 *.gpkg
-*.tif
+# NOTE: don't blanket-ignore *.tif — the guided-tour sample chips live in
+# public/tour/ and must ship. The large dataset .tif files are already excluded
+# via backend/ and datasets/.

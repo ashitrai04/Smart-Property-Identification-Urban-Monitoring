@@ -7,6 +7,7 @@ import {
 } from "recharts";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
+import { registerTour, unregisterTour } from "../tour/tourBus";
 
 const MAPBOX_TOKEN = import.meta.env.VITE_MAPBOX_TOKEN;
 
@@ -175,6 +176,17 @@ export default function DSS() {
         setReport(newReport);
         setGenerating(false);
     };
+
+    // Expose DSS controls to the guided tour (re-register each render for fresh closures)
+    useEffect(() => {
+        registerTour("dss", {
+            selectDistrict: (n) => setSelectedDistrict(n),
+            setDates: (f, t) => { setDateFrom(f); setDateTo(t); },
+            toggleDataType: (dt) => toggleDataType(dt),
+            generate: () => handleGenerate(),
+        });
+    });
+    useEffect(() => () => unregisterTour("dss"), []);
 
     const exportReport = () => {
         if (!report) return;
@@ -442,7 +454,7 @@ export default function DSS() {
                     <p className="text-xs text-white/70 mt-0.5">Generate reports for areas of interest</p>
                 </div>
 
-                <div className="p-4 space-y-3 border-b border-[var(--border-default)]">
+                <div className="p-4 space-y-3 border-b border-[var(--border-default)]" data-tour="dss-form">
                     <div>
                         <label className="text-xs font-medium text-[var(--text-muted)] block mb-1">State</label>
                         <input value={selectedState} disabled className="w-full bg-[var(--bg-primary)] text-[var(--text-primary)] text-sm border border-[var(--border-default)] rounded-lg px-3 py-2" />
@@ -483,7 +495,7 @@ export default function DSS() {
                 </div>
 
                 <div className="p-4 border-b border-[var(--border-default)]">
-                    <button onClick={handleGenerate} disabled={!selectedDistrict || generating}
+                    <button onClick={handleGenerate} disabled={!selectedDistrict || generating} data-tour="dss-generate"
                         className={`w-full py-2.5 rounded-lg text-sm font-semibold transition-colors ${selectedDistrict && !generating ? "bg-[var(--accent)] text-white hover:bg-[#094d87]" : "bg-[var(--bg-tertiary)] text-[var(--text-muted)] cursor-not-allowed"
                             }`}>
                         {generating ? "Generating..." : "Generate Report"}

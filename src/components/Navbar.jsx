@@ -33,7 +33,7 @@ export default function Navbar() {
             borderBottom: '1px solid var(--border-default)', backdropFilter: 'blur(20px)', zIndex: 100, flexShrink: 0
         }}>
             {/* Left: Brand Logo & Title */}
-            <div className="navbar-brand" style={{ display: 'flex', alignItems: 'center', gap: '10px', marginRight: 'auto' }}>
+            <div className="navbar-brand" data-tour="brand" style={{ display: 'flex', alignItems: 'center', gap: '10px', marginRight: 'auto' }}>
                 <div className="brand-icon logo-frame" style={{ 
                     width: '38px', height: '38px', flexShrink: 0, background: 'rgba(2, 6, 23, 0.9)', 
                     border: '1px solid rgba(20, 184, 166, 0.35)', borderRadius: '8px', display: 'flex', 

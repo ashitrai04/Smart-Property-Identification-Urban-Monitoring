@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { fromBlob } from "geotiff";
 import proj4 from "proj4";
+import { registerTour, unregisterTour, fetchFile as tourFetchFile } from "../tour/tourBus";
 
 const SEG_SPACE_BASE = "https://asashit-smart-property-segformer.hf.space";
 const SEGMENTATION_API = `${SEG_SPACE_BASE}/predict`;
@@ -441,6 +442,21 @@ export default function Upload() {
         resetUpload();
     };
 
+    // Expose Upload controls to the guided tour (re-register each render for fresh closures)
+    useEffect(() => {
+        registerTour("upload", {
+            setAnalysisType: (t) => { setAnalysisType(t); clearResults(); },
+            addSegFile: async (url, name) => { const f = await tourFetchFile(url, name, "image/tiff"); setFiles([f]); },
+            run: () => handleSubmit(),
+            setChangeFiles: async (u1, n1, u2, n2) => {
+                const a = await tourFetchFile(u1, n1, "image/tiff");
+                const b = await tourFetchFile(u2, n2, "image/tiff");
+                setCdPastFile(a); setCdPresentFile(b);
+            },
+        });
+    });
+    useEffect(() => () => unregisterTour("upload"), []);
+
     const completedCount = segResults.filter(r => r.status === "done").length;
     const totalImages = files.filter(f => /\.(jpg|jpeg|png|tif|tiff)$/i.test(f.name)).length;
 
@@ -464,7 +480,7 @@ export default function Upload() {
 
                     {/* ── CHANGE DETECTION: Dual Upload ── */}
                     {analysisType === "change" ? (
-                        <div className="space-y-4">
+                        <div className="space-y-4" data-tour="cd-uploads">
                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                                 {/* Past image upload */}
                                 <div
@@ -539,6 +555,7 @@ export default function Upload() {
                     ) : (
                         /* ── Standard file upload (Segmentation, Boundary, Mask) ── */
                         <div
+                            data-tour="upload-zone"
                             onDrop={handleDrop}
                             onDragOver={e => { e.preventDefault(); e.stopPropagation(); }}
                             className="bg-[var(--bg-card)] backdrop-blur-md border-2 border-dashed border-[var(--border-default)] rounded-lg p-8 text-center hover:border-[var(--accent)] hover:bg-[var(--accent-dim)] transition-colors cursor-pointer"
@@ -846,6 +863,7 @@ export default function Upload() {
                                         r.bounds ? (
                                             <button
                                                 onClick={() => plotOnMap(r)}
+                                                data-tour="plot-overlay"
                                                 className="mt-3 w-full py-2 rounded-lg text-xs font-semibold bg-[var(--accent)] text-white hover:bg-[#094d87] transition-colors flex items-center justify-center gap-2"
                                             >
                                                 🗺️ Plot Detection Overlay on Map
@@ -883,6 +901,7 @@ export default function Upload() {
 
                     <button
                         onClick={handleSubmit}
+                        data-tour="run-btn"
                         disabled={!canSubmit}
                         className={`w-full py-2.5 rounded-lg text-sm font-semibold transition-colors ${canSubmit ? "bg-[var(--accent)] text-white hover:bg-[#094d87]" : "bg-[var(--bg-tertiary)] text-[var(--text-muted)] cursor-not-allowed"}`}
                     >

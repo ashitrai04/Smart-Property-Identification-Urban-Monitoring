@@ -3,6 +3,7 @@ import { Routes, Route, useLocation } from "react-router-dom";
 import { AnimatePresence } from "framer-motion";
 import BootOverlay from "./components/BootOverlay";
 import Navbar from "./components/Navbar";
+import PlatformTour from "./components/PlatformTour";
 import Home from "./pages/Home";
 import Mapping from "./pages/Mapping";
 import Upload from "./pages/Upload";
@@ -44,6 +45,9 @@ function App() {
                         </section>
                     </main>
                 )}
+
+                {/* Global guided tour (launch button + auto-playing walkthrough) */}
+                {booted && <PlatformTour />}
             </div>
         </>
     );
