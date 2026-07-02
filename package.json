@@ -13,9 +13,11 @@
   "license": "ISC",
   "dependencies": {
     "@mapbox/mapbox-gl-draw": "^1.5.1",
+    "@mapbox/shp-write": "^0.4.3",
     "@ngageoint/geopackage": "^4.2.8",
     "@supabase/supabase-js": "^2.110.0",
     "@tailwindcss/vite": "^4.2.1",
+    "d3-contour": "^4.0.2",
     "fflate": "^0.8.3",
     "framer-motion": "^12.42.0",
     "geotiff": "^3.0.3",

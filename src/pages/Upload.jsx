@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { fromBlob } from "geotiff";
 import proj4 from "proj4";
 import { logActivity } from "../lib/activityLog";
+import { decodeClassMap, exportCSV, classMapToGeoJSON, exportGeoJSON, exportSHP, exportGeoTIFF } from "../utils/exporters";
 import { registerTour, unregisterTour, fetchFile as tourFetchFile } from "../tour/tourBus";
 
 const SEG_SPACE_BASE = "https://asashit-smart-property-segformer.hf.space";
@@ -170,6 +171,52 @@ async function maskToTransparentDataUrl(b64png) {
     });
 }
 
+// class-id → display colour, carried into GeoJSON/SHP properties for easy styling
+const SEG_CLASS_COLORS = { 1: "#ef4444", 2: "#eab308", 3: "#3b82f6", 4: "#9ca3af" };
+const CHANGE_CLASS_COLORS = { 1: "#00ffff", 2: "#ef4444", 3: "#f59e0b", 4: "#8b5cf6" };
+
+// ── Export row: PNG / CSV / GeoJSON / SHP / GeoTIFF for one result ──
+function ExportRow({ baseName, pngUrl, stats, classMapB64, classDefs, bounds, colors, onError }) {
+    const [busy, setBusy] = useState(null);
+    const run = async (kind, fn) => {
+        setBusy(kind);
+        try { await fn(); } catch (e) { console.error(`${kind} export failed:`, e); onError?.(`${kind.toUpperCase()} export failed: ${e.message}`); }
+        setBusy(null);
+    };
+    const buildFC = async () => classMapToGeoJSON(await decodeClassMap(classMapB64), classDefs || {}, bounds, colors);
+    const btn = "px-2.5 py-1.5 text-[10px] font-semibold rounded-md border border-[var(--border-default)] text-[var(--text-secondary)] hover:border-[var(--accent)] hover:text-[var(--accent)] transition-colors disabled:opacity-40 disabled:cursor-not-allowed";
+    const vectorsOk = !!(classMapB64 && classDefs);
+    return (
+        <div className="mt-3 flex flex-wrap items-center gap-1.5">
+            <span className="text-[10px] text-[var(--text-muted)] font-medium mr-1">EXPORT:</span>
+            {pngUrl && <a className={btn} href={pngUrl} download={`${baseName}.png`} title="Colour-coded mask image">PNG</a>}
+            {stats && (
+                <button className={btn} disabled={!!busy} title="Class statistics (adds real m² for geo-referenced inputs)"
+                    onClick={() => run("csv", async () => {
+                        const cm = vectorsOk ? await decodeClassMap(classMapB64) : null;
+                        exportCSV({ stats, classMap: cm, bounds, baseName });
+                    })}>
+                    {busy === "csv" ? "…" : "CSV"}
+                </button>
+            )}
+            <button className={btn} disabled={!vectorsOk || !!busy} title={vectorsOk ? "Vectorized class polygons" : "Vector data unavailable for this result"}
+                onClick={() => run("geojson", async () => exportGeoJSON(await buildFC(), baseName))}>
+                {busy === "geojson" ? "…" : "GeoJSON"}
+            </button>
+            <button className={btn} disabled={!vectorsOk || !!busy} title={vectorsOk ? "Zipped ESRI Shapefile" : "Vector data unavailable for this result"}
+                onClick={() => run("shp", async () => exportSHP(await buildFC(), baseName))}>
+                {busy === "shp" ? "…" : "SHP"}
+            </button>
+            <button className={btn} disabled={!vectorsOk || !bounds || !!busy}
+                title={bounds ? "Georeferenced class raster (EPSG:4326)" : "Needs a geo-referenced GeoTIFF input"}
+                onClick={() => run("geotiff", async () => exportGeoTIFF(await decodeClassMap(classMapB64), bounds, baseName))}>
+                {busy === "geotiff" ? "…" : "GeoTIFF"}
+            </button>
+            {!bounds && <span className="text-[9px] text-[var(--text-muted)] italic">(GeoTIFF export needs a geo-referenced input; vectors export in pixel coordinates)</span>}
+        </div>
+    );
+}
+
 export default function Upload() {
     const navigate = useNavigate();
 
@@ -256,11 +303,13 @@ export default function Upload() {
             throw new Error(`API ${resp.status}: ${errText}`);
         }
         const data = await resp.json();
-        // API returns { master_map_base64 (overlay), raw_mask_base64 (colored mask), stats }
+        // API returns { master_map_base64 (overlay), raw_mask_base64 (colored mask), class_map_base64 (raw ids), stats }
         const b64 = data.master_map_base64 || data.raw_mask_base64;
         return {
             maskUrl: `data:image/png;base64,${b64}`,
             rawMaskB64: data.raw_mask_base64 || data.master_map_base64,
+            classMapB64: data.class_map_base64 || null,
+            classDefs: data.class_defs || null,
             stats: data.stats || null,
         };
     };
@@ -297,9 +346,9 @@ export default function Upload() {
             setSegResults(prev => [...prev, { inputName: file.name, inputUrl, maskUrl: null, isTif, bounds, status: "processing" }]);
 
             try {
-                const { maskUrl, rawMaskB64, stats } = await segmentOneFile(file);
+                const { maskUrl, rawMaskB64, classMapB64, classDefs, stats } = await segmentOneFile(file);
                 setSegResults(prev => prev.map((r, idx) =>
-                    idx === prev.length - 1 ? { ...r, maskUrl, rawMaskB64, stats, status: "done" } : r
+                    idx === prev.length - 1 ? { ...r, maskUrl, rawMaskB64, classMapB64, classDefs, stats, status: "done" } : r
                 ));
                 const m = {};
                 if (stats) Object.entries(stats).forEach(([k, v]) => { if (k !== "Background") m[k] = `${v.percent}%`; });
@@ -351,8 +400,9 @@ export default function Upload() {
         setProgress("Generating previews...");
         const pastUrl = await fileToPreviewUrl(cdPastFile);
         const presentUrl = await fileToPreviewUrl(cdPresentFile);
+        const pastBounds = /\.(tif|tiff)$/i.test(cdPastFile.name) ? await getTifWgs84Bounds(cdPastFile) : null;
 
-        setCdResult({ pastUrl, presentUrl, changeUrl: null, status: "processing" });
+        setCdResult({ pastUrl, presentUrl, pastBounds, changeUrl: null, status: "processing" });
 
         try {
             // Our SegFormer Space segments BOTH images and diffs their masks server-side
@@ -386,6 +436,8 @@ export default function Upload() {
                 changeUrl: `data:image/png;base64,${data.change_map_base64}`,
                 pastMaskUrl: data.past_mask_base64 ? `data:image/png;base64,${data.past_mask_base64}` : null,
                 presentMaskUrl: data.present_mask_base64 ? `data:image/png;base64,${data.present_mask_base64}` : null,
+                changeClassB64: data.change_class_base64 || null,
+                changeDefs: data.change_defs || null,
                 stats: data.stats || null,
                 status: "done",
             }));
@@ -755,6 +807,23 @@ export default function Upload() {
                                     </div>
                                 )}
 
+                                {/* Multi-format export */}
+                                {cdResult.status === "done" && (
+                                    <ExportRow
+                                        baseName="change_detection"
+                                        pngUrl={cdResult.changeUrl}
+                                        stats={cdResult.stats ? {
+                                            "New Construction": cdResult.stats.new_construction,
+                                            "Demolished": cdResult.stats.demolished,
+                                            "New Road": cdResult.stats.new_road,
+                                            "Other Change": cdResult.stats.land_use_change,
+                                            "Unchanged": { percent: cdResult.stats.no_change_percent },
+                                        } : null}
+                                        classMapB64={cdResult.changeClassB64} classDefs={cdResult.changeDefs}
+                                        bounds={cdResult.pastBounds} colors={CHANGE_CLASS_COLORS} onError={setError}
+                                    />
+                                )}
+
                                 {/* Change statistics */}
                                 {cdResult.status === "done" && cdResult.stats && (
                                     <div className="mt-4 border-t border-[var(--border-default)] pt-3">
@@ -874,6 +943,16 @@ export default function Upload() {
                                                 </div>
                                             ))}
                                         </div>
+                                    )}
+
+                                    {/* Multi-format export */}
+                                    {r.status === "done" && (
+                                        <ExportRow
+                                            baseName={r.inputName.replace(/\.[^.]+$/, "") + "_segmentation"}
+                                            pngUrl={r.maskUrl} stats={r.stats}
+                                            classMapB64={r.classMapB64} classDefs={r.classDefs}
+                                            bounds={r.bounds} colors={SEG_CLASS_COLORS} onError={setError}
+                                        />
                                     )}
 
                                     {/* Plot on Map (GeoTIFF only) */}
