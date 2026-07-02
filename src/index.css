@@ -67,9 +67,18 @@
 }
 
 * {
-  margin: 0;
-  padding: 0;
   box-sizing: border-box;
+}
+
+/* Keep the margin/padding reset, but inside @layer base so Tailwind utility
+   classes (px-*, py-*, m-*, space-y-* — which live in @layer utilities) can
+   still override it. An UNLAYERED `* { padding:0 }` beats every layered
+   utility in Tailwind v4, which silently zeroed all spacing utilities. */
+@layer base {
+  * {
+    margin: 0;
+    padding: 0;
+  }
 }
 
 html, body, #root {
