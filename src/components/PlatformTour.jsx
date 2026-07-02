@@ -5,10 +5,12 @@ import { Play, Pause, ChevronRight, Compass, MapPin, Upload as UploadIcon, BarCh
 import { callTour, fetchFile, sleep, waitForEl } from "../tour/tourBus";
 import "./PlatformTour.css";
 
-// A small, low-density AOI on the Vijayawada outskirts (fast to analyse)
+// A small, low-density AOI on the Vijayawada outskirts (fast to analyse).
+// Verified against the live backend: every corner is INSIDE the district
+// boundary, and the cell holds ~724 buildings (light but non-empty).
 const TOUR_AOI = {
     type: "Feature", properties: { name: "Tour AOI" },
-    geometry: { type: "Polygon", coordinates: [[[80.565, 16.475], [80.579, 16.475], [80.579, 16.487], [80.565, 16.487], [80.565, 16.475]]] },
+    geometry: { type: "Polygon", coordinates: [[[80.666, 16.528], [80.679, 16.528], [80.679, 16.539], [80.666, 16.539], [80.666, 16.528]]] },
 };
 
 // Set a React-controlled <select>/<input> the way a real user would —
