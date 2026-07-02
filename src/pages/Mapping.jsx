@@ -1553,6 +1553,11 @@ export default function Mapping() {
                 if (d && b) toggleLayer(d, b);
             },
             toggleMask: () => toggleMask(),
+            waitIdle: () => new Promise((res) => {
+                const m = mapRef.current; if (!m) return res();
+                let done = false; const f = () => { if (!done) { done = true; res(); } };
+                m.once("idle", f); setTimeout(f, 3500);
+            }),
             drawDemoAOI: (feat) => applyAOI([feat]),
             uploadParcels: async (file) => { const feats = await parseAOIFile(file); applyAOI(feats); },
             selectParcel: (i) => focusParcel(i),
