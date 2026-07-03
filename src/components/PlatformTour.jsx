@@ -125,6 +125,9 @@ const STEPS = [
       waitFor: { sel: '[data-tour="plot-overlay"]', timeout: 90000 },
       postTarget: 'img[alt^="Mask"]', hold: 8000 },
 
+    { id: "export", route: "/upload", target: '[data-tour="export-row"]', title: "Export in Any GIS Format",
+      desc: "Results aren't locked to a picture. Each one exports as <strong>PNG</strong>, <strong>CSV</strong> (class stats with real m² for geo-referenced inputs), <strong>GeoJSON</strong> and <strong>Shapefile</strong> (vectorized polygons per class), and <strong>GeoTIFF</strong> (a georeferenced class raster) — ready to drop straight into QGIS or ArcGIS.", hold: 8000 },
+
     { id: "plot-overlay", route: "/upload", target: '[data-tour="plot-overlay"]', title: "Put the Result Back on the Map",
       desc: "Because the image is geo-referenced, <strong>Plot Detection Overlay on Map</strong> places the AI's mask at its true location on the Mapping page — with an opacity slider so you can compare it against the live imagery.",
       script: [ { sel: '[data-tour="plot-overlay"]', click: true, wait: 2200 } ],

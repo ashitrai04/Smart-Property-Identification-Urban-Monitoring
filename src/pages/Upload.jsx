@@ -187,7 +187,7 @@ function ExportRow({ baseName, pngUrl, stats, classMapB64, classDefs, bounds, co
     const btn = "px-2.5 py-1.5 text-[10px] font-semibold rounded-md border border-[var(--border-default)] text-[var(--text-secondary)] hover:border-[var(--accent)] hover:text-[var(--accent)] transition-colors disabled:opacity-40 disabled:cursor-not-allowed";
     const vectorsOk = !!(classMapB64 && classDefs);
     return (
-        <div className="mt-3 flex flex-wrap items-center gap-1.5">
+        <div className="mt-3 flex flex-wrap items-center gap-1.5" data-tour="export-row">
             <span className="text-[10px] text-[var(--text-muted)] font-medium mr-1">EXPORT:</span>
             {pngUrl && <a className={btn} href={pngUrl} download={`${baseName}.png`} title="Colour-coded mask image">PNG</a>}
             {stats && (
