@@ -8,6 +8,8 @@ import { registerTour, unregisterTour, fetchFile as tourFetchFile } from "../tou
 
 const SEG_SPACE_BASE = "https://asashit-smart-property-segformer.hf.space";
 const SEGMENTATION_API = `${SEG_SPACE_BASE}/predict`;
+const FUSION_API = `${SEG_SPACE_BASE}/predict-fusion`;
+const FUSION_URL_API = `${SEG_SPACE_BASE}/predict-fusion-url`;
 const CHANGE_DETECTION_API = `${SEG_SPACE_BASE}/change-detection`;
 const PRESIGN_API = `${SEG_SPACE_BASE}/r2/presign`;
 const PREDICT_URL_API = `${SEG_SPACE_BASE}/predict-url`;
@@ -242,6 +244,8 @@ export default function Upload() {
     }, []);
     const [files, setFiles] = useState([]);
     const [analysisType, setAnalysisType] = useState("segment");
+    // segmentation engine: "semantic" (SegFormer only) | "fusion" (SegFormer + SAM, crisp per-building)
+    const [segMode, setSegMode] = useState("semantic");
     const [processing, setProcessing] = useState(false);
     const [progress, setProgress] = useState("");
     const [error, setError] = useState(null);
@@ -282,28 +286,32 @@ export default function Upload() {
 
     // ── Send one image to the segmentation API (direct for small, R2 for large) ──
     const segmentOneFile = async (file) => {
+        const fusion = segMode === "fusion";
+        const directApi = fusion ? FUSION_API : SEGMENTATION_API;
+        const urlApi = fusion ? FUSION_URL_API : PREDICT_URL_API;
         let resp;
         if (file.size > DIRECT_LIMIT) {
             setProgress(`Uploading ${file.name}…`);
             const key = await uploadToR2(file, onUpload(`Uploading ${file.name}`));
             resetUpload();
             tempKeysRef.current.push(key);
-            setProgress(`Analyzing ${file.name}… (this can take ~10–40s)`);
-            resp = await fetch(PREDICT_URL_API, {
+            setProgress(`Analyzing ${file.name}… (${fusion ? "SegFormer + SAM — crisp footprints, ~1–2 min" : "SegFormer, ~10–40s"})`);
+            resp = await fetch(urlApi, {
                 method: "POST", headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ key, filename: file.name }),
             });
         } else {
             const formData = new FormData();
             formData.append("file", file);
-            resp = await fetch(SEGMENTATION_API, { method: "POST", body: formData });
+            resp = await fetch(directApi, { method: "POST", body: formData });
         }
         if (!resp.ok) {
             const errText = await resp.text().catch(() => "Unknown error");
             throw new Error(`API ${resp.status}: ${errText}`);
         }
         const data = await resp.json();
-        // API returns { master_map_base64 (overlay), raw_mask_base64 (colored mask), class_map_base64 (raw ids), stats }
+        // semantic → master_map (overlay) + raw_mask (colored) + class_map (ids)
+        // fusion  → master_map (instances+roads overlay) + class_map (semantic ids) + building_count + geojson
         const b64 = data.master_map_base64 || data.raw_mask_base64;
         return {
             maskUrl: `data:image/png;base64,${b64}`,
@@ -311,7 +319,34 @@ export default function Upload() {
             classMapB64: data.class_map_base64 || null,
             classDefs: data.class_defs || null,
             stats: data.stats || null,
+            mode: data.mode || (fusion ? "fusion" : "semantic"),
+            buildingCount: (typeof data.building_count === "number") ? data.building_count : null,
+            buildingsGeojson: data.buildings_geojson || null,
+            roadsGeojson: data.roads_geojson || null,
+            workingSize: data.working_size || null,
         };
+    };
+
+    // Download fusion vectors (buildings/roads). Georeferenced to EPSG:4326 when the
+    // input carried bounds (GeoTIFF); otherwise saved in image-pixel coordinates.
+    const downloadFusionVectors = (r, kind) => {
+        const fc = kind === "roads" ? r.roadsGeojson : r.buildingsGeojson;
+        if (!fc || !fc.features?.length) { setError(`No ${kind} vectors to export.`); return; }
+        let out = fc;
+        if (r.bounds && r.workingSize?.width) {
+            const { west, east, north, south } = r.bounds;
+            const W = r.workingSize.width, H = r.workingSize.height;
+            const tx = (x, y) => [+(west + (x / W) * (east - west)).toFixed(7), +(north - (y / H) * (north - south)).toFixed(7)];
+            out = {
+                ...fc, crs: { type: "name", properties: { name: "urn:ogc:def:crs:EPSG::4326" } },
+                features: fc.features.map(f => ({ ...f, geometry: { ...f.geometry, coordinates: f.geometry.coordinates.map(ring => ring.map(([x, y]) => tx(x, y))) } })),
+            };
+        }
+        const a = document.createElement("a");
+        a.href = URL.createObjectURL(new Blob([JSON.stringify(out)], { type: "application/geo+json" }));
+        a.download = `${r.inputName.replace(/\.[^.]+$/, "")}_${kind}.geojson`;
+        a.click();
+        setTimeout(() => URL.revokeObjectURL(a.href), 5000);
     };
 
     // ── Process multiple images sequentially ──
@@ -346,9 +381,9 @@ export default function Upload() {
             setSegResults(prev => [...prev, { inputName: file.name, inputUrl, maskUrl: null, isTif, bounds, status: "processing" }]);
 
             try {
-                const { maskUrl, rawMaskB64, classMapB64, classDefs, stats } = await segmentOneFile(file);
+                const { maskUrl, rawMaskB64, classMapB64, classDefs, stats, mode, buildingCount, buildingsGeojson, roadsGeojson, workingSize } = await segmentOneFile(file);
                 setSegResults(prev => prev.map((r, idx) =>
-                    idx === prev.length - 1 ? { ...r, maskUrl, rawMaskB64, classMapB64, classDefs, stats, status: "done" } : r
+                    idx === prev.length - 1 ? { ...r, maskUrl, rawMaskB64, classMapB64, classDefs, stats, mode, buildingCount, buildingsGeojson, roadsGeojson, workingSize, status: "done" } : r
                 ));
                 const m = {};
                 if (stats) Object.entries(stats).forEach(([k, v]) => { if (k !== "Background") m[k] = `${v.percent}%`; });
@@ -642,6 +677,25 @@ export default function Upload() {
                         </div>
                     )}
 
+                    {/* Segmentation engine toggle: SegFormer only vs SegFormer + SAM */}
+                    {analysisType === "segment" && (
+                        <div className="bg-[var(--bg-card)] backdrop-blur-md rounded-lg border border-[var(--border-default)] p-3 shadow-sm" data-tour="seg-mode">
+                            <p className="text-[11px] font-semibold text-[var(--text-primary)] mb-2">Segmentation engine</p>
+                            <div className="grid grid-cols-2 gap-2">
+                                {[
+                                    { id: "semantic", title: "SegFormer", desc: "Labeled buildings / roads / water · fast (~10–40s)" },
+                                    { id: "fusion", title: "SegFormer + SAM", desc: "Crisp per-building footprints + roads · slower (~1–2 min)" },
+                                ].map(m => (
+                                    <button key={m.id} type="button" onClick={() => setSegMode(m.id)}
+                                        className={`text-left p-2.5 rounded-lg border transition-colors ${segMode === m.id ? "border-[var(--accent)] bg-[var(--accent-dim)]/40" : "border-[var(--border-default)] hover:border-[var(--accent)]/50"}`}>
+                                        <p className="text-xs font-bold text-[var(--text-primary)]">{m.title}</p>
+                                        <p className="text-[10px] text-[var(--text-muted)] mt-0.5 leading-snug">{m.desc}</p>
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+
                     {/* File list (for non-change detection) */}
                     {analysisType !== "change" && files.length > 0 && (
                         <div className="bg-[var(--bg-card)] backdrop-blur-md rounded-lg border border-[var(--border-default)] p-4 shadow-sm">
@@ -914,7 +968,7 @@ export default function Upload() {
                                         </div>
                                         {/* Output */}
                                         <div>
-                                            <p className="text-[10px] text-[var(--text-muted)] mb-1 font-medium">OUTPUT — AI Segmentation Mask</p>
+                                            <p className="text-[10px] text-[var(--text-muted)] mb-1 font-medium">OUTPUT — {r.mode === "fusion" ? "Per-building instances + roads (SegFormer + SAM)" : "AI Segmentation Mask"}</p>
                                             {r.status === "processing" && (
                                                 <div className="rounded-lg border border-[var(--border-default)] w-full h-[200px] bg-[var(--bg-tertiary)] flex flex-col items-center justify-center gap-2">
                                                     <div className="w-6 h-6 border-2 border-[var(--accent)]/30 border-t-[#0B5FA5] rounded-full animate-spin" />
@@ -933,15 +987,40 @@ export default function Upload() {
                                         </div>
                                     </div>
 
-                                    {/* Class distribution stats */}
+                                    {/* Building count (fusion mode) */}
+                                    {r.status === "done" && r.mode === "fusion" && typeof r.buildingCount === "number" && (
+                                        <div className="mt-3 flex items-center gap-2 text-[11px]">
+                                            <span className="bg-[var(--accent-dim)]/50 text-[var(--accent)] font-semibold px-2.5 py-1 rounded-full">🏢 {r.buildingCount.toLocaleString()} buildings detected</span>
+                                            <span className="text-[var(--text-muted)]">individually separated with SAM-refined edges</span>
+                                        </div>
+                                    )}
+
+                                    {/* Class distribution stats (skip the building_count integer) */}
                                     {r.status === "done" && r.stats && (
                                         <div className="mt-3 grid grid-cols-2 sm:grid-cols-4 gap-2">
-                                            {Object.entries(r.stats).filter(([k]) => k !== "Background").map(([k, v]) => (
+                                            {Object.entries(r.stats).filter(([k, v]) => k !== "Background" && v && typeof v.percent === "number").map(([k, v]) => (
                                                 <div key={k} className="bg-[var(--bg-tertiary)] rounded-lg p-2">
                                                     <p className="text-[10px] text-[var(--text-muted)] truncate">{k}</p>
                                                     <p className="text-sm font-bold text-[var(--text-primary)]">{v.percent}%</p>
                                                 </div>
                                             ))}
+                                        </div>
+                                    )}
+
+                                    {/* Fusion vector exports (per-building footprints + roads) */}
+                                    {r.status === "done" && r.mode === "fusion" && r.buildingsGeojson?.features?.length > 0 && (
+                                        <div className="mt-3 flex flex-wrap gap-2">
+                                            <button onClick={() => downloadFusionVectors(r, "buildings")}
+                                                className="text-[10px] font-medium px-2.5 py-1.5 rounded-lg border border-[var(--accent)]/40 text-[var(--accent)] hover:bg-[var(--accent-dim)]/40">
+                                                📥 Building footprints (GeoJSON)
+                                            </button>
+                                            {r.roadsGeojson?.features?.length > 0 && (
+                                                <button onClick={() => downloadFusionVectors(r, "roads")}
+                                                    className="text-[10px] font-medium px-2.5 py-1.5 rounded-lg border border-[var(--border-default)] text-[var(--text-secondary)] hover:border-[var(--accent)]/40">
+                                                    📥 Roads (GeoJSON)
+                                                </button>
+                                            )}
+                                            {!r.bounds && <span className="text-[10px] text-[var(--text-muted)] self-center">· pixel coords (upload GeoTIFF for georeferenced output)</span>}
                                         </div>
                                     )}
 

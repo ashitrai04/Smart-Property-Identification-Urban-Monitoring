@@ -1,0 +1,12 @@
+name = "sp-keepalive"
+main = "src/worker.js"
+compatibility_date = "2025-06-01"
+
+# Ping every 12 hours (at 00:00 and 12:00 UTC).
+# HF Spaces sleep after ~48h idle and Supabase pauses after ~7 days idle,
+# so 12h gives a wide safety margin even if a run is occasionally missed.
+# Want it more/less frequent? Edit the cron below and re-deploy:
+#   every 6h  -> "0 */6 * * *"
+#   every 15h -> not a clean cron; use "0 0,15 * * *" (00:00 & 15:00) or keep 12h
+[triggers]
+crons = ["0 */12 * * *"]

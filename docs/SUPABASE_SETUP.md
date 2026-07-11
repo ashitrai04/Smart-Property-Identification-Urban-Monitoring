@@ -47,8 +47,47 @@ VITE_SUPABASE_ANON_KEY=<anon public key>
 
 Redeploy (or restart `npm run dev`). Data Logs will show **Cloud sync: on**.
 
+## 4. Auto-prune old rows (keep the free tier tiny)
+
+So the table can never grow unbounded, this trigger keeps only the **newest 200
+rows** and deletes older ones automatically on every insert. It runs
+`security definer` (as the table owner), so pruning works **without** giving the
+anon key any delete permission — RLS stays locked to insert/select.
+
+```sql
+-- keeps the newest N activity rows; deletes the rest on every insert
+create or replace function public.prune_activity_logs()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  delete from public.activity_logs
+  where id in (
+    select id from public.activity_logs
+    order by created_at desc, id desc
+    offset 200                       -- change 200 to keep more/fewer rows
+  );
+  return null;
+end;
+$$;
+
+drop trigger if exists trg_prune_activity_logs on public.activity_logs;
+create trigger trg_prune_activity_logs
+  after insert on public.activity_logs
+  for each statement
+  execute function public.prune_activity_logs();
+```
+
+At ~1 KB/row this caps the table at well under 1 MB — a rounding error against
+the 500 MB free quota — while keeping enough history for Data Logs and DSS
+reports. Lower `200` to `100` if you want it even leaner.
+
 ## Notes
 - The anon key is safe to ship in the frontend **only** because RLS restricts it
   to insert/select on this one table. Don't add broader policies to it.
 - localStorage keeps mirroring the last 300 entries as an offline fallback.
+- The keep-alive query (every 12 h) and the pruning trigger together keep the
+  project both **awake** and **small** — no free-tier limit is ever approached.
 - To wipe demo data: `delete from public.activity_logs;` in the SQL editor.
