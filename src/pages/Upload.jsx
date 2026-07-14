@@ -48,11 +48,16 @@ async function deleteTempKeys(keys) {
 }
 
 const ANALYSIS_TYPES = [
-    { id: "segment", label: "AI Segmentation", desc: "Run AI segmentation on satellite/drone imagery (up to 500 MB per image)" },
-    { id: "change", label: "Change Detection", desc: "Compare past & present satellite images to detect urban changes" },
-    { id: "boundary", label: "Boundary Analysis", desc: "Upload a shapefile boundary for land use analysis" },
-    { id: "mask", label: "Mask Overlay", desc: "Upload a mask TIFF for change detection comparison" },
+    { id: "segment", label: "AI Segmentation", desc: "SegFormer-B5 + SAM2 fusion — buildings / roads / water on satellite or drone imagery" },
+    { id: "change", label: "Building Change", desc: "New & demolished buildings between two dates (instance-matched)" },
+    { id: "vegetation", label: "Vegetation Change", desc: "Green-cover gain & loss between two dates" },
+    { id: "water", label: "Water Change", desc: "Water-body change & encroachment between two dates" },
+    { id: "pothole", label: "Pothole Detection", desc: "Road-surface pothole detection from drone imagery", dev: true },
 ];
+
+// change-detection analysis types share the two-image flow; each maps to a backend mode
+const CD_MODE = { change: "building", vegetation: "vegetation", water: "water" };
+const isCdType = (t) => t in CD_MODE;
 
 const MASK_LEGEND = [
     { label: "Buildings", color: "#EF4444" },
@@ -61,13 +66,22 @@ const MASK_LEGEND = [
     { label: "Open Plots / Barren", color: "#9CA3AF" },
 ];
 
+// Instance-matched change categories — keys match the backend stats labels & legend
 const CHANGE_LEGEND = [
-    { key: "new_construction", label: "New Construction", color: "#00FFFF" },
-    { key: "demolished", label: "Demolished / Cleared", color: "#EF4444" },
-    { key: "new_road", label: "New Road / Access", color: "#F59E0B" },
-    { key: "land_use_change", label: "Other Land-Use Change", color: "#8B5CF6" },
-    { label: "No Change", color: "transparent", border: true },
+    { key: "New Construction", label: "New Construction", color: "#00DC00" },
+    { key: "Demolished", label: "Demolished", color: "#EB2828" },
+    { key: "New / Widened Road", label: "New / Widened Road", color: "#F5C814" },
+    { key: "Vegetation Loss", label: "Vegetation Loss", color: "#FF8C00" },
+    { key: "Vegetation Gain", label: "Vegetation Gain", color: "#5AC882" },
+    { key: "Water Change", label: "Water Change", color: "#2878FF" },
 ];
+// only the legend rows relevant to the selected change mode
+const CD_LEGEND_KEYS = {
+    change: ["New Construction", "Demolished"],
+    vegetation: ["Vegetation Loss", "Vegetation Gain"],
+    water: ["Water Change"],
+};
+const legendFor = (t) => CHANGE_LEGEND.filter(l => (CD_LEGEND_KEYS[t] || []).includes(l.key));
 
 const ACCEPTED = ".shp,.shx,.dbf,.prj,.tif,.tiff,.geojson,.json,.zip,.jpg,.jpeg,.png,.bmp,.webp";
 
@@ -175,7 +189,7 @@ async function maskToTransparentDataUrl(b64png) {
 
 // class-id → display colour, carried into GeoJSON/SHP properties for easy styling
 const SEG_CLASS_COLORS = { 1: "#ef4444", 2: "#eab308", 3: "#3b82f6", 4: "#9ca3af" };
-const CHANGE_CLASS_COLORS = { 1: "#00ffff", 2: "#ef4444", 3: "#f59e0b", 4: "#8b5cf6" };
+const CHANGE_CLASS_COLORS = { 1: "#00DC00", 2: "#EB2828", 3: "#F5C814", 4: "#FF8C00", 5: "#5AC882", 6: "#2878FF" };
 
 // ── Export row: PNG / CSV / GeoJSON / SHP / GeoTIFF for one result ──
 function ExportRow({ baseName, pngUrl, stats, classMapB64, classDefs, bounds, colors, onError }) {
@@ -439,6 +453,7 @@ export default function Upload() {
 
         setCdResult({ pastUrl, presentUrl, pastBounds, changeUrl: null, status: "processing" });
 
+        const mode = CD_MODE[analysisType] || "building";
         try {
             // Our SegFormer Space segments BOTH images and diffs their masks server-side
             const big = cdPastFile.size > DIRECT_LIMIT || cdPresentFile.size > DIRECT_LIMIT;
@@ -452,13 +467,14 @@ export default function Upload() {
                 setProgress("🧠 Segmenting both images & comparing masks…");
                 resp = await fetch(CHANGE_URL_API, {
                     method: "POST", headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ past_key, present_key, past_filename: cdPastFile.name, present_filename: cdPresentFile.name }),
+                    body: JSON.stringify({ past_key, present_key, past_filename: cdPastFile.name, present_filename: cdPresentFile.name, mode }),
                 });
             } else {
                 setProgress("🧠 Segmenting both images & comparing masks…");
                 const form = new FormData();
                 form.append("past", cdPastFile);
                 form.append("present", cdPresentFile);
+                form.append("mode", mode);
                 resp = await fetch(CHANGE_DETECTION_API, { method: "POST", body: form });
             }
             if (!resp.ok) {
@@ -473,6 +489,8 @@ export default function Upload() {
                 presentMaskUrl: data.present_mask_base64 ? `data:image/png;base64,${data.present_mask_base64}` : null,
                 changeClassB64: data.change_class_base64 || null,
                 changeDefs: data.change_defs || null,
+                changeColors: data.colors || null,
+                mode: data.mode || "building",
                 stats: data.stats || null,
                 status: "done",
             }));
@@ -481,11 +499,10 @@ export default function Upload() {
                 type: "Change Detection", district: "Custom Upload",
                 area: `${cdPastFile.name} → ${cdPresentFile.name}`, status: "Completed",
                 metrics: {
-                    "New Construction": `${s.new_construction?.percent ?? 0}%`,
-                    "Demolished": `${s.demolished?.percent ?? 0}%`,
-                    "New Road": `${s.new_road?.percent ?? 0}%`,
-                    "Other Change": `${s.land_use_change?.percent ?? 0}%`,
-                    "Unchanged": `${s.no_change_percent ?? 0}%`,
+                    "New Buildings": s.counts?.new_construction ?? 0,
+                    "Demolished": s.counts?.demolished ?? 0,
+                    "New Road %": `${s["New / Widened Road"]?.percent ?? 0}%`,
+                    "Veg Loss %": `${s["Vegetation Loss"]?.percent ?? 0}%`,
                 },
             });
         } catch (err) {
@@ -513,7 +530,11 @@ export default function Upload() {
     };
 
     const handleSubmit = async () => {
-        if (analysisType === "change") {
+        if (analysisType === "pothole") {
+            setError("Pothole detection is under active development — coming soon.");
+            return;
+        }
+        if (isCdType(analysisType)) {
             if (!cdPastFile || !cdPresentFile) {
                 setError("Please upload both a PAST and a PRESENT image.");
                 return;
@@ -527,10 +548,8 @@ export default function Upload() {
 
         if (analysisType === "segment") {
             await runSegmentation();
-        } else if (analysisType === "change") {
+        } else if (isCdType(analysisType)) {
             await runChangeDetection();
-        } else {
-            await runDummyAnalysis();
         }
         resetUpload();
         setProcessing(false);
@@ -566,9 +585,11 @@ export default function Upload() {
     const totalImages = files.filter(f => /\.(jpg|jpeg|png|tif|tiff)$/i.test(f.name)).length;
 
     // ── Check if submit button should be enabled ──
-    const canSubmit = analysisType === "change"
-        ? (cdPastFile && cdPresentFile && !processing)
-        : (files.length > 0 && !processing);
+    const canSubmit = analysisType === "pothole"
+        ? false
+        : isCdType(analysisType)
+            ? (cdPastFile && cdPresentFile && !processing)
+            : (files.length > 0 && !processing);
 
     return (
         <div className="space-y-6">
@@ -583,8 +604,15 @@ export default function Upload() {
                 {/* Upload zone + results */}
                 <div className="lg:col-span-2 space-y-4">
 
-                    {/* ── CHANGE DETECTION: Dual Upload ── */}
-                    {analysisType === "change" ? (
+                    {/* ── CHANGE DETECTION (building/vegetation/water): Dual Upload ── */}
+                    {analysisType === "pothole" ? (
+                        <div className="bg-[var(--bg-card)] backdrop-blur-md rounded-lg border border-dashed border-[var(--accent)]/40 p-8 text-center">
+                            <div className="text-4xl mb-2">🛣️🚧</div>
+                            <p className="text-sm font-semibold text-[var(--text-primary)]">Pothole Detection</p>
+                            <span className="inline-block mt-2 text-[10px] font-semibold px-2.5 py-1 rounded-full bg-amber-500/15 text-amber-500">⚙️ Under Development</span>
+                            <p className="text-xs text-[var(--text-muted)] mt-3 max-w-md mx-auto">Road-surface pothole & crack detection (YOLO on drone imagery) is in active development and will be enabled in an upcoming release.</p>
+                        </div>
+                    ) : isCdType(analysisType) ? (
                         <div className="space-y-4" data-tour="cd-uploads">
                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                                 {/* Past image upload */}
@@ -697,7 +725,7 @@ export default function Upload() {
                     )}
 
                     {/* File list (for non-change detection) */}
-                    {analysisType !== "change" && files.length > 0 && (
+                    {!isCdType(analysisType) && analysisType !== "pothole" && files.length > 0 && (
                         <div className="bg-[var(--bg-card)] backdrop-blur-md rounded-lg border border-[var(--border-default)] p-4 shadow-sm">
                             <div className="flex items-center justify-between mb-3">
                                 <h3 className="text-sm font-semibold text-[var(--text-primary)]">Selected Files ({files.length})</h3>
@@ -789,11 +817,11 @@ export default function Upload() {
                                 <button onClick={clearResults} className="text-[10px] text-[var(--text-muted)] hover:text-red-500">Clear Results</button>
                             </div>
 
-                            {/* Color legend */}
+                            {/* Color legend (per selected change mode) */}
                             <div className="bg-[var(--bg-card)] backdrop-blur-md rounded-lg border border-[var(--border-default)] p-3 shadow-sm">
-                                <p className="text-[10px] text-[var(--text-muted)] font-medium mb-2">CHANGE DETECTION LEGEND</p>
+                                <p className="text-[10px] text-[var(--text-muted)] font-medium mb-2">{(ANALYSIS_TYPES.find(a => a.id === analysisType)?.label || "CHANGE").toUpperCase()} LEGEND</p>
                                 <div className="flex flex-wrap gap-3">
-                                    {CHANGE_LEGEND.map(l => (
+                                    {legendFor(analysisType).map(l => (
                                         <div key={l.label} className="flex items-center gap-1.5">
                                             <span className="w-3 h-3 rounded-sm shrink-0" style={{
                                                 background: l.border ? "transparent" : l.color,
@@ -866,13 +894,7 @@ export default function Upload() {
                                     <ExportRow
                                         baseName="change_detection"
                                         pngUrl={cdResult.changeUrl}
-                                        stats={cdResult.stats ? {
-                                            "New Construction": cdResult.stats.new_construction,
-                                            "Demolished": cdResult.stats.demolished,
-                                            "New Road": cdResult.stats.new_road,
-                                            "Other Change": cdResult.stats.land_use_change,
-                                            "Unchanged": { percent: cdResult.stats.no_change_percent },
-                                        } : null}
+                                        stats={cdResult.stats ? Object.fromEntries(Object.entries(cdResult.stats).filter(([k]) => k !== "counts")) : null}
                                         classMapB64={cdResult.changeClassB64} classDefs={cdResult.changeDefs}
                                         bounds={cdResult.pastBounds} colors={CHANGE_CLASS_COLORS} onError={setError}
                                     />
@@ -881,9 +903,15 @@ export default function Upload() {
                                 {/* Change statistics */}
                                 {cdResult.status === "done" && cdResult.stats && (
                                     <div className="mt-4 border-t border-[var(--border-default)] pt-3">
+                                        {cdResult.stats.counts && (
+                                            <div className="flex flex-wrap gap-2 mb-3 text-[11px]">
+                                                <span className="bg-[#00DC00]/15 text-[#0a8a0a] font-semibold px-2.5 py-1 rounded-full">🏗️ {cdResult.stats.counts.new_construction} new buildings</span>
+                                                <span className="bg-[#EB2828]/15 text-[#c02020] font-semibold px-2.5 py-1 rounded-full">🚧 {cdResult.stats.counts.demolished} demolished</span>
+                                            </div>
+                                        )}
                                         <p className="text-[10px] text-[var(--text-muted)] font-medium mb-2">CHANGE SUMMARY (% of area)</p>
-                                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                                            {CHANGE_LEGEND.filter(l => l.key).map(l => (
+                                        <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                                            {legendFor(analysisType).map(l => (
                                                 <div key={l.key} className="bg-[var(--bg-tertiary)] rounded-lg p-2">
                                                     <div className="flex items-center gap-1.5 mb-0.5">
                                                         <span className="w-2.5 h-2.5 rounded-sm shrink-0" style={{ background: l.color }} />
@@ -895,9 +923,7 @@ export default function Upload() {
                                                 </div>
                                             ))}
                                         </div>
-                                        <p className="text-[10px] text-[var(--text-muted)] mt-2">
-                                            Unchanged area: <span className="text-[var(--text-secondary)] font-medium">{cdResult.stats.no_change_percent}%</span>
-                                        </p>
+                                        <p className="text-[10px] text-[var(--text-muted)] mt-2">Buildings matched as whole footprints (instance-level) — not pixel differencing.</p>
                                     </div>
                                 )}
                             </div>
@@ -1069,7 +1095,10 @@ export default function Upload() {
                                 >
                                     <input type="radio" name="analysis" value={at.id} checked={analysisType === at.id}
                                         onChange={() => { setAnalysisType(at.id); clearResults(); }} className="sr-only" />
-                                    <p className="text-sm font-medium text-[var(--text-primary)]">{at.label}</p>
+                                    <p className="text-sm font-medium text-[var(--text-primary)] flex items-center gap-2">
+                                        {at.label}
+                                        {at.dev && <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded-full bg-amber-500/15 text-amber-500">DEV</span>}
+                                    </p>
                                     <p className="text-xs text-[var(--text-muted)] mt-1">{at.desc}</p>
                                 </label>
                             ))}
@@ -1086,13 +1115,15 @@ export default function Upload() {
                             ? progress || "Processing..."
                             : analysisType === "segment"
                                 ? `🧠 Run AI Segmentation${totalImages > 1 ? ` (${totalImages} images)` : ""}`
-                                : analysisType === "change"
-                                    ? "🔍 Run Change Detection"
-                                    : "Run Analysis"
+                                : analysisType === "pothole"
+                                    ? "⚙️ Under Development"
+                                    : isCdType(analysisType)
+                                        ? `🔍 Run ${ANALYSIS_TYPES.find(a => a.id === analysisType)?.label || "Change Detection"}`
+                                        : "Run Analysis"
                         }
                     </button>
 
-                    {processing && (analysisType === "segment" || analysisType === "change") && (
+                    {processing && (analysisType === "segment" || isCdType(analysisType)) && (
                         <button onClick={() => { abortRef.current = true; }} className="w-full py-2 rounded-lg text-xs font-medium text-red-500 border border-red-200 hover:bg-red-50 transition-colors">
                             ✕ Stop Processing
                         </button>
@@ -1116,23 +1147,24 @@ export default function Upload() {
                                 </div>
                             </div>
                         </div>
-                    ) : analysisType === "change" ? (
+                    ) : isCdType(analysisType) ? (
                         <div className="bg-[var(--bg-card)] border border-orange-500/30 rounded-lg p-4 space-y-3">
-                            <p className="text-xs text-orange-400 font-medium">🔍 Change Detection</p>
+                            <p className="text-xs text-orange-400 font-medium">🔍 {ANALYSIS_TYPES.find(a => a.id === analysisType)?.label}</p>
                             <p className="text-xs text-[var(--text-muted)] leading-relaxed">
-                                Upload two images of the same area from different time periods. The AI model (Urban Change Detector) compares them semantically to detect construction, demolition, and land use changes.
+                                Upload two images of the same area from different dates (PAST + PRESENT). SegFormer-B5 segments both; changes are found by {analysisType === "change" ? "instance-level footprint matching (accurate new/demolished buildings)" : analysisType === "vegetation" ? "comparing green-cover masks (gain / loss)" : "comparing water-body masks (encroachment / expansion)"}.
                             </p>
-                            <div className="border-t border-[var(--border-default)] pt-3">
-                                <p className="text-xs text-[var(--text-secondary)] font-medium mb-1.5">Parameters:</p>
-                                <p className="text-xs text-[var(--text-muted)] leading-relaxed">• <strong>Volume Knob</strong>: Higher = more sensitive</p>
-                                <p className="text-xs text-[var(--text-muted)] leading-relaxed">• <strong>Threshold</strong>: Lower = detects subtle changes</p>
-                            </div>
+                        </div>
+                    ) : analysisType === "pothole" ? (
+                        <div className="bg-[var(--bg-card)] border border-amber-500/30 rounded-lg p-4 space-y-2">
+                            <p className="text-xs text-amber-400 font-medium">🛣️ Pothole Detection</p>
+                            <span className="inline-block text-[10px] font-semibold px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-500">Under Development</span>
+                            <p className="text-xs text-[var(--text-muted)] leading-relaxed">A YOLO detector fine-tuned on Indian road-damage data (RDD2022) will run on the 5 cm drone imagery. Coming in an upcoming release.</p>
                         </div>
                     ) : (
                         <div className="bg-[var(--bg-card)] border border-yellow-500/30 rounded-lg p-4">
                             <p className="text-xs text-yellow-400 font-medium">⚡ Backend Pipeline</p>
                             <p className="text-xs text-[var(--text-muted)] mt-1.5 leading-relaxed">
-                                Analysis runs on HuggingFace Spaces using Unified Cartographer & Urban Change Detector models.
+                                Analysis runs on HuggingFace Spaces using SegFormer-B5 + SAM2 fusion.
                             </p>
                         </div>
                     )}
