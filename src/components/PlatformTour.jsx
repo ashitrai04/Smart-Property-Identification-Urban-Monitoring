@@ -50,7 +50,7 @@ async function waitUntil(fn, timeout = 30000, interval = 400) {
 const STEPS = [
     // ── HOME ──
     { id: "welcome", route: "/", target: '[data-tour="brand"]', title: "Smart Property Identification",
-      desc: "This platform keeps an <strong>AI-maintained map of urban Andhra Pradesh</strong> — every building, road, water body and open plot, kept current from satellite imagery. The tour will now operate the platform for you, exactly the way you would.", hold: 7000 },
+      desc: "This platform keeps an <strong>AI-maintained map of urban Andhra Pradesh</strong> — every building, road, water body and open plot, kept current from satellite imagery. The tour will now operate the platform for you, exactly the way you would.", hold: 2600 },
 
     { id: "home-district", route: "/", target: '[data-tour="home-district"]', title: "Start on the Dashboard",
       desc: "The Home page summarises the entire state. Use the <strong>District dropdown</strong> to focus anywhere — the mini-map flies to that district and every stat updates. Let's pick <strong>Vijayawada</strong>.",
@@ -67,22 +67,22 @@ const STEPS = [
     { id: "basemap", route: "/mapping", target: '[data-tour="basemap"]', title: "Pick Your Base Map",
       desc: "Five map styles are available — <strong>Streets</strong> for addresses and navigation, <strong>Dark</strong> when you want overlays to stand out, and <strong>Satellite</strong> for true ground detail. Watch each one load.",
       script: [
-          { sel: '[data-tour-bm="streets-v12"]', click: true, run: async () => { await callTour("mapping", "waitIdle"); }, wait: 1600 },
-          { sel: '[data-tour-bm="dark-v11"]', click: true, run: async () => { await callTour("mapping", "waitIdle"); }, wait: 1600 },
-          { sel: '[data-tour-bm="satellite-streets-v12"]', click: true, run: async () => { await callTour("mapping", "waitIdle"); }, wait: 1200 },
-      ], hold: 3500 },
+          { sel: '[data-tour-bm="streets-v12"]', click: true, run: async () => { await callTour("mapping", "waitIdle"); }, wait: 850 },
+          { sel: '[data-tour-bm="dark-v11"]', click: true, run: async () => { await callTour("mapping", "waitIdle"); }, wait: 850 },
+          { sel: '[data-tour-bm="satellite-streets-v12"]', click: true, run: async () => { await callTour("mapping", "waitIdle"); }, wait: 700 },
+      ], hold: 2600 },
 
     { id: "map-district", route: "/mapping", target: '[data-tour="map-district"]', title: "Load a District",
       desc: "Choosing a district loads its AI data and flies the map there. Selecting <strong>Vijayawada</strong> — notice its layer list appear below once it loads.",
-      script: [ { sel: '[data-tour="map-district"] select', select: "Vijayawada", run: async () => { await callTour("mapping", "waitIdle"); }, wait: 1800 } ], hold: 4500 },
+      script: [ { sel: '[data-tour="map-district"] select', select: "Vijayawada", run: async () => { await callTour("mapping", "waitIdle"); }, wait: 1000 } ], hold: 3200 },
 
     { id: "boundary", route: "/mapping", target: '[data-tour="layer-boundary"]', title: "Layer 1 — District Boundary",
       desc: "Each switch adds one layer to the map. <strong>Boundary</strong> draws the official district limits — always turn this on first so you know exactly what area you're looking at.",
-      script: [ { sel: '[data-tour="layer-boundary-knob"]', click: true, wait: 3200 } ], hold: 4500 },
+      script: [ { sel: '[data-tour="layer-boundary-knob"]', click: true, wait: 1800 } ], hold: 3200 },
 
     { id: "mask", route: "/mapping", target: '[data-tour="toggle-mask"]', title: "Layer 2 — AI Land Use Mask",
       desc: "The <strong>Land Use Mask</strong> is the model's reading of every pixel: <strong>red</strong> buildings, <strong>yellow</strong> roads, <strong>blue</strong> water, <strong>grey</strong> open ground. Zoom anywhere and check it against the imagery underneath.",
-      script: [ { sel: '[data-tour="toggle-mask-knob"]', click: true, wait: 4200 } ], hold: 5000 },
+      script: [ { sel: '[data-tour="toggle-mask-knob"]', click: true, wait: 2400 } ], hold: 3500 },
 
     { id: "aoi-draw", route: "/mapping", target: '[data-tour="aoi-panel"]', title: "Measure Any Area — Draw an AOI",
       desc: "Need numbers for a specific site? Click <strong>Draw AOI</strong> and outline it on the map. We'll trace a small area on the city's edge — everything outside it gets clipped away.",
@@ -94,7 +94,7 @@ const STEPS = [
     { id: "aoi-stats", route: "/mapping", target: '[data-tour="aoi-stats"]', title: "Instant Area Statistics",
       desc: "The platform counts what falls <strong>inside your boundary</strong>: number of buildings, water bodies, and total road length in km — plus the area itself. No GIS software or expertise needed.",
       waitFor: { check: () => { const el = document.querySelector('[data-tour="aoi-stats"]'); return el && !/Analyzing/i.test(el.textContent); }, timeout: 60000 },
-      hold: 8000 },
+      hold: 5000 },
 
     { id: "aoi-upload", route: "/mapping", target: '[data-tour="aoi-panel"]', title: "Or Upload Your Own Boundaries",
       desc: "Already have survey boundaries? <strong>Upload</strong> accepts GeoJSON, Shapefile, KML and GeoPackage. Here's a municipal <strong>ward-boundary file</strong> — every ward lands on the map as its own parcel.",
@@ -108,7 +108,7 @@ const STEPS = [
 
     { id: "aoi-parcel", route: "/mapping", target: '[data-tour="aoi-stats"]', title: "Click a Parcel for Its Own Numbers",
       desc: "With multiple parcels loaded, <strong>click any one on the map</strong> to get that parcel's own building count, water bodies, road length and area — ward-level or plot-level assessment in one click.",
-      script: [ { run: async () => { await callTour("mapping", "selectParcel", 0); }, wait: 2400 } ], hold: 7500 },
+      script: [ { run: async () => { await callTour("mapping", "selectParcel", 0); }, wait: 1400 } ], hold: 4500 },
 
     // ── UPLOAD & ANALYSIS ──
     { id: "upload-intro", route: "/upload", target: '[data-tour="atype-segment"]', title: "Analyse Your Own Imagery",
@@ -122,7 +122,7 @@ const STEPS = [
     { id: "run-seg", route: "/upload", target: 'img[alt^="Mask"]', title: "SegFormer-B5 + SAM2 Result",
       desc: "The image runs through our <strong>SegFormer-B5 model (trained on Andhra Pradesh)</strong> fused with <strong>SAM2</strong> — SegFormer finds buildings, roads and water; SAM2 sharpens every building into a crisp, individual footprint. You get a colour-coded map with the count and percentage of each class.",
       waitFor: { sel: 'img[alt^="Mask"]', timeout: 60000 },
-      postTarget: 'img[alt^="Mask"]', hold: 8000 },
+      postTarget: 'img[alt^="Mask"]', hold: 5000 },
 
     { id: "export", route: "/upload", target: '[data-tour="export-row"]', title: "Export in Any GIS Format",
       desc: "Results aren't locked to a picture. Each one exports as <strong>PNG</strong>, <strong>CSV</strong> (class stats with real m²), <strong>GeoJSON</strong> and <strong>Shapefile</strong> (vectorized building/road polygons), and <strong>GeoTIFF</strong> — ready to drop straight into QGIS or ArcGIS.", hold: 8000 },
@@ -137,7 +137,7 @@ const STEPS = [
     { id: "run-change", route: "/upload", target: 'img[alt="Change detection output"]', title: "Building Change Result",
       desc: "Both dates are segmented and matched at the <strong>building-footprint level</strong> — not noisy pixel differencing. <strong>Green</strong> = new construction, <strong>red</strong> = demolished, with the exact count of each. <strong>Vegetation</strong> and <strong>Water</strong> change are available as their own modes too.",
       waitFor: { sel: 'img[alt="Change detection output"]', timeout: 60000 },
-      postTarget: 'img[alt="Change detection output"]', hold: 9000 },
+      postTarget: 'img[alt="Change detection output"]', hold: 5500 },
 
     // ── DATA LOGS ──
     { id: "datalogs", route: "/datalogs", target: '[data-tour="datalogs"]', title: "Data Logs — Your Audit Trail",
@@ -157,10 +157,10 @@ const STEPS = [
       desc: "<strong>Generate Report</strong> compiles the live statistics into a summary — property counts, detected changes and governance insights — ready to export as a print-ready PDF for ULB officials.",
       script: [ { sel: '[data-tour="dss-generate"]', click: true, wait: 1500 } ],
       waitFor: { check: () => /Report Summary/i.test(document.body.textContent), timeout: 30000 },
-      hold: 8000 },
+      hold: 5000 },
 
     { id: "done", route: "/dss", target: '[data-tour="brand"]', title: "You've Seen the Full Workflow",
-      desc: "Dashboard → live mapping & area analytics → AI segmentation & change detection → activity logs → official reports. <strong>Now it's yours to explore.</strong> Replay this walkthrough anytime from the <strong>Guided Tour</strong> button at the bottom-right.", hold: 9000 },
+      desc: "Dashboard → live mapping & area analytics → AI segmentation & change detection → activity logs → official reports. <strong>Now it's yours to explore.</strong> Replay this walkthrough anytime from the <strong>Guided Tour</strong> button at the bottom-right.", hold: 6000 },
 ];
 
 const CursorSvg = () => (
@@ -264,7 +264,7 @@ export default function PlatformTour() {
         const r = el.getBoundingClientRect();
         const s = { top: r.top - pad, left: r.left - pad, width: r.width + pad * 2, height: r.height + pad * 2 };
         setSr(s); posTT(s);
-        if (moveCursor) { setCur({ x: r.left + r.width / 2, y: r.top + r.height / 2 }); await sleep(760); } // glide time
+        if (moveCursor) { setCur({ x: r.left + r.width / 2, y: r.top + r.height / 2 }); await sleep(480); } // glide time
         return r;
     }, [posTT]);
 
@@ -285,7 +285,7 @@ export default function PlatformTour() {
         } else {
             navigate(route);
         }
-        await sleep(1000);
+        await sleep(550);
     }, [focus, press, navigate]);
 
     const goNext = useCallback(() => {
@@ -306,7 +306,7 @@ export default function PlatformTour() {
             if (cancelled) return;
             await focus(s.target);
             setTtVis(true);
-            await sleep(2100);                        // let the copy be read before acting
+            await sleep(1100);                        // brief pause before acting
             if (cancelled) return;
 
             for (const item of (s.script || [])) {
