@@ -578,31 +578,40 @@ export default function Upload() {
                 setCdPastFile(a); setCdPresentFile(b);
             },
             // ── Guided-tour only: show PRE-COMPUTED results instantly (no model run) ──
+            // Two segmentation demos, each carrying its real WGS84 bounds so the
+            // "Plot on Map" overlay works exactly like a live GeoTIFF upload.
             showCachedSeg: async () => {
-                setAnalysisType("segment"); setSegMode("fusion");
-                const inputUrl = `${SEG_SPACE_BASE}/demo/seg_input.png`;
-                setFiles([]);
-                setSegResults([{ inputName: "guntur_drone_sample.png", inputUrl, status: "processing" }]);
+                setAnalysisType("segment"); setSegMode("fusion"); setFiles([]);
+                const items = [
+                    { json: "segmentation1.json", input: "seg1_input.png", name: "guntur_drone_medium.tif",
+                      bounds: { west: 80.4357774, south: 16.3065225, east: 80.4390445, north: 16.3096951 } },
+                    { json: "segmentation2.json", input: "seg2_input.png", name: "guntur_drone_large.tif",
+                      bounds: { west: 80.4332061, south: 16.3055212, east: 80.4378734, north: 16.3100536 } },
+                ];
+                setSegResults(items.map(it => ({ inputName: it.name, inputUrl: `${SEG_SPACE_BASE}/demo/${it.input}`, isTif: true, bounds: it.bounds, status: "processing" })));
                 try {
-                    const d = await (await fetch(`${SEG_SPACE_BASE}/demo/segmentation.json`)).json();
-                    setSegResults([{
-                        inputName: "guntur_drone_sample.png", inputUrl,
-                        maskUrl: `data:image/png;base64,${d.master_map_base64}`,
-                        rawMaskB64: d.master_map_base64, classMapB64: d.class_map_base64 || null,
-                        classDefs: d.class_defs || null, stats: d.stats || null, mode: "fusion",
-                        buildingCount: (typeof d.building_count === "number") ? d.building_count : null,
-                        buildingsGeojson: d.buildings_geojson || null, roadsGeojson: d.roads_geojson || null,
-                        workingSize: d.working_size || null, status: "done",
-                    }]);
+                    const results = await Promise.all(items.map(async (it) => {
+                        const d = await (await fetch(`${SEG_SPACE_BASE}/demo/${it.json}`)).json();
+                        return {
+                            inputName: it.name, inputUrl: `${SEG_SPACE_BASE}/demo/${it.input}`,
+                            maskUrl: `data:image/png;base64,${d.master_map_base64}`,
+                            rawMaskB64: d.master_map_base64, classMapB64: d.class_map_base64 || null,
+                            classDefs: d.class_defs || null, stats: d.stats || null, mode: "fusion",
+                            buildingCount: (typeof d.building_count === "number") ? d.building_count : null,
+                            buildingsGeojson: d.buildings_geojson || null, roadsGeojson: d.roads_geojson || null,
+                            workingSize: d.working_size || null, isTif: true, bounds: it.bounds, status: "done",
+                        };
+                    }));
+                    setSegResults(results);
                 } catch (e) { setSegResults(prev => prev.map(r => ({ ...r, status: "error", error: "demo unavailable" }))); }
             },
-            showCachedChange: async () => {
-                setAnalysisType("change");
-                const pastUrl = `${SEG_SPACE_BASE}/demo/cd_past.png`;
-                const presentUrl = `${SEG_SPACE_BASE}/demo/cd_present.png`;
+            _showCachedCd: async (type, json, past, present) => {
+                setAnalysisType(type);
+                const pastUrl = `${SEG_SPACE_BASE}/demo/${past}`;
+                const presentUrl = `${SEG_SPACE_BASE}/demo/${present}`;
                 setCdResult({ pastUrl, presentUrl, changeUrl: null, status: "processing" });
                 try {
-                    const d = await (await fetch(`${SEG_SPACE_BASE}/demo/change.json`)).json();
+                    const d = await (await fetch(`${SEG_SPACE_BASE}/demo/${json}`)).json();
                     setCdResult({
                         pastUrl, presentUrl,
                         changeUrl: `data:image/png;base64,${d.change_map_base64}`,

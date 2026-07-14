@@ -115,29 +115,46 @@ const STEPS = [
       desc: "Bring your own satellite or drone photos. <strong>AI Segmentation</strong> maps a single image; <strong>Change Detection</strong> compares two dates. Files up to <strong>500 MB</strong> are handled through temporary cloud storage.",
       script: [ { sel: '[data-tour="atype-segment"]', click: true, wait: 900 } ], hold: 5000 },
 
-    { id: "upload-file", route: "/upload", target: '[data-tour="upload-zone"]', title: "Add an Image",
-      desc: "Drag & drop or click to browse — JPG, PNG and GeoTIFF all work. We're loading a <strong>5 cm Guntur drone chip</strong> and running it now.",
-      script: [ { sel: '[data-tour="upload-zone"]', run: async () => { await callTour("upload", "showCachedSeg"); }, wait: 2200 } ], hold: 3500 },
+    { id: "upload-file", route: "/upload", target: '[data-tour="upload-zone"]', title: "Add Images",
+      desc: "Drag & drop or click to browse — JPG, PNG and GeoTIFF all work. We're loading <strong>two 5 cm Guntur drone chips</strong> and running them now.",
+      script: [ { sel: '[data-tour="upload-zone"]', run: async () => { await callTour("upload", "showCachedSeg"); }, wait: 2600 } ], hold: 3500 },
 
     { id: "run-seg", route: "/upload", target: 'img[alt^="Mask"]', title: "SegFormer-B5 + SAM2 Result",
-      desc: "The image runs through our <strong>SegFormer-B5 model (trained on Andhra Pradesh)</strong> fused with <strong>SAM2</strong> — SegFormer finds buildings, roads and water; SAM2 sharpens every building into a crisp, individual footprint. You get a colour-coded map with the count and percentage of each class.",
+      desc: "Each image runs through our <strong>SegFormer-B5 model (trained on Andhra Pradesh)</strong> fused with <strong>SAM2</strong> — SegFormer finds buildings, roads and water; SAM2 sharpens every building into a crisp, individual footprint. Both chips return a colour-coded map with the count and percentage of each class.",
       waitFor: { sel: 'img[alt^="Mask"]', timeout: 60000 },
-      postTarget: 'img[alt^="Mask"]', hold: 5000 },
+      postTarget: 'img[alt^="Mask"]', hold: 5500 },
 
     { id: "export", route: "/upload", target: '[data-tour="export-row"]', title: "Export in Any GIS Format",
-      desc: "Results aren't locked to a picture. Each one exports as <strong>PNG</strong>, <strong>CSV</strong> (class stats with real m²), <strong>GeoJSON</strong> and <strong>Shapefile</strong> (vectorized building/road polygons), and <strong>GeoTIFF</strong> — ready to drop straight into QGIS or ArcGIS.", hold: 8000 },
+      desc: "Results aren't locked to a picture. Each one exports as <strong>PNG</strong>, <strong>CSV</strong> (class stats with real m²), <strong>GeoJSON</strong> and <strong>Shapefile</strong> (vectorized building/road polygons), and <strong>GeoTIFF</strong> — ready to drop straight into QGIS or ArcGIS.", hold: 7000 },
 
-    { id: "change-setup", route: "/upload", target: '[data-tour="atype-change"]', title: "Change Detection — Two Dates",
-      desc: "To see <strong>what changed</strong>, switch to Building Change and provide a <strong>PAST</strong> and <strong>PRESENT</strong> image of the same area — here a <strong>2017 satellite</strong> and a <strong>2022 drone</strong> chip of the same Guntur neighbourhood.",
+    { id: "plot-overlay", route: "/upload", target: '[data-tour="plot-overlay"]', title: "Put the Result Back on the Map",
+      desc: "Because each chip is geo-referenced, <strong>Plot Detection Overlay on Map</strong> places the AI's result at its true location on the Mapping page — with an opacity slider to compare it against the live imagery.",
+      script: [ { sel: '[data-tour="plot-overlay"]', click: true, wait: 2400 } ],
+      postTarget: '[data-tour="det-overlay"]', hold: 7000 },
+
+    { id: "change-setup", route: "/upload", target: '[data-tour="atype-change"]', title: "Building Change — Two Dates",
+      desc: "To see <strong>what changed</strong>, switch to Building Change and provide a <strong>PAST</strong> and <strong>PRESENT</strong> image — here a <strong>2017 satellite</strong> and a <strong>2022 drone</strong> chip of the same Guntur neighbourhood.",
       script: [
           { sel: '[data-tour="atype-change"]', click: true, wait: 900 },
-          { sel: '[data-tour="cd-uploads"]', run: async () => { await callTour("upload", "showCachedChange"); }, wait: 2200 },
+          { sel: '[data-tour="cd-uploads"]', run: async () => { await callTour("upload", "_showCachedCd", "change", "change_building.json", "cd_past.png", "cd_present.png"); }, wait: 2200 },
       ], hold: 4000 },
 
     { id: "run-change", route: "/upload", target: 'img[alt="Change detection output"]', title: "Building Change Result",
-      desc: "Both dates are segmented and matched at the <strong>building-footprint level</strong> — not noisy pixel differencing. <strong>Green</strong> = new construction, <strong>red</strong> = demolished, with the exact count of each. <strong>Vegetation</strong> and <strong>Water</strong> change are available as their own modes too.",
+      desc: "Both dates are segmented and matched at the <strong>building-footprint level</strong> — not noisy pixel differencing. <strong>Green</strong> = new construction, <strong>red</strong> = demolished, with the exact count of each.",
       waitFor: { sel: 'img[alt="Change detection output"]', timeout: 60000 },
       postTarget: 'img[alt="Change detection output"]', hold: 5500 },
+
+    { id: "veg-setup", route: "/upload", target: '[data-tour="atype-vegetation"]', title: "Vegetation Change",
+      desc: "The same two-date comparison also tracks <strong>green cover</strong>. Switching to Vegetation Change on a 2017 → 2022 pair of the same block.",
+      script: [
+          { sel: '[data-tour="atype-vegetation"]', click: true, wait: 900 },
+          { sel: '[data-tour="cd-uploads"]', run: async () => { await callTour("upload", "_showCachedCd", "vegetation", "change_veg.json", "veg_past.png", "veg_present.png"); }, wait: 2200 },
+      ], hold: 4000 },
+
+    { id: "run-veg", route: "/upload", target: 'img[alt="Change detection output"]', title: "Vegetation Change Result",
+      desc: "<strong>Teal</strong> = new / denser greenery, <strong>orange</strong> = vegetation lost — for tracking tree-cover change and encroachment on green spaces over the five years. Water change works the same way.",
+      waitFor: { sel: 'img[alt="Change detection output"]', timeout: 60000 },
+      postTarget: 'img[alt="Change detection output"]', hold: 6000 },
 
     // ── DATA LOGS ──
     { id: "datalogs", route: "/datalogs", target: '[data-tour="datalogs"]', title: "Data Logs — Your Audit Trail",
