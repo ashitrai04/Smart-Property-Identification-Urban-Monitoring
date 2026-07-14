@@ -116,34 +116,27 @@ const STEPS = [
       script: [ { sel: '[data-tour="atype-segment"]', click: true, wait: 900 } ], hold: 5000 },
 
     { id: "upload-file", route: "/upload", target: '[data-tour="upload-zone"]', title: "Add an Image",
-      desc: "Drag & drop or click to browse — JPG, PNG and GeoTIFF all work. We're adding a <strong>satellite chip</strong>; because it's a GeoTIFF, the platform also reads exactly where on Earth it belongs.",
-      script: [ { sel: '[data-tour="upload-zone"]', run: async () => { await callTour("upload", "addSegFile", "/tour/chip_9216_57344.tif", "chip_9216_57344.tif"); }, wait: 1800 } ], hold: 3500 },
+      desc: "Drag & drop or click to browse — JPG, PNG and GeoTIFF all work. We're loading a <strong>5 cm Guntur drone chip</strong> and running it now.",
+      script: [ { sel: '[data-tour="upload-zone"]', run: async () => { await callTour("upload", "showCachedSeg"); }, wait: 2200 } ], hold: 3500 },
 
-    { id: "run-seg", route: "/upload", target: '[data-tour="run-btn"]', title: "Run AI Segmentation",
-      desc: "One click sends the image to the <strong>SegFormer-B5 model</strong> in the cloud. It returns a colour-coded map of buildings, roads, water and open land, with the percentage of each. <em>This takes about 15–40 seconds — the tour will wait for the result.</em>",
-      script: [ { sel: '[data-tour="run-btn"]', click: true, wait: 1200 } ],
-      waitFor: { sel: '[data-tour="plot-overlay"]', timeout: 90000 },
+    { id: "run-seg", route: "/upload", target: 'img[alt^="Mask"]', title: "SegFormer-B5 + SAM2 Result",
+      desc: "The image runs through our <strong>SegFormer-B5 model (trained on Andhra Pradesh)</strong> fused with <strong>SAM2</strong> — SegFormer finds buildings, roads and water; SAM2 sharpens every building into a crisp, individual footprint. You get a colour-coded map with the count and percentage of each class.",
+      waitFor: { sel: 'img[alt^="Mask"]', timeout: 60000 },
       postTarget: 'img[alt^="Mask"]', hold: 8000 },
 
     { id: "export", route: "/upload", target: '[data-tour="export-row"]', title: "Export in Any GIS Format",
-      desc: "Results aren't locked to a picture. Each one exports as <strong>PNG</strong>, <strong>CSV</strong> (class stats with real m² for geo-referenced inputs), <strong>GeoJSON</strong> and <strong>Shapefile</strong> (vectorized polygons per class), and <strong>GeoTIFF</strong> (a georeferenced class raster) — ready to drop straight into QGIS or ArcGIS.", hold: 8000 },
-
-    { id: "plot-overlay", route: "/upload", target: '[data-tour="plot-overlay"]', title: "Put the Result Back on the Map",
-      desc: "Because the image is geo-referenced, <strong>Plot Detection Overlay on Map</strong> places the AI's mask at its true location on the Mapping page — with an opacity slider so you can compare it against the live imagery.",
-      script: [ { sel: '[data-tour="plot-overlay"]', click: true, wait: 2200 } ],
-      postTarget: '[data-tour="det-overlay"]', hold: 7000 },
+      desc: "Results aren't locked to a picture. Each one exports as <strong>PNG</strong>, <strong>CSV</strong> (class stats with real m²), <strong>GeoJSON</strong> and <strong>Shapefile</strong> (vectorized building/road polygons), and <strong>GeoTIFF</strong> — ready to drop straight into QGIS or ArcGIS.", hold: 8000 },
 
     { id: "change-setup", route: "/upload", target: '[data-tour="atype-change"]', title: "Change Detection — Two Dates",
-      desc: "To see <strong>what changed</strong>, switch to Change Detection and provide a <strong>PAST</strong> and a <strong>PRESENT</strong> image of the same area. Loading two chips of the same neighbourhood taken at different times.",
+      desc: "To see <strong>what changed</strong>, switch to Building Change and provide a <strong>PAST</strong> and <strong>PRESENT</strong> image of the same area — here a <strong>2017 satellite</strong> and a <strong>2022 drone</strong> chip of the same Guntur neighbourhood.",
       script: [
           { sel: '[data-tour="atype-change"]', click: true, wait: 900 },
-          { sel: '[data-tour="cd-uploads"]', run: async () => { await callTour("upload", "setChangeFiles", "/tour/chip_9216_57344.tif", "past.tif", "/tour/chip_13824_14848.tif", "present.tif"); }, wait: 2000 },
+          { sel: '[data-tour="cd-uploads"]', run: async () => { await callTour("upload", "showCachedChange"); }, wait: 2200 },
       ], hold: 4000 },
 
-    { id: "run-change", route: "/upload", target: '[data-tour="run-btn"]', title: "Run Change Detection",
-      desc: "The model maps both dates and compares them pixel by pixel: <strong>cyan</strong> = new construction, <strong>red</strong> = demolished, <strong>orange</strong> = new roads, <strong>purple</strong> = other land-use change — with the affected area of each. <em>Again ~20–40 seconds; waiting for the result.</em>",
-      script: [ { sel: '[data-tour="run-btn"]', click: true, wait: 1200 } ],
-      waitFor: { sel: 'img[alt="Change detection output"]', timeout: 90000 },
+    { id: "run-change", route: "/upload", target: 'img[alt="Change detection output"]', title: "Building Change Result",
+      desc: "Both dates are segmented and matched at the <strong>building-footprint level</strong> — not noisy pixel differencing. <strong>Green</strong> = new construction, <strong>red</strong> = demolished, with the exact count of each. <strong>Vegetation</strong> and <strong>Water</strong> change are available as their own modes too.",
+      waitFor: { sel: 'img[alt="Change detection output"]', timeout: 60000 },
       postTarget: 'img[alt="Change detection output"]', hold: 9000 },
 
     // ── DATA LOGS ──

@@ -577,6 +577,41 @@ export default function Upload() {
                 const b = await tourFetchFile(u2, n2, "image/tiff");
                 setCdPastFile(a); setCdPresentFile(b);
             },
+            // ── Guided-tour only: show PRE-COMPUTED results instantly (no model run) ──
+            showCachedSeg: async () => {
+                setAnalysisType("segment"); setSegMode("fusion");
+                const inputUrl = `${SEG_SPACE_BASE}/demo/seg_input.png`;
+                setFiles([]);
+                setSegResults([{ inputName: "guntur_drone_sample.png", inputUrl, status: "processing" }]);
+                try {
+                    const d = await (await fetch(`${SEG_SPACE_BASE}/demo/segmentation.json`)).json();
+                    setSegResults([{
+                        inputName: "guntur_drone_sample.png", inputUrl,
+                        maskUrl: `data:image/png;base64,${d.master_map_base64}`,
+                        rawMaskB64: d.master_map_base64, classMapB64: d.class_map_base64 || null,
+                        classDefs: d.class_defs || null, stats: d.stats || null, mode: "fusion",
+                        buildingCount: (typeof d.building_count === "number") ? d.building_count : null,
+                        buildingsGeojson: d.buildings_geojson || null, roadsGeojson: d.roads_geojson || null,
+                        workingSize: d.working_size || null, status: "done",
+                    }]);
+                } catch (e) { setSegResults(prev => prev.map(r => ({ ...r, status: "error", error: "demo unavailable" }))); }
+            },
+            showCachedChange: async () => {
+                setAnalysisType("change");
+                const pastUrl = `${SEG_SPACE_BASE}/demo/cd_past.png`;
+                const presentUrl = `${SEG_SPACE_BASE}/demo/cd_present.png`;
+                setCdResult({ pastUrl, presentUrl, changeUrl: null, status: "processing" });
+                try {
+                    const d = await (await fetch(`${SEG_SPACE_BASE}/demo/change.json`)).json();
+                    setCdResult({
+                        pastUrl, presentUrl,
+                        changeUrl: `data:image/png;base64,${d.change_map_base64}`,
+                        changeClassB64: d.change_class_base64 || null, changeDefs: d.change_defs || null,
+                        changeColors: d.colors || null, mode: d.mode || "building",
+                        stats: d.stats || null, status: "done",
+                    });
+                } catch (e) { setCdResult(prev => ({ ...prev, status: "error", error: "demo unavailable" })); }
+            },
         });
     });
     useEffect(() => () => unregisterTour("upload"), []);
