@@ -62,13 +62,17 @@ const STEPS = [
 
     // ── MAPPING ──
     { id: "map-intro", route: "/mapping", target: '[data-tour="basemap"]', title: "The Mapping Workspace",
-      desc: "This is where you explore the AI's results on a live map. The <strong>Layers panel</strong> on the left controls what you see; the <strong>Area of Interest</strong> panel on the right measures whatever you point it at.", hold: 6500 },
+      desc: "This is where you explore the AI's results on a live map. The <strong>Layers rail</strong> on the left controls what you see, the <strong>base map</strong> switcher sits in the top bar, and the floating <strong>Area of Interest</strong> card measures whatever you point it at — drag it anywhere.", hold: 6500 },
 
     { id: "basemap", route: "/mapping", target: '[data-tour="basemap"]', title: "Pick Your Base Map",
-      desc: "Five map styles are available — <strong>Streets</strong> for addresses and navigation, <strong>Dark</strong> when you want overlays to stand out, and <strong>Satellite</strong> for true ground detail. Watch each one load.",
+      desc: "Five map styles are available from the top bar — <strong>Streets</strong> for addresses and navigation, <strong>Dark</strong> when you want overlays to stand out, and <strong>Satellite</strong> for true ground detail. Watch each one load.",
+      // The styles live in the command bar's dropdown: open it, then pick.
       script: [
+          { sel: '[data-tour="basemap"]', click: true, wait: 350 },
           { sel: '[data-tour-bm="streets-v12"]', click: true, run: async () => { await callTour("mapping", "waitIdle"); }, wait: 850 },
+          { sel: '[data-tour="basemap"]', click: true, wait: 350 },
           { sel: '[data-tour-bm="dark-v11"]', click: true, run: async () => { await callTour("mapping", "waitIdle"); }, wait: 850 },
+          { sel: '[data-tour="basemap"]', click: true, wait: 350 },
           { sel: '[data-tour-bm="satellite-streets-v12"]', click: true, run: async () => { await callTour("mapping", "waitIdle"); }, wait: 700 },
       ], hold: 2600 },
 
@@ -235,6 +239,13 @@ export default function PlatformTour() {
         }
     }, []);
 
+    // The command bar's Guide button opens the welcome card.
+    useEffect(() => {
+        const open = () => { setSi(0); setPaused(false); setPhase("welcome"); };
+        window.addEventListener("sp:tour", open);
+        return () => window.removeEventListener("sp:tour", open);
+    }, []);
+
     useEffect(() => () => { if (timer.current) clearTimeout(timer.current); }, []);
     useEffect(() => {
         const h = (e) => { if (e.key === "Escape") exit(); };
@@ -368,13 +379,8 @@ export default function PlatformTour() {
         });
     };
 
-    if (phase === "idle") {
-        return (
-            <button className="tour-launch-btn" onClick={() => { setSi(0); setPaused(false); setPhase("welcome"); }} title="Guided platform tour">
-                <Compass size={15} /> <span>Guided Tour</span>
-            </button>
-        );
-    }
+    // Launched from the command bar's Guide button.
+    if (phase === "idle") return null;
 
     return (
         <AnimatePresence>

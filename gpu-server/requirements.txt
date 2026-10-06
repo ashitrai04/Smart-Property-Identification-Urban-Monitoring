@@ -1,0 +1,38 @@
+# torch / torchvision are installed by setup.sh from the CUDA wheel index.
+# Model stack pinned to the same versions as the Hugging Face Space, so results match the fallback.
+transformers==4.44.2
+tokenizers==0.19.1
+safetensors==0.4.5
+huggingface_hub==0.24.6
+numpy==1.26.4
+pillow==10.4.0
+opencv-python-headless==4.10.0.84
+scipy==1.13.1
+scikit-image==0.24.0
+networkx==3.3
+tifffile==2024.8.30
+
+# API
+fastapi==0.114.2
+uvicorn[standard]==0.30.6
+python-multipart==0.0.9
+boto3==1.35.36
+requests
+
+# Geospatial pipeline (wheels bundle GDAL — no system install needed)
+rasterio>=1.4,<1.5
+rio-tiler>=6.8,<8
+rio-cogeo>=5.3,<6
+geopandas>=1.0,<1.2
+pyogrio>=0.9
+shapely>=2.0
+pyproj>=3.6
+
+# ultralytics runtime deps (ultralytics itself is installed --no-deps by setup.sh
+# so it cannot pull the GUI opencv build or move numpy)
+matplotlib
+pyyaml
+psutil
+polars
+tqdm
+pandas<2.3

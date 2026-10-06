@@ -93,9 +93,9 @@ export async function reloadVisibleLayers(map, activeLayerConfigs) {
     const zoom = Math.round(map.getZoom());
     const bbox = `${bounds.getWest()},${bounds.getSouth()},${bounds.getEast()},${bounds.getNorth()}`;
 
-    for (const config of activeLayerConfigs) {
+    await Promise.all(activeLayerConfigs.map(async (config) => {
         const { id, district, layer } = config;
-        if (!district || !layer || layer === "boundary") continue;
+        if (!district || !layer || layer === "boundary") return;
 
         let minZoom = 0;
         if (layer === "buildings") minZoom = 13;
@@ -105,20 +105,20 @@ export async function reloadVisibleLayers(map, activeLayerConfigs) {
         if (zoom < minZoom) {
             const src = map.getSource(id);
             if (src) src.setData({ type: "FeatureCollection", features: [] });
-            continue;
+            return;
         }
 
         const url = `${API_BASE}/api/districts/${encodeURIComponent(district)}/${encodeURIComponent(layer)}?bbox=${bbox}&zoom=${zoom}`;
         try {
             const resp = await fetch(url);
-            if (!resp.ok) continue;
+            if (!resp.ok) return;
             const geojson = await resp.json();
             const src = map.getSource(id);
             if (src) src.setData(geojson);
         } catch (e) {
             console.warn(`Reload ${layer} failed:`, e);
         }
-    }
+    }));
 }
 
 // ── In-memory cache for ArcGIS GeoJSON responses ──
@@ -197,20 +197,43 @@ export function addArcGISTileLayer(map, { id, tiles, tileSize = 256, attribution
 }
 
 // ── Helper: add visual map layers for a GeoJSON source ──
+// Fade a freshly added layer in rather than popping it on (Sentinel motion).
+function _fadeIn(map, layerId, prop, target, duration = 650) {
+    if (!map.getLayer(layerId) || target === undefined) return;
+    try {
+        map.setPaintProperty(layerId, `${prop}-transition`, { duration, delay: 0 });
+        map.setPaintProperty(layerId, prop, 0);
+        requestAnimationFrame(() => { try { map.setPaintProperty(layerId, prop, target); } catch (_) { } });
+    } catch (_) { }
+}
+
 function _addLayersForGeojson(map, id, geojson, paintOverrides = {}, labelField = null) {
+    // Optional glow: a wide, blurred line under the crisp edge — Sentinel's
+    // treatment for the lines an operator must read over satellite imagery.
+    if (paintOverrides.glow && !map.getLayer(`${id}-glow`)) {
+        map.addLayer({
+            id: `${id}-glow`, type: "line", source: id,
+            layout: { "line-cap": "round", "line-join": "round" },
+            paint: { "line-opacity": 0.3, "line-blur": 6, ...paintOverrides.glow },
+        });
+        _fadeIn(map, `${id}-glow`, "line-opacity", paintOverrides.glow["line-opacity"] ?? 0.3, 900);
+    }
     if (!map.getLayer(`${id}-fill`)) {
         map.addLayer({
             id: `${id}-fill`, type: "fill", source: id,
             filter: ["match", ["geometry-type"], ["Polygon", "MultiPolygon"], true, false],
             paint: { "fill-color": "#0EA5E9", "fill-opacity": 0.2, ...(paintOverrides.fill || {}) },
         });
+        _fadeIn(map, `${id}-fill`, "fill-opacity", paintOverrides.fill?.["fill-opacity"] ?? 0.2);
     }
     if (!map.getLayer(`${id}-outline`)) {
         map.addLayer({
             id: `${id}-outline`, type: "line", source: id,
             filter: ["match", ["geometry-type"], ["Polygon", "MultiPolygon"], true, false],
-            paint: { "line-color": "#0EA5E9", "line-width": 1.5, ...(paintOverrides.outline || {}) },
+            layout: { "line-join": "round" },
+            paint: { "line-color": "#0EA5E9", "line-width": 1.5, "line-opacity": 1, ...(paintOverrides.outline || {}) },
         });
+        _fadeIn(map, `${id}-outline`, "line-opacity", paintOverrides.outline?.["line-opacity"] ?? 1);
     }
     if (!map.getLayer(`${id}-line`)) {
         map.addLayer({
@@ -380,7 +403,7 @@ export async function addArcGISFeatureLayer(
 
 // Remove a layer group
 export function removeLayerGroup(map, baseId) {
-    const suffixes = ['-fill', '-outline', '-line', '-circle', '-label'];
+    const suffixes = ['-glow', '-fill', '-outline', '-line', '-circle', '-label'];
     suffixes.forEach(s => {
         if (map.getLayer(`${baseId}${s}`)) map.removeLayer(`${baseId}${s}`);
     });

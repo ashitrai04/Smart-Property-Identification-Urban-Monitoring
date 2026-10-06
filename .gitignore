@@ -8,3 +8,20 @@ datasets/
 __pycache__/
 .vercel
 .env*
+
+# GPU server bundle: weights + runtime data stay out of git
+gpu-server/weights/*.pth
+gpu-server/data/
+gpu-server/.venv/
+gpu-server.zip
+gpu-server-lite.zip
+gpu-server-update.zip
+
+# Model weights: downloaded by gpu-server/setup.sh / kept on the HF Spaces
+*.pt
+*.pth
+# Bundles and generated assets
+gpu-servers.zip
+ml/*.zip
+gpu-server/app/demo/
+**/Ultralytics/

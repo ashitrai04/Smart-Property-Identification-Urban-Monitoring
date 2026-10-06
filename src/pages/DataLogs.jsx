@@ -7,10 +7,11 @@ const TYPE_ICONS = {
     "AOI Analysis": "📐",
     "Boundary Upload": "🗺️",
     "Report Generated": "📄",
+    "Pothole Detection": "🛣️",
 };
 const STATUS_COLORS = {
-    Completed: "bg-green-500/20 text-green-400",
-    Failed: "bg-red-500/20 text-red-400",
+    Completed: "bg-[var(--ok-dim)] text-[var(--ok)] border border-[var(--ok)]/30",
+    Failed: "bg-[var(--critical-dim)] text-[var(--critical)] border border-[var(--critical)]/30",
 };
 
 function metricsSummary(m) {
@@ -70,23 +71,24 @@ export default function DataLogs() {
     };
 
     return (
-        <div className="space-y-6" data-tour="datalogs">
-            <div className="bg-[var(--bg-card)] backdrop-blur-md rounded-lg border border-[var(--border-default)] p-4 sm:p-5 shadow-sm flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+        <div className="space-y-4" data-tour="datalogs">
+            <div className="page-head">
                 <div>
-                    <h2 className="text-lg sm:text-xl font-bold text-[var(--text-primary)]">Data Logs</h2>
-                    <p className="text-sm text-[var(--text-muted)] mt-1">
+                    <div className="page-eyebrow">Audit trail</div>
+                    <h1 className="page-title">Data logs</h1>
+                    <p className="page-sub">
                         Every analysis run on this platform, recorded automatically — segmentations, change detections, AOI analyses and reports.
                     </p>
                 </div>
                 <div className="flex items-center gap-2">
-                    <span className={`text-[10px] px-2 py-1 rounded-full font-medium ${supabaseEnabled ? "bg-green-500/15 text-green-400" : "bg-yellow-500/15 text-yellow-500"}`}
+                    <span className={`text-[10px] px-2 py-1 rounded-full font-medium ${supabaseEnabled ? "bg-[var(--ok-dim)] text-[var(--ok)]" : "bg-[var(--alert-dim)] text-[var(--alert)]"}`}
                         title={supabaseEnabled ? "Logs are synced to Supabase" : "Add VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY to sync logs to the cloud (see docs/SUPABASE_SETUP.md)"}>
                         {supabaseEnabled ? "● Cloud sync: on" : "● Cloud sync: off (local only)"}
                     </span>
-                    <button onClick={load} className="px-3 py-2 text-sm border border-[var(--border-default)] rounded-lg text-[var(--text-secondary)] hover:border-[var(--accent)] transition-colors">↻ Refresh</button>
+                    <button onClick={load} className="px-2.5 py-1.5 text-[12px] font-medium border border-[var(--border-default)] rounded-[6px] text-[var(--text-secondary)] hover:bg-[var(--surface-2)] transition-colors">↻ Refresh</button>
                     <button onClick={exportCSV} disabled={!filtered.length}
-                        className="inline-flex items-center gap-1.5 px-4 py-2 bg-[var(--accent)] text-white text-sm font-medium rounded-lg hover:bg-[#094d87] transition-colors disabled:opacity-40">
-                        📥 Export CSV
+                        className="inline-flex items-center gap-1.5 px-2.5 py-1.5 bg-[var(--accent)] text-[#04201C] text-[12px] font-semibold rounded-[6px] hover:brightness-110 transition-[filter] disabled:opacity-40">
+                        Export CSV
                     </button>
                 </div>
             </div>
@@ -94,33 +96,35 @@ export default function DataLogs() {
             {/* Filters */}
             <div className="flex flex-wrap gap-3">
                 <select value={distFilter} onChange={e => { setDistFilter(e.target.value); setPage(0); }}
-                    className="bg-[var(--bg-card)] text-[var(--text-primary)] border border-[var(--border-default)] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-[var(--accent)]">
+                    className="dark-select" style={{ width: "auto", minWidth: 150 }}>
                     {districts.map(d => <option key={d} value={d}>{d === "All" ? "All Districts" : d}</option>)}
                 </select>
                 <select value={typeFilter} onChange={e => { setTypeFilter(e.target.value); setPage(0); }}
-                    className="bg-[var(--bg-card)] text-[var(--text-primary)] border border-[var(--border-default)] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-[var(--accent)]">
+                    className="dark-select" style={{ width: "auto", minWidth: 150 }}>
                     {types.map(t => <option key={t} value={t}>{t === "All" ? "All Types" : t}</option>)}
                 </select>
                 <span className="text-xs text-[var(--text-muted)] self-center">{filtered.length} entries · {source === "supabase" ? "cloud" : "this browser"}</span>
             </div>
 
             {/* Summary — real counts */}
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <div className="stagger grid grid-cols-2 sm:grid-cols-4 gap-3">
                 {[
-                    ["AI Segmentations", counts.seg, "text-[var(--accent)]"],
-                    ["Change Detections", counts.cd, "text-blue-400"],
-                    ["AOI / Boundary Analyses", counts.aoi, "text-purple-400"],
-                    ["Failed Runs", counts.failed, counts.failed ? "text-red-400" : "text-[var(--text-primary)]"],
-                ].map(([label, n, color]) => (
-                    <div key={label} className="bg-[var(--bg-card)] backdrop-blur-md rounded-lg border border-[var(--border-default)] p-4 shadow-sm">
-                        <p className="text-xs text-[var(--text-muted)]">{label}</p>
-                        <p className={`text-xl font-bold ${color}`}>{n}</p>
+                    ["AI segmentations", counts.seg, "#2DD4BF"],
+                    ["Change detections", counts.cd, "#38BDF8"],
+                    ["AOI / boundary analyses", counts.aoi, "#A78BFA"],
+                    ["Failed runs", counts.failed, counts.failed ? "#EF4444" : "#64748B"],
+                ].map(([label, n, colour]) => (
+                    <div key={label} className="stat-card" style={{ "--stat-colour": colour }}>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                            <p className="stat-card-label">{label}</p>
+                            <p className="stat-card-value" style={{ color: n && colour === "#EF4444" ? colour : undefined }}>{n}</p>
+                        </div>
                     </div>
                 ))}
             </div>
 
             {/* Table */}
-            <div className="bg-[var(--bg-card)] backdrop-blur-md rounded-lg border border-[var(--border-default)] shadow-sm overflow-hidden">
+            <div className="bg-[var(--surface)] rounded-[8px] border border-[var(--border-default)] shadow-sm overflow-hidden">
                 {loading ? (
                     <div className="p-10 text-center text-sm text-[var(--text-muted)]">
                         <span className="inline-block w-5 h-5 border-2 border-[var(--accent)]/30 border-t-[var(--accent)] rounded-full animate-spin align-middle mr-2" />
@@ -137,8 +141,8 @@ export default function DataLogs() {
                     </div>
                 ) : (
                     <div className="overflow-x-auto">
-                        <table className="w-full text-sm">
-                            <thead className="bg-[var(--bg-tertiary)] text-[var(--text-muted)]">
+                        <table className="data-table">
+                            <thead>
                                 <tr>
                                     <th className="py-2.5 px-4 text-left font-medium">When</th>
                                     <th className="py-2.5 px-4 text-left font-medium">Type</th>
@@ -148,10 +152,10 @@ export default function DataLogs() {
                                     <th className="py-2.5 px-4 text-center font-medium">Status</th>
                                 </tr>
                             </thead>
-                            <tbody className="divide-y divide-[var(--border-default)]">
+                            <tbody>
                                 {paged.map(r => (
-                                    <tr key={r.id} className="hover:bg-[var(--bg-tertiary)] transition-colors">
-                                        <td className="py-2.5 px-4 text-xs text-[var(--text-muted)] whitespace-nowrap">
+                                    <tr key={r.id}>
+                                        <td className="mono text-[11px] text-[var(--text-muted)] whitespace-nowrap">
                                             {new Date(r.created_at).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" })}
                                         </td>
                                         <td className="py-2.5 px-4 text-xs font-medium text-[var(--text-primary)] whitespace-nowrap">
@@ -161,7 +165,7 @@ export default function DataLogs() {
                                         <td className="py-2.5 px-4 text-xs text-[var(--text-muted)] max-w-[200px] truncate" title={r.area || ""}>{r.area || "—"}</td>
                                         <td className="py-2.5 px-4 text-xs text-[var(--text-secondary)] max-w-[260px] truncate" title={metricsSummary(r.metrics)}>{metricsSummary(r.metrics)}</td>
                                         <td className="py-2.5 px-4 text-center">
-                                            <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium ${STATUS_COLORS[r.status] || "bg-[var(--bg-secondary)] text-[var(--text-muted)]"}`}>
+                                            <span className={`inline-flex items-center gap-1 px-1.5 py-[2px] rounded-[4px] text-[10px] font-medium ${STATUS_COLORS[r.status] || "bg-[var(--bg-secondary)] text-[var(--text-muted)]"}`}>
                                                 ● {r.status}
                                             </span>
                                         </td>
@@ -173,9 +177,9 @@ export default function DataLogs() {
                 )}
                 {totalPages > 1 && (
                     <div className="flex items-center justify-between px-4 py-3 border-t border-[var(--border-default)]">
-                        <button onClick={() => setPage(p => Math.max(0, p - 1))} disabled={page === 0} className="text-xs text-[var(--accent)] hover:text-[#094d87] disabled:opacity-40">← Previous</button>
+                        <button onClick={() => setPage(p => Math.max(0, p - 1))} disabled={page === 0} className="text-xs text-[var(--accent)] hover:brightness-125 disabled:opacity-40">← Previous</button>
                         <span className="text-xs text-[var(--text-muted)]">Page {page + 1} of {totalPages}</span>
-                        <button onClick={() => setPage(p => Math.min(totalPages - 1, p + 1))} disabled={page >= totalPages - 1} className="text-xs text-[var(--accent)] hover:text-[#094d87] disabled:opacity-40">Next →</button>
+                        <button onClick={() => setPage(p => Math.min(totalPages - 1, p + 1))} disabled={page >= totalPages - 1} className="text-xs text-[var(--accent)] hover:brightness-125 disabled:opacity-40">Next →</button>
                     </div>
                 )}
             </div>

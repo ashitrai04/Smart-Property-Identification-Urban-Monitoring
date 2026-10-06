@@ -2,6 +2,8 @@ import React, { useEffect, useRef, useState, useMemo } from "react";
 import mapboxgl from "mapbox-gl";
 import "mapbox-gl/dist/mapbox-gl.css";
 import StatCard from "../components/StatCard";
+import { Building, Building2, Droplets, GitCompareArrows, LandPlot, Route } from "lucide-react";
+import { Pill } from "../components/ui";
 import { addArcGISFeatureLayer, removeLayerGroup } from "../utils/mapLayers";
 import { registerTour, unregisterTour } from "../tour/tourBus";
 import {
@@ -69,6 +71,11 @@ const AP_TOTAL = {
 
 const DISTRICT_NAMES = Object.keys(DISTRICT_DATA);
 
+// Chart chrome in the console palette
+const AXIS = { fontSize: 10, fill: "#64748B", fontFamily: "JetBrains Mono, monospace" };
+const AXIS_DIM = { fontSize: 10, fill: "#92A0B5" };
+const TOOLTIP = { background: "#131C2B", border: "1px solid #2A3A50", borderRadius: 6, color: "#E7ECF3", fontSize: 11, boxShadow: "0 4px 16px rgba(0,0,0,0.45)" };
+
 export default function Home() {
     const mapContainerRef = useRef(null);
     const mapRef = useRef(null);
@@ -87,12 +94,12 @@ export default function Home() {
     const t = data.trends;
 
     const STATS = [
-        { icon: "🏠", label: "Total Properties", value: s.properties, trend: t.properties, color: "#0B5FA5" },
-        { icon: "📐", label: "Open Plots", value: s.plots, trend: t.plots, color: "#16a34a" },
-        { icon: "💧", label: "Water Bodies", value: s.water, trend: t.water, color: "#2563eb" },
-        { icon: "🔄", label: "Change Detections", value: s.changes, trend: t.changes, color: "#d97706" },
-        { icon: "🛣️", label: "Road Network (km)", value: s.roads, trend: 0, color: "#6b7280" },
-        { icon: "🏙️", label: "Built-up (km²)", value: s.builtup, trend: 0, color: "#7c3aed" },
+        { icon: Building2, label: "Total properties", value: s.properties, trend: t.properties, color: "#2DD4BF" },
+        { icon: LandPlot, label: "Open plots", value: s.plots, trend: t.plots, color: "#34D399" },
+        { icon: Droplets, label: "Water bodies", value: s.water, trend: t.water, color: "#38BDF8" },
+        { icon: GitCompareArrows, label: "Change detections", value: s.changes, trend: t.changes, color: "#F5A524" },
+        { icon: Route, label: "Road network (km)", value: s.roads, trend: 0, color: "#FBBF24" },
+        { icon: Building, label: "Built-up (km²)", value: s.builtup, trend: 0, color: "#A78BFA" },
     ];
 
     const districtBarData = useMemo(() =>
@@ -108,7 +115,7 @@ export default function Home() {
             zoom: 6.2,
             interactive: true,
         });
-        map.addControl(new mapboxgl.NavigationControl(), "top-right");
+        map.addControl(new mapboxgl.NavigationControl({ showCompass: false }), "top-right");
         mapRef.current = map;
         return () => { mapRef.current = null; map.remove(); };
     }, []);
@@ -142,7 +149,8 @@ export default function Home() {
                         fit: false,
                         paintOverrides: {
                             fill: { "fill-color": "transparent", "fill-opacity": 0 },
-                            outline: { "line-color": "#7B2D8E", "line-width": 3 },
+                            glow: { "line-color": "#CCFF00", "line-width": 9, "line-opacity": 0.3, "line-blur": 6 },
+                            outline: { "line-color": "#CCFF00", "line-width": 2.2 },
                         },
                     }).catch(err => console.warn("Home boundary load failed:", err));
                 };
@@ -154,85 +162,81 @@ export default function Home() {
         }
     }, [selectedDistrict]);
 
+    const scope = selectedDistrict || "Andhra Pradesh";
+
     return (
-        <div className="fade-in" style={{ display: "flex", flexDirection: "column", gap: "24px" }}>
-            {/* Header with selectors */}
-            <div className="dash-section">
-                <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", justifyContent: "space-between", gap: "12px" }}>
-                    <div>
-                        <h2 style={{ fontSize: "18px", fontWeight: 800, color: "var(--text-primary)" }}>
-                            Dashboard — {selectedDistrict || "Andhra Pradesh"} Urban Monitoring
-                        </h2>
-                        <p style={{ fontSize: "13px", color: "var(--text-muted)", marginTop: "4px" }}>
-                            AI-powered property identification and land use mapping statistics
-                        </p>
-                    </div>
-                    <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
-                        <div>
-                            <label style={{ fontSize: "10px", fontWeight: 600, color: "var(--text-muted)", display: "block", marginBottom: "4px", textTransform: "uppercase", letterSpacing: "0.8px" }}>STATE</label>
-                            <select disabled className="dark-select" style={{ width: "auto" }}>
-                                <option>Andhra Pradesh</option>
-                            </select>
-                        </div>
-                        <div>
-                            <label style={{ fontSize: "10px", fontWeight: 600, color: "var(--text-muted)", display: "block", marginBottom: "4px", textTransform: "uppercase", letterSpacing: "0.8px" }}>DISTRICT</label>
-                            <select
-                                value={selectedDistrict}
-                                onChange={e => setSelectedDistrict(e.target.value)}
-                                className="dark-select"
-                                data-tour="home-district"
-                                style={{ width: "auto" }}
-                            >
-                                <option value="">All Districts</option>
-                                {DISTRICT_NAMES.map(d => <option key={d} value={d}>{d}</option>)}
-                            </select>
-                        </div>
-                    </div>
+        <div className="flex flex-col gap-4">
+            {/* Header */}
+            <div className="page-head">
+                <div>
+                    <div className="page-eyebrow">Overview</div>
+                    <h1 className="page-title">{scope} urban monitoring</h1>
+                    <p className="page-sub">Property identification and land use, extracted by the segmentation model from satellite and drone imagery.</p>
+                </div>
+                <div className="flex items-end gap-2">
+                    <label>
+                        <span className="panel-title mb-1 block" style={{ fontSize: 10 }}>State</span>
+                        <select disabled className="dark-select" style={{ width: "auto" }}>
+                            <option>Andhra Pradesh</option>
+                        </select>
+                    </label>
+                    <label>
+                        <span className="panel-title mb-1 block" style={{ fontSize: 10 }}>District</span>
+                        <select
+                            value={selectedDistrict}
+                            onChange={e => setSelectedDistrict(e.target.value)}
+                            className="dark-select"
+                            data-tour="home-district"
+                            style={{ width: "auto", minWidth: 160 }}
+                        >
+                            <option value="">All districts</option>
+                            {DISTRICT_NAMES.map(d => <option key={d} value={d}>{d}</option>)}
+                        </select>
+                    </label>
                 </div>
             </div>
 
-            {/* Stat cards */}
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))", gap: "12px" }}>
-                {STATS.map((s) => (
-                    <StatCard key={s.label} {...s} />
-                ))}
+            {/* Stat cards — keyed by scope so they replay their entrance on change */}
+            <div key={scope} className="stagger grid gap-3" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))" }}>
+                {STATS.map((st) => <StatCard key={st.label} {...st} />)}
             </div>
 
-            {/* Charts + Map */}
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "16px" }}>
-                {/* Bar chart */}
+            {/* Charts + map */}
+            <div className="grid gap-3" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))" }}>
                 <div className="dash-section">
-                    <div className="dash-section-title">Properties by District</div>
+                    <div className="dash-section-title">Properties by district</div>
                     <ResponsiveContainer width="100%" height={220}>
                         <BarChart data={districtBarData} layout="vertical" margin={{ left: 0, right: 10 }}>
-                            <XAxis type="number" tick={{ fontSize: 10, fill: '#64748b' }} tickFormatter={v => `${(v / 1000).toFixed(0)}k`} />
-                            <YAxis type="category" dataKey="name" tick={{ fontSize: 10, fill: '#94a3b8' }} width={90} />
-                            <Tooltip formatter={v => v.toLocaleString()} contentStyle={{ background: '#1e293b', border: '1px solid rgba(71,85,105,0.4)', borderRadius: '6px', color: '#f1f5f9' }} />
-                            <Bar dataKey="Properties" fill="#14b8a6" radius={[0, 4, 4, 0]} />
+                            <XAxis type="number" tick={AXIS} axisLine={false} tickLine={false} tickFormatter={v => `${(v / 1000).toFixed(0)}k`} />
+                            <YAxis type="category" dataKey="name" tick={AXIS_DIM} axisLine={false} tickLine={false} width={90} />
+                            <Tooltip formatter={v => v.toLocaleString()} contentStyle={TOOLTIP} cursor={{ fill: "rgba(45,212,191,0.06)" }} />
+                            <Bar dataKey="Properties" radius={[0, 3, 3, 0]} animationDuration={700}>
+                                {districtBarData.map(d => (
+                                    <Cell key={d.name} fill={!selectedDistrict || d.name === selectedDistrict ? "#2DD4BF" : "#22304A"} />
+                                ))}
+                            </Bar>
                         </BarChart>
                     </ResponsiveContainer>
                 </div>
 
-                {/* Mini map */}
-                <div className="dash-section" style={{ padding: 0, overflow: "hidden" }}>
-                    <div style={{ padding: "16px 16px 8px" }}>
-                        <div className="dash-section-title" style={{ marginBottom: 0 }}>
-                            {selectedDistrict || "Andhra Pradesh"} Overview
-                        </div>
+                <div className="dash-section" style={{ padding: 0 }}>
+                    <div className="flex items-center justify-between px-3.5 pb-2 pt-3.5">
+                        <div className="dash-section-title" style={{ marginBottom: 0 }}>{scope} · map</div>
+                        <Pill colour="var(--signal)" mono>{selectedDistrict ? "District" : "State"}</Pill>
                     </div>
-                    <div ref={mapContainerRef} style={{ height: "240px", width: "100%" }} />
+                    <div ref={mapContainerRef} style={{ height: "236px", width: "100%" }} />
                 </div>
 
-                {/* Pie chart */}
                 <div className="dash-section">
-                    <div className="dash-section-title">Land Use Distribution</div>
+                    <div className="dash-section-title">Land use distribution</div>
                     <ResponsiveContainer width="100%" height={220}>
                         <PieChart>
-                            <Pie data={data.landUse} cx="50%" cy="50%" innerRadius={50} outerRadius={80} dataKey="value" paddingAngle={2}>
+                            <Pie data={data.landUse} cx="50%" cy="45%" innerRadius={52} outerRadius={78} dataKey="value"
+                                paddingAngle={2} stroke="#131C2B" strokeWidth={2} animationDuration={700}>
                                 {data.landUse.map((e, i) => <Cell key={i} fill={e.color} />)}
                             </Pie>
-                            <Legend iconSize={8} wrapperStyle={{ fontSize: 10, color: '#94a3b8' }} />
-                            <Tooltip formatter={v => `${v}%`} contentStyle={{ background: '#1e293b', border: '1px solid rgba(71,85,105,0.4)', borderRadius: '6px', color: '#f1f5f9' }} />
+                            <Legend iconSize={8} iconType="square" wrapperStyle={{ fontSize: 10, color: "#92A0B5" }} />
+                            <Tooltip formatter={v => `${v}%`} contentStyle={TOOLTIP} />
                         </PieChart>
                     </ResponsiveContainer>
                 </div>
@@ -240,33 +244,40 @@ export default function Home() {
 
             {/* Monthly trend */}
             <div className="dash-section">
-                <div className="dash-section-title">Monthly Property Identification Trend</div>
+                <div className="dash-section-title">Monthly property identification trend</div>
                 <ResponsiveContainer width="100%" height={200}>
                     <AreaChart data={data.monthly} margin={{ left: 10, right: 10, top: 5 }}>
-                        <CartesianGrid strokeDasharray="3 3" stroke="rgba(71,85,105,0.3)" />
-                        <XAxis dataKey="month" tick={{ fontSize: 11, fill: '#94a3b8' }} />
-                        <YAxis tick={{ fontSize: 10, fill: '#64748b' }} tickFormatter={v => v >= 1000000 ? `${(v / 1000000).toFixed(2)}M` : `${(v / 1000).toFixed(0)}k`} />
-                        <Tooltip formatter={v => v.toLocaleString()} contentStyle={{ background: '#1e293b', border: '1px solid rgba(71,85,105,0.4)', borderRadius: '6px', color: '#f1f5f9' }} />
-                        <Area type="monotone" dataKey="properties" stroke="#14b8a6" fill="rgba(20,184,166,0.15)" strokeWidth={2} />
+                        <defs>
+                            <linearGradient id="trendFill" x1="0" y1="0" x2="0" y2="1">
+                                <stop offset="0%" stopColor="#2DD4BF" stopOpacity={0.28} />
+                                <stop offset="100%" stopColor="#2DD4BF" stopOpacity={0} />
+                            </linearGradient>
+                        </defs>
+                        <CartesianGrid strokeDasharray="3 3" stroke="rgba(42,58,80,0.55)" vertical={false} />
+                        <XAxis dataKey="month" tick={AXIS_DIM} axisLine={false} tickLine={false} />
+                        <YAxis tick={AXIS} axisLine={false} tickLine={false} tickFormatter={v => v >= 1000000 ? `${(v / 1000000).toFixed(2)}M` : `${(v / 1000).toFixed(0)}k`} />
+                        <Tooltip formatter={v => v.toLocaleString()} contentStyle={TOOLTIP} cursor={{ stroke: "#2A3A50" }} />
+                        <Area type="monotone" dataKey="properties" stroke="#2DD4BF" fill="url(#trendFill)" strokeWidth={2} animationDuration={900}
+                            activeDot={{ r: 4, fill: "#2DD4BF", stroke: "#0B1220", strokeWidth: 2 }} />
                     </AreaChart>
                 </ResponsiveContainer>
             </div>
 
             {/* District table */}
-            <div className="dash-section" data-tour="home-summary" style={{ padding: 0, overflow: "hidden" }}>
-                <div style={{ padding: "16px", borderBottom: "1px solid var(--border-default)" }}>
-                    <div className="dash-section-title" style={{ marginBottom: 0 }}>District-wise Summary</div>
+            <div className="dash-section" data-tour="home-summary" style={{ padding: 0 }}>
+                <div className="px-3.5 py-3" style={{ borderBottom: "1px solid var(--line)" }}>
+                    <div className="dash-section-title" style={{ marginBottom: 0 }}>District-wise summary</div>
                 </div>
                 <div style={{ overflowX: "auto" }}>
-                    <table style={{ width: "100%", fontSize: "13px", borderCollapse: "collapse" }}>
+                    <table className="data-table">
                         <thead>
-                            <tr style={{ background: "var(--bg-tertiary)" }}>
-                                <th style={{ padding: "10px 16px", textAlign: "left", fontWeight: 600, color: "var(--text-muted)", fontSize: "11px", textTransform: "uppercase", letterSpacing: "0.5px" }}>District</th>
-                                <th style={{ padding: "10px 16px", textAlign: "right", fontWeight: 600, color: "var(--text-muted)", fontSize: "11px", textTransform: "uppercase", letterSpacing: "0.5px" }}>Properties</th>
-                                <th style={{ padding: "10px 16px", textAlign: "right", fontWeight: 600, color: "var(--text-muted)", fontSize: "11px", textTransform: "uppercase", letterSpacing: "0.5px" }}>Open Plots</th>
-                                <th style={{ padding: "10px 16px", textAlign: "right", fontWeight: 600, color: "var(--text-muted)", fontSize: "11px", textTransform: "uppercase", letterSpacing: "0.5px" }}>Water Bodies</th>
-                                <th style={{ padding: "10px 16px", textAlign: "right", fontWeight: 600, color: "var(--text-muted)", fontSize: "11px", textTransform: "uppercase", letterSpacing: "0.5px" }}>Changes</th>
-                                <th style={{ padding: "10px 16px", textAlign: "center", fontWeight: 600, color: "var(--text-muted)", fontSize: "11px", textTransform: "uppercase", letterSpacing: "0.5px" }}>Status</th>
+                            <tr>
+                                <th>District</th>
+                                <th style={{ textAlign: "right" }}>Properties</th>
+                                <th style={{ textAlign: "right" }}>Open plots</th>
+                                <th style={{ textAlign: "right" }}>Water bodies</th>
+                                <th style={{ textAlign: "right" }}>Changes</th>
+                                <th style={{ textAlign: "center" }}>Status</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -275,23 +286,16 @@ export default function Home() {
                                 const isSelected = selectedDistrict === name;
                                 return (
                                     <tr key={name}
-                                        style={{ cursor: "pointer", borderBottom: "1px solid rgba(71,85,105,0.2)", background: isSelected ? "var(--accent-dim)" : "transparent", transition: "background 0.15s" }}
                                         onClick={() => setSelectedDistrict(isSelected ? "" : name)}
-                                        onMouseEnter={e => { if (!isSelected) e.currentTarget.style.background = 'rgba(20,184,166,0.05)'; }}
-                                        onMouseLeave={e => { if (!isSelected) e.currentTarget.style.background = 'transparent'; }}
+                                        style={{ cursor: "pointer", background: isSelected ? "var(--signal-dim)" : undefined, boxShadow: isSelected ? "inset 2px 0 0 var(--signal)" : undefined }}
                                     >
-                                        <td style={{ padding: "10px 16px", fontWeight: 600, color: "var(--text-primary)" }}>
-                                            {isSelected && <span style={{ color: "var(--accent)", marginRight: "4px" }}>▶</span>}
-                                            {name}
-                                        </td>
-                                        <td style={{ padding: "10px 16px", textAlign: "right", color: "var(--text-secondary)", fontFamily: "var(--font-mono)", fontSize: "12px" }}>{d.stats.properties}</td>
-                                        <td style={{ padding: "10px 16px", textAlign: "right", color: "var(--text-secondary)", fontFamily: "var(--font-mono)", fontSize: "12px" }}>{d.stats.plots}</td>
-                                        <td style={{ padding: "10px 16px", textAlign: "right", color: "var(--text-secondary)", fontFamily: "var(--font-mono)", fontSize: "12px" }}>{d.stats.water}</td>
-                                        <td style={{ padding: "10px 16px", textAlign: "right", color: "var(--text-secondary)", fontFamily: "var(--font-mono)", fontSize: "12px" }}>{d.stats.changes}</td>
-                                        <td style={{ padding: "10px 16px", textAlign: "center" }}>
-                                            <span style={{ display: "inline-flex", alignItems: "center", gap: "4px", padding: "2px 10px", borderRadius: "12px", fontSize: "11px", fontWeight: 600, background: "var(--green-dim)", color: "var(--green)" }}>
-                                                ● Active
-                                            </span>
+                                        <td style={{ fontWeight: 500, color: isSelected ? "var(--signal)" : "var(--text)" }}>{name}</td>
+                                        <td className="mono" style={{ textAlign: "right" }}>{d.stats.properties}</td>
+                                        <td className="mono" style={{ textAlign: "right" }}>{d.stats.plots}</td>
+                                        <td className="mono" style={{ textAlign: "right" }}>{d.stats.water}</td>
+                                        <td className="mono" style={{ textAlign: "right" }}>{d.stats.changes}</td>
+                                        <td style={{ textAlign: "center" }}>
+                                            <Pill colour="var(--ok)"><span className="live-dot" /> Active</Pill>
                                         </td>
                                     </tr>
                                 );

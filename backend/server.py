@@ -30,6 +30,8 @@ load_dotenv()
 import geopandas as gpd
 import numpy as np
 from shapely.geometry import box, mapping
+import shapely
+from fastapi.middleware.gzip import GZipMiddleware
 from fastapi import FastAPI, Query, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response
@@ -50,6 +52,8 @@ PORT = 8000
 # ═══════════════════════════════════════════════════════════
 #  CLOUD STORAGE SYNC (Hugging Face Startup)
 # ═══════════════════════════════════════════════════════════
+DATA_EXTENSIONS = ('.gpkg', '.tif', '.tiff')
+
 def sync_datasets_from_r2():
     account_id = os.environ.get('R2_ACCOUNT_ID')
     access_key = os.environ.get('R2_ACCESS_KEY_ID')
@@ -73,20 +77,45 @@ def sync_datasets_from_r2():
             aws_secret_access_key=secret_key,
             region_name='auto',
         )
-        
-        objects = s3.list_objects_v2(Bucket=bucket_name)
-        if 'Contents' in objects:
-            for obj in objects['Contents']:
-                file_key = obj['Key']
-                local_path = os.path.join(DATA_DIR, file_key)
-                if not os.path.exists(local_path):
-                    print(f"  Downloading {file_key} ({obj['Size'] / 1e6:.1f} MB)...")
-                    s3.download_file(bucket_name, file_key, local_path)
-            print("✅ All datasets synced successfully!")
-        else:
-            print("⚠️ R2 bucket is empty.")
+        objects = []
+        for page in s3.get_paginator('list_objects_v2').paginate(Bucket=bucket_name):
+            objects.extend(page.get('Contents', []))
     except Exception as e:
-        print(f"❌ Failed to sync datasets: {e}")
+        print(f"❌ Could not list R2 bucket: {e}")
+        return
+
+    # The bucket is shared: other projects keep folders in it (e.g. "Gujarat-hackathon/")
+    # and the upload flow writes "temp/…" scratch files. Only top-level district data
+    # belongs here — a folder key used to make download_file throw and abort the whole
+    # sync, leaving the server with zero districts.
+    wanted = [o for o in objects
+              if '/' not in o['Key'] and o['Key'].lower().endswith(DATA_EXTENSIONS)]
+    if not wanted:
+        print("⚠️ R2 bucket has no district data files.")
+        return
+
+    ok = failed = 0
+    for obj in wanted:
+        key, size = obj['Key'], obj['Size']
+        local_path = os.path.join(DATA_DIR, key)
+        # Skip only complete copies; a size mismatch means an interrupted download.
+        if os.path.exists(local_path) and os.path.getsize(local_path) == size:
+            ok += 1
+            continue
+        tmp = local_path + '.part'
+        try:
+            print(f"  Downloading {key} ({size / 1e6:.1f} MB)...")
+            s3.download_file(bucket_name, key, tmp)
+            os.replace(tmp, local_path)
+            ok += 1
+        except Exception as e:
+            failed += 1
+            print(f"  ❌ {key}: {e}")
+            try:
+                os.remove(tmp)
+            except OSError:
+                pass
+    print(f"✅ Dataset sync: {ok} file(s) ready, {failed} failed.")
 
 sync_datasets_from_r2()
 
@@ -141,6 +170,7 @@ app = FastAPI(
     description="Serves building/road/water GeoJSON from GPKG files",
 )
 
+app.add_middleware(GZipMiddleware, minimum_size=1024)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -205,6 +235,10 @@ def _load_district(name: str):
         if gdf.crs and gdf.crs.to_epsg() != 4326:
             gdf = gdf.to_crs(epsg=4326)
         result["features"] = gdf
+        # Vertex count per row. The road network is stored as a few giant
+        # dissolved polygons (millions of vertices); a bbox filter cannot trim
+        # those, so they are clipped to the viewport per request instead.
+        result["ncoords"] = shapely.get_num_coordinates(gdf.geometry.values)
         print(f"   Features: {len(gdf):,} rows, columns: {list(gdf.columns)}")
     except Exception as e:
         print(f"   ⚠️ No 'features' layer: {e}")
@@ -227,20 +261,108 @@ def _load_district(name: str):
     _cache[name] = result
     return result
 
-print("\n[STARTUP] Pre-loading datasets and building spatial indices to prevent 504 Timeouts...")
-for d_name in AVAILABLE_DISTRICTS:
-    _load_district(d_name)
-    if "features" in _cache[d_name] and not _cache[d_name]["features"].empty:
-        # Trigger spatial index build
-        _ = _cache[d_name]["features"].sindex
-print("[STARTUP] All spatial indices built!\n")
 
 
 def _gdf_to_geojson_string(gdf):
-    """Convert GeoDataFrame to GeoJSON string. Avoids parsing back to dict."""
+    """FeatureCollection JSON. Built from vectorised shapely.to_geojson + pandas
+    record JSON — ~20x faster than GeoDataFrame.to_json on 50k features."""
     if gdf is None or len(gdf) == 0:
         return '{"type": "FeatureCollection", "features": []}'
-    return gdf.to_json()
+    geoms = shapely.to_geojson(gdf.geometry.values)
+    attrs = gdf.drop(columns=gdf.geometry.name)
+    props = (attrs.to_json(orient="records", lines=True, default_handler=str).splitlines()
+             if len(attrs.columns) else [])
+    if len(props) != len(geoms):          # no attribute columns (e.g. boundary)
+        props = ["{}"] * len(geoms)
+    feats = ",".join(
+        '{"type":"Feature","properties":%s,"geometry":%s}' % (p, g if g is not None else "null")
+        for p, g in zip(props, geoms))
+    return '{"type":"FeatureCollection","features":[' + feats + ']}'
+
+
+_layer_idx = {}   # (district, layer) -> (row positions, STRtree over those rows)
+
+
+def _layer_index(name, layer, gdf):
+    """Row positions of a layer plus an STRtree over them, built once per district.
+
+    A viewport request then touches only the rows it needs. Filtering the full
+    563k-row frame per request (fclass string ops + boolean copies of the whole
+    table) was cheap on a laptop but took 15-50 s on the Space's shared CPU.
+    """
+    key = (name, layer)
+    hit = _layer_idx.get(key)
+    if hit is None:
+        sub = _filter_features(gdf, layer=layer, class_id=LAYER_CLASS_MAP.get(layer))
+        pos = gdf.index.get_indexer(sub.index) if sub is not None and len(sub) else np.array([], dtype=np.int64)
+        hit = (pos, shapely.STRtree(gdf.geometry.values[pos]))
+        _layer_idx[key] = hit
+    return hit
+
+
+BIG_GEOM_VERTICES = 5000   # above this a shape is simplified once per zoom (cached) and clipped
+_big_cache = {}            # (district, row index, zoom) -> simplified geometry
+
+
+def _simplify_rings(geom, tol):
+    """Douglas-Peucker each ring as a plain line and rebuild the polygons unvalidated.
+
+    shapely.simplify() on these dissolved road polygons (700k+ vertices, 10k rings)
+    spends ~50 s in GEOS topology repair; this takes ~1 s and the browser renders
+    the result identically.
+    """
+    if geom is None or geom.is_empty:
+        return geom
+    if geom.geom_type not in ("Polygon", "MultiPolygon"):
+        return shapely.simplify(geom, tol, preserve_topology=False)
+    polys = []
+    for part in shapely.get_parts(geom):
+        rings = []
+        for ring in shapely.get_rings(part):
+            line = shapely.simplify(shapely.linestrings(shapely.get_coordinates(ring)), tol, preserve_topology=False)
+            c = shapely.get_coordinates(line)
+            rings.append(c if len(c) >= 4 else None)
+        if rings and rings[0] is not None:
+            polys.append(shapely.Polygon(rings[0], [r for r in rings[1:] if r is not None]))
+    return shapely.MultiPolygon(polys) if polys else shapely.Polygon()
+
+
+def _zoom_tol(zoom):
+    """Half a screen pixel at this zoom (512 px tiles), in degrees."""
+    return 360.0 / (512 * 2 ** float(zoom)) / 2
+
+
+def _shape_for_view(name, gdf, ncoords, bbox, zoom):
+    """Display geometry for the layer endpoint: simplify to the zoom, clip giant
+    shapes to the viewport, round to ~0.1 m. Returns a copy — the cached data,
+    and therefore stats / AOI counts, keep the original geometry."""
+    if gdf is None or len(gdf) == 0:
+        return gdf
+    geoms = gdf.geometry.values.copy()
+    z = None if zoom is None else max(0, min(16, int(round(float(zoom)))))
+    big = ncoords > BIG_GEOM_VERTICES if ncoords is not None else np.zeros(len(geoms), bool)
+
+    small = ~big
+    if z is not None and z < 16 and small.any():
+        geoms[small] = shapely.simplify(geoms[small], _zoom_tol(z), preserve_topology=False)
+
+    if big.any():
+        for i in np.flatnonzero(big):
+            key = (name, gdf.index[i], z)
+            g = _big_cache.get(key)
+            if g is None:
+                g = _simplify_rings(geoms[i], _zoom_tol(z if z is not None else 16))
+                if len(_big_cache) > 200:
+                    _big_cache.pop(next(iter(_big_cache)))
+                _big_cache[key] = g
+            geoms[i] = g
+        if bbox is not None:
+            pad = 0.02 * max(bbox[2] - bbox[0], bbox[3] - bbox[1])
+            geoms[big] = shapely.clip_by_rect(geoms[big], bbox[0] - pad, bbox[1] - pad, bbox[2] + pad, bbox[3] + pad)
+
+    geoms = shapely.transform(geoms, lambda c: np.round(c, 6))
+    out = gdf.set_geometry(gpd.GeoSeries(geoms, index=gdf.index, crs=gdf.crs))
+    return out[~shapely.is_empty(geoms)]
 
 
 def _filter_features(gdf, layer=None, class_id=None, bbox_str=None, zoom=None, limit=None):
@@ -299,9 +421,46 @@ def _filter_features(gdf, layer=None, class_id=None, bbox_str=None, zoom=None, l
     return gdf
 
 
+print("\n[STARTUP] Pre-loading datasets and building spatial indices to prevent 504 Timeouts...")
+for d_name in AVAILABLE_DISTRICTS:
+    _load_district(d_name)
+    if "features" in _cache[d_name] and not _cache[d_name]["features"].empty:
+        for _lyr in ("buildings", "roads", "waterbodies", "openareas"):
+            _layer_index(d_name, _lyr, _cache[d_name]["features"])
+print("[STARTUP] All spatial indices built!\n")
+
+
 # ═══════════════════════════════════════════════════════════
 #  ENDPOINTS
 # ═══════════════════════════════════════════════════════════
+
+_gpu_url_cache = {"t": 0.0, "v": None}
+
+
+@app.get("/api/gpu-server")
+def gpu_server():
+    """Current public URL of the GPU inference server.
+
+    Its free Cloudflare tunnel gets a new address on every restart; the GPU
+    server writes it to R2 (runtime/gpu_server.json) and the webapp asks here,
+    so nothing has to be redeployed when it changes. Cached for 20 s.
+    """
+    now = time.time()
+    if now - _gpu_url_cache["t"] < 20 and _gpu_url_cache["v"] is not None:
+        return _gpu_url_cache["v"]
+    out = {"url": None, "online": False, "updated": None}
+    try:
+        acc = os.environ.get("R2_ACCOUNT_ID", "").replace("https://", "").replace(".r2.cloudflarestorage.com", "").replace("/", "").strip()
+        s3 = boto3.client("s3", endpoint_url=f"https://{acc}.r2.cloudflarestorage.com",
+                          aws_access_key_id=os.environ.get("R2_ACCESS_KEY_ID"),
+                          aws_secret_access_key=os.environ.get("R2_SECRET_ACCESS_KEY"), region_name="auto")
+        body = s3.get_object(Bucket=os.environ.get("R2_BUCKET_NAME"), Key="runtime/gpu_server.json")["Body"].read()
+        out.update(json.loads(body))
+    except Exception:
+        pass   # no GPU server published yet → webapp uses Hugging Face
+    _gpu_url_cache.update(t=now, v=out)
+    return out
+
 
 @app.get("/api/health")
 async def health():
@@ -326,7 +485,7 @@ async def list_districts():
 
 
 @app.get("/api/districts/{name}")
-async def get_district(name: str):
+def get_district(name: str):
     """Get district metadata."""
     name = name.lower()
     if name not in AVAILABLE_DISTRICTS:
@@ -354,7 +513,7 @@ async def get_district(name: str):
 
 
 @app.get("/api/districts/{name}/boundary")
-async def get_boundary(name: str):
+def get_boundary(name: str):
     """Get district boundary as GeoJSON."""
     name = name.lower()
     data = _load_district(name)
@@ -366,7 +525,7 @@ async def get_boundary(name: str):
 # NOTE: this route MUST be defined before /{layer}, otherwise "stats" is
 # swallowed by the layer catch-all and this endpoint is unreachable.
 @app.get("/api/districts/{name}/stats")
-async def get_stats(name: str):
+def get_stats(name: str):
     """Real per-layer statistics for a district (fclass-aware, matches the layer endpoints)."""
     name = name.lower()
     data = _load_district(name)
@@ -395,13 +554,13 @@ async def get_stats(name: str):
 
 
 @app.get("/api/districts/{name}/{layer}")
-async def get_district_layer(name: str, layer: str, bbox: str = Query(None), zoom: float = Query(None), limit: int = Query(None)):
+def get_district_layer(name: str, layer: str, bbox: str = Query(None), zoom: float = Query(None), limit: int = Query(None)):
     """Get GeoJSON for a specific layer, optionally filtered by bbox and zoom."""
     name = name.lower()
     layer = layer.lower()
 
     if layer == "boundary":
-        return await get_boundary(name)
+        return get_boundary(name)
 
     class_id = LAYER_CLASS_MAP.get(layer)
     if class_id is None:
@@ -410,9 +569,42 @@ async def get_district_layer(name: str, layer: str, bbox: str = Query(None), zoo
     data = _load_district(name)
     gdf = data.get("features", gpd.GeoDataFrame())
 
-    filtered = _filter_features(gdf, layer=layer, class_id=class_id, bbox_str=bbox, zoom=zoom, limit=limit)
-    
-    return Response(content=_gdf_to_geojson_string(filtered), media_type="application/json")
+    bb = None
+    if bbox:
+        try:
+            parts = [float(x) for x in bbox.split(",")]
+            bb = parts if len(parts) == 4 else None
+        except ValueError:
+            bb = None
+
+    nc_all = data.get("ncoords")
+    if bb is not None and len(gdf):
+        pos, tree = _layer_index(name, layer, gdf)
+        sel = np.sort(pos[tree.query(box(*bb))])
+        cap = ZOOM_FEATURE_LIMITS.get(int(zoom), 100000) if zoom is not None else None
+        if limit:
+            cap = min(cap, limit) if cap else limit
+        if cap and len(sel) > cap:
+            sel = sel[:cap]
+        filtered = gdf.iloc[sel]
+        nc = nc_all[sel] if nc_all is not None else None
+    else:
+        filtered = _filter_features(gdf, layer=layer, class_id=class_id, bbox_str=bbox, zoom=zoom, limit=limit)
+        nc = nc_all[gdf.index.get_indexer(filtered.index)] if (nc_all is not None and filtered is not None and len(filtered)) else None
+    # The road network is stored twice (class 4, and a class-1 row tagged
+    # fclass=trunk); drawing both doubles the payload for no visible change.
+    if filtered is not None and nc is not None and (nc > BIG_GEOM_VERTICES).sum() > 1:
+        keep = np.ones(len(filtered), bool)
+        seen = set()
+        bounds = filtered.geometry.bounds.values
+        for i in np.flatnonzero(nc > BIG_GEOM_VERTICES):   # only the few giant rows
+            sig = (int(nc[i]), tuple(np.round(bounds[i], 5)))
+            keep[i] = sig not in seen
+            seen.add(sig)
+        filtered, nc = filtered[keep], nc[keep]
+    shaped = _shape_for_view(name, filtered, nc, bb, zoom)
+
+    return Response(content=_gdf_to_geojson_string(shaped), media_type="application/json")
 
 
 # ── Tile cache: stores rendered PNG bytes keyed by (district, z, x, y) ──
@@ -445,7 +637,7 @@ DISTRICT_COLORMAPS = {
 
 
 @app.get("/api/districts/{name}/raster/tiles/{z}/{x}/{y}.png")
-async def get_raster_tile(name: str, z: int, x: int, y: int):
+def get_raster_tile(name: str, z: int, x: int, y: int):
     """Serve XYZ raster tiles from the district .tif file with proper colormap."""
     name = name.lower()
     if name not in AVAILABLE_RASTERS:

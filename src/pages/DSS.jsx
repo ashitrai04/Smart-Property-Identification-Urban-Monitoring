@@ -348,7 +348,7 @@ export default function DSS() {
     };
 
     const typeChart = report ? Object.entries(report.byType).map(([type, n]) => ({ type: type.replace(" Detection", " Det."), n })) : [];
-    const BAR_COLORS = ["#14b8a6", "#3b82f6", "#f59e0b", "#8b5cf6", "#ef4444", "#10b981"];
+    const BAR_COLORS = ["#2DD4BF", "#38BDF8", "#F5A524", "#A78BFA", "#F472B6", "#34D399"];
 
     return (
         <div className="flex flex-col lg:flex-row w-full h-full">
@@ -358,46 +358,47 @@ export default function DSS() {
             </div>
 
             {/* Sidebar */}
-            <div className="w-full lg:w-[400px] shrink-0 bg-[var(--bg-secondary)] border-l border-[var(--border-default)] overflow-y-auto">
-                <div className="p-4 border-b border-[var(--border-default)] bg-gradient-to-r from-[var(--accent)] to-[#0a7a6a]">
-                    <h2 className="text-base font-bold text-white">Decision Support System</h2>
-                    <p className="text-xs text-white/70 mt-0.5">Reports from the live database & real platform activity</p>
+            <div className="anim-slide-in w-full lg:w-[380px] shrink-0 bg-[var(--surface)] border-l border-[var(--border-default)] overflow-y-auto">
+                <div className="px-4 pb-3 pt-4 border-b border-[var(--border-default)]">
+                    <div className="page-eyebrow">Reports</div>
+                    <h2 className="page-title" style={{ fontSize: 16 }}>Decision support</h2>
+                    <p className="page-sub">District reports from the live database and recorded platform activity.</p>
                 </div>
 
                 <div className="p-4 space-y-3 border-b border-[var(--border-default)]" data-tour="dss-form">
                     <div>
-                        <label className="text-xs font-medium text-[var(--text-muted)] block mb-1">State</label>
-                        <input value={selectedState} disabled className="w-full bg-[var(--bg-primary)] text-[var(--text-primary)] text-sm border border-[var(--border-default)] rounded-lg px-3 py-2" />
+                        <label className="text-[10px] text-[var(--text-muted)] block mb-1">State</label>
+                        <input value={selectedState} disabled className="w-full bg-[var(--surface-2)] text-[var(--text-primary)] text-[12px] border border-[var(--border-default)] rounded-[6px] px-2.5 py-1.5 opacity-60" />
                     </div>
                     <div data-tour="dss-district">
-                        <label className="text-xs font-medium text-[var(--text-muted)] block mb-1">District</label>
+                        <label className="text-[10px] text-[var(--text-muted)] block mb-1">District</label>
                         <select value={selectedDistrict} onChange={e => setSelectedDistrict(e.target.value)}
-                            className="w-full bg-[var(--bg-primary)] text-[var(--text-primary)] text-sm border border-[var(--border-default)] rounded-lg px-3 py-2 focus:outline-none focus:ring-1 focus:ring-[var(--accent)]">
+                            className="dark-select">
                             <option value="">Select District...</option>
                             {DISTRICTS_LIST.map(d => <option key={d.name} value={d.name}>{d.name}</option>)}
                         </select>
                     </div>
                     <div className="grid grid-cols-2 gap-2" data-tour="dss-dates">
                         <div>
-                            <label className="text-xs font-medium text-[var(--text-muted)] block mb-1">From</label>
+                            <label className="text-[10px] text-[var(--text-muted)] block mb-1">From</label>
                             <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)}
-                                className="w-full bg-[var(--bg-primary)] text-[var(--text-primary)] text-xs border border-[var(--border-default)] rounded-lg px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-[var(--accent)]" />
+                                className="dark-input mono" />
                         </div>
                         <div>
-                            <label className="text-xs font-medium text-[var(--text-muted)] block mb-1">To</label>
+                            <label className="text-[10px] text-[var(--text-muted)] block mb-1">To</label>
                             <input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)}
-                                className="w-full bg-[var(--bg-primary)] text-[var(--text-primary)] text-xs border border-[var(--border-default)] rounded-lg px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-[var(--accent)]" />
+                                className="dark-input mono" />
                         </div>
                     </div>
                 </div>
 
                 <div className="p-4 border-b border-[var(--border-default)]" data-tour="dss-datatypes">
-                    <label className="text-xs font-medium text-[var(--text-muted)] block mb-2">Data Types</label>
+                    <label className="panel-title block mb-2">Data types</label>
                     <div className="space-y-1.5">
                         {DATA_TYPES.map(dt => (
                             <label key={dt} className="flex items-center gap-2 cursor-pointer" data-tour={`dss-dt-${dt.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`}>
                                 <input type="checkbox" checked={selectedDataTypes.includes(dt)} onChange={() => toggleDataType(dt)}
-                                    className="rounded border-[var(--border-default)] text-[var(--accent)] focus:ring-[#0B5FA5]" />
+                                    className="rounded border-[var(--border-default)] text-[var(--accent)] focus:ring-[var(--accent)]" />
                                 <span className="text-xs text-[var(--text-secondary)]">{dt}</span>
                             </label>
                         ))}
@@ -406,8 +407,7 @@ export default function DSS() {
 
                 <div className="p-4 border-b border-[var(--border-default)]">
                     <button onClick={handleGenerate} disabled={!selectedDistrict || generating} data-tour="dss-generate"
-                        className={`w-full py-2.5 rounded-lg text-sm font-semibold transition-colors ${selectedDistrict && !generating ? "bg-[var(--accent)] text-white hover:bg-[#094d87]" : "bg-[var(--bg-tertiary)] text-[var(--text-muted)] cursor-not-allowed"
-                            }`}>
+                        className={`w-full py-2 rounded-[6px] text-[13px] font-semibold transition-[filter] ${selectedDistrict && !generating ? "bg-[var(--accent)] text-[#04201C] hover:brightness-110" : "bg-[var(--surface-2)] border border-[var(--line)] text-[var(--text-muted)] cursor-not-allowed"} ${generating ? "animate-pulse" : ""}`}>
                         {generating ? "Generating..." : "Generate Report"}
                     </button>
                 </div>
@@ -417,7 +417,7 @@ export default function DSS() {
                         <div className="flex flex-col gap-3">
                             <h3 className="text-sm font-bold text-[var(--text-primary)]">{report.district} Report Summary</h3>
                             <button onClick={exportReport}
-                                className="w-full py-3 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm font-bold shadow-md transition-colors flex items-center justify-center gap-2">
+                                className="w-full py-2 bg-[var(--accent)] hover:brightness-110 text-[#04201C] rounded-[6px] text-[13px] font-semibold transition-[filter] flex items-center justify-center gap-2">
                                 <span>📥 Download District Report (PDF)</span>
                             </button>
                         </div>
@@ -435,15 +435,15 @@ export default function DSS() {
                                 ["Open plots", report.inventory.openareas.toLocaleString()],
                                 ["Activity in period", report.activity.length],
                             ].map(([k, v]) => (
-                                <div key={k} className="bg-[var(--bg-tertiary)] rounded-lg p-2">
+                                <div key={k} className="bg-[var(--surface-2)] border border-[var(--line)] rounded-[6px] px-2.5 py-2">
                                     <p className="text-[10px] text-[var(--text-muted)]">{k}</p>
-                                    <p className="text-sm font-bold text-[var(--text-primary)]">{v}</p>
+                                    <p className="mono mt-0.5 text-[14px] font-semibold text-[var(--text-primary)]">{v}</p>
                                 </div>
                             ))}
                         </div>
 
                         {/* Real change-detection aggregate */}
-                        <div className="bg-[var(--bg-tertiary)] rounded-lg p-3">
+                        <div className="bg-[var(--surface-2)] border border-[var(--line)] rounded-[6px] p-3">
                             <p className="text-xs font-medium text-[var(--text-secondary)] mb-1.5">Change Detection (this period)</p>
                             {report.cd.runs > 0 ? (
                                 <div className="space-y-1">
@@ -451,7 +451,7 @@ export default function DSS() {
                                     {Object.entries(report.cd.avg).map(([k, v]) => (
                                         <div key={k} className="flex justify-between text-[11px]">
                                             <span className="text-[var(--text-muted)]">{k}</span>
-                                            <span className="font-semibold text-[var(--text-primary)]">{v}%</span>
+                                            <span className="mono font-semibold text-[var(--text-primary)]">{v}%</span>
                                         </div>
                                     ))}
                                 </div>
@@ -466,9 +466,9 @@ export default function DSS() {
                                 <p className="text-xs font-medium text-[var(--text-muted)] mb-2">Platform activity in period (by type)</p>
                                 <ResponsiveContainer width="100%" height={140}>
                                     <BarChart data={typeChart} layout="vertical" margin={{ left: 8 }}>
-                                        <XAxis type="number" allowDecimals={false} tick={{ fontSize: 9 }} />
-                                        <YAxis type="category" dataKey="type" width={110} tick={{ fontSize: 9 }} />
-                                        <Tooltip />
+                                        <XAxis type="number" allowDecimals={false} tick={{ fontSize: 9, fill: "#64748B" }} axisLine={false} tickLine={false} />
+                                        <YAxis type="category" dataKey="type" width={110} tick={{ fontSize: 9, fill: "#92A0B5" }} axisLine={false} tickLine={false} />
+                                        <Tooltip contentStyle={{ background: "#131C2B", border: "1px solid #2A3A50", borderRadius: 6, color: "#E7ECF3", fontSize: 11 }} cursor={{ fill: "rgba(45,212,191,0.06)" }} />
                                         <Bar dataKey="n" radius={[0, 3, 3, 0]}>
                                             {typeChart.map((_, i) => <Cell key={i} fill={BAR_COLORS[i % BAR_COLORS.length]} />)}
                                         </Bar>
@@ -483,10 +483,10 @@ export default function DSS() {
                                 <p className="text-xs font-medium text-[var(--text-muted)] mb-2">Monthly activity</p>
                                 <ResponsiveContainer width="100%" height={120}>
                                     <BarChart data={report.monthly}>
-                                        <XAxis dataKey="month" tick={{ fontSize: 9 }} />
-                                        <YAxis allowDecimals={false} tick={{ fontSize: 9 }} />
-                                        <Tooltip />
-                                        <Bar dataKey="runs" fill="#14b8a6" radius={[3, 3, 0, 0]} />
+                                        <XAxis dataKey="month" tick={{ fontSize: 9, fill: "#92A0B5" }} axisLine={false} tickLine={false} />
+                                        <YAxis allowDecimals={false} tick={{ fontSize: 9, fill: "#64748B" }} axisLine={false} tickLine={false} />
+                                        <Tooltip contentStyle={{ background: "#131C2B", border: "1px solid #2A3A50", borderRadius: 6, color: "#E7ECF3", fontSize: 11 }} cursor={{ fill: "rgba(45,212,191,0.06)" }} />
+                                        <Bar dataKey="runs" fill="#2DD4BF" radius={[3, 3, 0, 0]} />
                                     </BarChart>
                                 </ResponsiveContainer>
                             </div>
