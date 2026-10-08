@@ -109,7 +109,7 @@ export default function DroneLayers({ getMap, district = "ongole", kind = "drone
     const remove = (map, id) => {
         const h = clicks.current.get(id);
         if (h) { map.off("click", `${id}-fill`, h); clicks.current.delete(id); }
-        for (const l of [`${id}-fill`, `${id}-line`, id]) if (map.getLayer(l)) map.removeLayer(l);
+        for (const l of [`${id}-label`, `${id}-fill`, `${id}-line`, id]) if (map.getLayer(l)) map.removeLayer(l);
         if (map.getSource(id)) map.removeSource(id);
         active.current.delete(id);
     };
@@ -141,6 +141,17 @@ export default function DroneLayers({ getMap, district = "ongole", kind = "drone
             paint: { "fill-color": fill, "fill-opacity": offRoad ? 0.12 : isDamage ? 0.22 : det.layer === "roads" ? 0.5 : 0.4 } }, below(map));
         map.addLayer({ id: `${id}-line`, type: "line", source: id,
             paint: { "line-color": fill, "line-width": isDamage ? 2 : 1, ...(offRoad ? { "line-dasharray": [2, 2] } : {}) } }, below(map));
+        if (isDamage) {
+            // Every detection carries its class and confidence, always visible once zoomed in.
+            map.addLayer({ id: `${id}-label`, type: "symbol", source: id, minzoom: 17,
+                layout: { "text-field": ["concat", ["coalesce", ["get", "label"], "Damage"], " ",
+                                         ["number-format", ["coalesce", ["get", "confidence"], 0], { "max-fraction-digits": 2, "min-fraction-digits": 2 }]],
+                          "text-size": ["interpolate", ["linear"], ["zoom"], 17, 10, 21, 14],
+                          "text-font": ["DIN Offc Pro Medium", "Arial Unicode MS Bold"],
+                          "text-offset": [0, -1.2], "text-allow-overlap": true, "text-ignore-placement": true },
+                paint: { "text-color": offRoad ? "#FEF08A" : "#FFFFFF", "text-halo-color": offRoad ? "#3F3F12" : "#B91C1C", "text-halo-width": 1.6 } },
+                below(map));
+        }
         const q = isDamage ? `?on_road=${offRoad ? 0 : 1}` : "";
         active.current.set(id, { url: `${gpuBase()}/results/${job.id}/${det.layer}.geojson${q}`, minzoom: det.minzoom });
         setOn((p) => ({ ...p, [id]: true }));

@@ -4,6 +4,7 @@ import { Download, ImagePlus, Play, RotateCcw, Square, X } from "lucide-react";
 import { logActivity } from "../lib/activityLog";
 import { HF_MODEL_BASE, modelFetch, probeGpu } from "../lib/modelApi";
 import { Button, Card, Pill, SectionHeader, Spinner } from "./ui";
+import { fetchFile, registerTour, unregisterTour } from "../tour/tourBus";
 
 // YOLO road-damage detector (potholes + cracks): our own final_best.pt, served on
 // CPU by the SegFormer Space at /pothole/* (no ZeroGPU quota, no third-party Space).
@@ -135,6 +136,7 @@ export default function PotholePanel() {
             else {
                 const isTif = /\.tiff?$/i.test(f.name);
                 ok.push({
+                    cache: f.cache || null,              // tour samples: a stored result if the model cannot be reached
                     id: `${f.name}-${f.size}-${Math.random().toString(36).slice(2, 7)}`,
                     file: f, upload: isTif ? null : f,
                     inputUrl: isTif ? null : URL.createObjectURL(f),
@@ -174,7 +176,13 @@ export default function PotholePanel() {
             patch(it.id, { status: "running", message: "" });
             const t0 = performance.now();
             try {
-                const d = await detect(it.upload, mode, conf, roadsOnly);
+                let d;
+                try {
+                    d = await detect(it.upload, mode, conf, roadsOnly);
+                } catch (e) {
+                    if (!it.cache) throw e;
+                    d = await (await fetch(it.cache)).json();      // tour sample: stored result of the same model
+                }
                 const ms = Math.round(performance.now() - t0);
                 const breakdown = Object.entries(d.counts || {}).map(([k, v]) => `${v} ${k.toLowerCase()}`).join(" · ");
                 const gate = d.road_filter === "on" ? ` · ${d.filtered_off_road || 0} off-road removed`
@@ -182,7 +190,8 @@ export default function PotholePanel() {
                 const message = (d.count
                     ? `${breakdown} · confidence ≥ ${d.confidence_used}${d.tiled ? " · tiled" : ""}`
                     : `No road damage found · confidence ≥ ${d.confidence_used}`) + gate;
-                patch(it.id, { status: "done", resultUrl: d.image, message, count: d.count, potholes: d.potholes, ms });
+                patch(it.id, { status: "done", resultUrl: d.image, message, count: d.count, potholes: d.potholes, ms,
+                    detections: d.detections || [], size: d.width ? `${d.width}×${d.height}` : null });
                 logActivity({
                     type: "Pothole Detection", district: "Custom Upload", area: it.file.name, status: "Completed",
                     metrics: { "Road damage": d.count, "Potholes": d.potholes, ...(d.counts || {}) },
@@ -200,6 +209,28 @@ export default function PotholePanel() {
         setRunning(false);
         setStage("");
     };
+
+    // Guided "AI for Roads" walkthrough drives this panel like a user would.
+    const api = useRef({});
+    api.current = { addFiles, run, setRoadsOnly, setMode, clear: () => setItems([]) };
+    useEffect(() => {
+        registerTour("pothole", {
+            loadSamples: async (samples) => {
+                const files = [];
+                for (const s of samples) {
+                    const f = await fetchFile(s.url, s.name, "image/jpeg");
+                    f.cache = s.cache;
+                    files.push(f);
+                }
+                api.current.clear();
+                api.current.addFiles(files);
+            },
+            setRoadsOnly: (v) => api.current.setRoadsOnly(v),
+            setMode: (m) => api.current.setMode(m),
+            run: () => { api.current.run(); },
+        });
+        return () => unregisterTour("pothole");
+    }, []);
 
     const queued = items.filter((i) => i.upload && (i.status === "queued" || i.status === "error")).length;
     const preparing = items.some((i) => i.status === "preparing");
@@ -271,7 +302,7 @@ export default function PotholePanel() {
                         </label>
                     )}
                     <div className="flex gap-1.5">
-                        <Button variant="primary" className={`flex-1 !py-2 ${running ? "animate-pulse" : ""}`} onClick={run} disabled={running || !queued}>
+                        <Button data-tour="pothole-run" variant="primary" className={`flex-1 !py-2 ${running ? "animate-pulse" : ""}`} onClick={run} disabled={running || !queued}>
                             {running ? <Spinner size={13} /> : <Play size={13} />}
                             {running ? "Detecting…" : queued ? `Detect road damage (${queued} image${queued > 1 ? "s" : ""})` : preparing ? "Preparing TIFF…" : items.length ? "All images analysed" : "Add images to start"}
                         </Button>
@@ -316,8 +347,8 @@ export default function PotholePanel() {
 
             {/* Results */}
             <div className="space-y-2">
-                {items.map((it) => (
-                    <Card key={it.id} className="anim-fade-up overflow-hidden">
+                {items.map((it, idx) => (
+                    <Card key={it.id} data-tour={`pothole-result-${idx}`} className="anim-fade-up overflow-hidden">
                         <div className="flex items-center gap-2 px-3 py-2" style={{ borderBottom: "1px solid var(--line)" }}>
                             <span className="mono min-w-0 flex-1 truncate text-[11.5px]" style={{ color: "var(--text)" }} title={it.file.name}>{it.file.name}</span>
                             {it.status === "preparing" && <Pill colour="var(--signal)"><Spinner size={9} /> Reading TIFF</Pill>}
@@ -372,6 +403,19 @@ export default function PotholePanel() {
                             <p className="mono px-3 py-1.5 text-[10.5px]" style={{ color: "var(--text-dim)", borderTop: "1px solid var(--line)" }}>
                                 {it.message} · {(it.ms / 1000).toFixed(1)}s
                             </p>
+                        )}
+                        {it.status === "done" && it.detections?.length > 0 && (
+                            <div className="stagger flex flex-wrap gap-1.5 px-3 pb-2.5 pt-0.5" data-tour="pothole-detections">
+                                {it.detections.map((d, k) => (
+                                    <span key={k} className="anim-fade-up inline-flex items-center gap-1.5 rounded-[5px] px-2 py-1 text-[10.5px]"
+                                        style={{ border: "1px solid var(--line)", background: "var(--surface-2)", color: "var(--text)" }}>
+                                        <span className="h-2 w-2 rounded-full" style={{ background: d.is_pothole ? "#EF4444" : "#F5A524", boxShadow: `0 0 8px ${d.is_pothole ? "#EF4444" : "#F5A524"}` }} />
+                                        {d.label}
+                                        <span className="mono" style={{ color: "var(--signal)" }}>{Math.round(d.confidence * 100)}%</span>
+                                        <span className="mono" style={{ color: "var(--text-mute)" }}>{Math.round(d.bbox_xyxy[2] - d.bbox_xyxy[0])}×{Math.round(d.bbox_xyxy[3] - d.bbox_xyxy[1])} px</span>
+                                    </span>
+                                ))}
+                            </div>
                         )}
                     </Card>
                 ))}

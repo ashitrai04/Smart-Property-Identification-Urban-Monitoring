@@ -1,0 +1,99 @@
+{
+ "summary": {
+  "raw": 2485,
+  "on_road": 1300,
+  "removed": 1185,
+  "on_roofs": 536,
+  "classes": {
+   "Pothole": 1278,
+   "Longitudinal crack": 9,
+   "Repaired patch": 7,
+   "Transverse crack": 6
+  },
+  "bounds": [
+   80.426797,
+   16.299522,
+   80.447432,
+   16.31482
+  ]
+ },
+ "stops": [
+  {
+   "n_on_road": 39,
+   "n_raw": 51,
+   "classes": {
+    "Pothole": 38,
+    "Transverse crack": 1
+   },
+   "max_conf": 0.96,
+   "mean_size_m": 1.2,
+   "center": [
+    80.4438,
+    16.305567
+   ],
+   "best": [
+    80.4436966,
+    16.3052122
+   ],
+   "best_conf": 0.96,
+   "best_size_m": 1.1
+  },
+  {
+   "n_on_road": 30,
+   "n_raw": 38,
+   "classes": {
+    "Pothole": 30
+   },
+   "max_conf": 0.83,
+   "mean_size_m": 1.2,
+   "center": [
+    80.439187,
+    16.309751
+   ],
+   "best": [
+    80.4392017,
+    16.3100297
+   ],
+   "best_conf": 0.83,
+   "best_size_m": 0.9
+  },
+  {
+   "n_on_road": 26,
+   "n_raw": 40,
+   "classes": {
+    "Pothole": 26
+   },
+   "max_conf": 0.92,
+   "mean_size_m": 1.9,
+   "center": [
+    80.438315,
+    16.303534
+   ],
+   "best": [
+    80.4391028,
+    16.3034728
+   ],
+   "best_conf": 0.92,
+   "best_size_m": 1.4
+  },
+  {
+   "n_on_road": 20,
+   "n_raw": 30,
+   "classes": {
+    "Pothole": 20
+   },
+   "max_conf": 0.93,
+   "mean_size_m": 1.1,
+   "center": [
+    80.429166,
+    16.305423
+   ],
+   "best": [
+    80.4286553,
+    16.3051076
+   ],
+   "best_conf": 0.93,
+   "best_size_m": 1.7
+  }
+ ]
+}

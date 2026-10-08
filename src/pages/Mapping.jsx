@@ -17,7 +17,9 @@ import { useGpuStatus } from "../lib/modelApi";
 import { addArcGISFeatureLayer, addLocalGeoJSONLayer, reloadVisibleLayers, removeLayerGroup } from "../utils/mapLayers";
 import { parseAOIFile, getFeaturesBounds, computeTotalAreaKm2, unionGeometry, polygonCentroid } from "../utils/aoiUtils";
 import { registerTour, unregisterTour } from "../tour/tourBus";
+import * as roadsStory from "../tour/roadsStory";
 import { computeAOIStats, warmBackend } from "../utils/aoiStats";
+import { computeAOIPotholes } from "../utils/aoiPotholes";
 import { logActivity } from "../lib/activityLog";
 import { load as lercLoad, decode as lercDecode } from "lerc";
 import proj4 from "proj4";
@@ -477,6 +479,9 @@ export default function Mapping() {
 
     // ── AOI analytics popup ──
     const [aoiStats, setAoiStats] = useState(null);           // { perPolygon, totals, fetched }
+    const [aoiPotholes, setAoiPotholes] = useState(null);     // road damage inside the AOI (drone results) | "loading"
+    const potholeAbortRef = useRef(null);
+    const drawCreateRef = useRef(null);                       // the ONE draw.create listener of the live draw control
     const [statsLoading, setStatsLoading] = useState(false);
     const [statsOpen, setStatsOpen] = useState(false);
     const [selectedParcel, setSelectedParcel] = useState(null); // index of clicked polygon (multi-polygon AOIs)
@@ -1491,6 +1496,29 @@ export default function Mapping() {
         else setStatsOpen(true); // show empty-state guidance
     }, [statsOpen, selectedDistrict, refreshAOIStats]);
 
+    // Remove the draw control together with its draw.create listener. Leaving listeners
+    // behind made every later drawing fire stale handlers for a removed control, so the
+    // second double-click never completed the polygon.
+    const removeDraw = (map) => {
+        if (drawCreateRef.current) { map.off("draw.create", drawCreateRef.current); drawCreateRef.current = null; }
+        if (drawRef.current) {
+            try { drawRef.current.deleteAll(); } catch (_) { }
+            try { map.removeControl(drawRef.current); } catch (_) { }
+            drawRef.current = null;
+        }
+    };
+
+    // Road damage inside the AOI (from the GPU server's drone results) — independent of the district data.
+    const refreshAOIPotholes = (features) => {
+        if (potholeAbortRef.current) potholeAbortRef.current.abort();
+        const c = new AbortController();
+        potholeAbortRef.current = c;
+        setAoiPotholes("loading");
+        computeAOIPotholes(features, c.signal)
+            .then((r) => { if (!c.signal.aborted) setAoiPotholes(r); })
+            .catch((e) => { if (e?.name !== "AbortError") setAoiPotholes(null); });
+    };
+
     // ── Apply an AOI (array of polygons) to the map (renders + flies + filters + analyses) ──
     const applyAOI = useCallback((features) => {
         const map = mapRef.current;
@@ -1502,13 +1530,11 @@ export default function Mapping() {
         setSelectedParcel(null);
         aoiFeaturesRef.current = list; // persist across style rebuilds
 
-        if (drawRef.current) {
-            try { map.removeControl(drawRef.current); } catch (_) { }
-            drawRef.current = null;
-            setDrawMode(false);
-        }
+        if (drawRef.current) { removeDraw(map); setDrawMode(false); }
 
         renderAOILayers(map, list);
+        refreshAOIPotholes(list);
+        setStatsOpen(true);
 
         const bounds = getFeaturesBounds(list);
         map.fitBounds(
@@ -1535,6 +1561,9 @@ export default function Mapping() {
         })();
     }, [renderAOILayers, applyAOIVectorFilter, selectedDistrict, detectDistrictForFeatures, handleDistrictSelect, refreshAOIStats, ensureAOIOnTop]);
 
+    const applyAOIRef = useRef(applyAOI);
+    applyAOIRef.current = applyAOI;
+
     // ── Start draw mode ──
     const startDrawAOI = useCallback(() => {
         const map = mapRef.current;
@@ -1560,18 +1589,17 @@ export default function Mapping() {
             map.addControl(draw);
             drawRef.current = draw;
 
-            // Listen for draw.create event
-            map.on('draw.create', (e) => {
-                const feature = e.features[0];
+            // Exactly one listener, removed with the control; uses the latest applyAOI.
+            const onCreate = (e) => {
+                const feature = e.features?.[0];
                 if (feature && feature.geometry.type === 'Polygon') {
-                    // Remove from draw control and apply as AOI
-                    draw.deleteAll();
-                    map.removeControl(draw);
-                    drawRef.current = null;
-                    applyAOI(feature);
+                    removeDraw(map);
                     setDrawMode(false);
+                    applyAOIRef.current(feature);
                 }
-            });
+            };
+            drawCreateRef.current = onCreate;
+            map.on('draw.create', onCreate);
         } else {
             drawRef.current.changeMode('draw_polygon');
         }
@@ -1605,11 +1633,9 @@ export default function Mapping() {
 
         aoiFeaturesRef.current = null;
 
-        // Remove draw control
-        if (drawRef.current) {
-            try { map.removeControl(drawRef.current); } catch (_) {}
-            drawRef.current = null;
-        }
+        removeDraw(map);
+        if (potholeAbortRef.current) { potholeAbortRef.current.abort(); potholeAbortRef.current = null; }
+        setAoiPotholes(null);
 
         // Stop any in-flight analysis
         if (statsAbortRef.current) { statsAbortRef.current.abort(); statsAbortRef.current = null; }
@@ -1649,11 +1675,7 @@ export default function Mapping() {
     const cancelDraw = useCallback(() => {
         const map = mapRef.current;
         if (!map) return;
-        if (drawRef.current) {
-            drawRef.current.deleteAll();
-            try { map.removeControl(drawRef.current); } catch (_) {}
-            drawRef.current = null;
-        }
+        removeDraw(map);
         setDrawMode(false);
     }, []);
 
@@ -1677,6 +1699,8 @@ export default function Mapping() {
             drawDemoAOI: (feat) => applyAOI([feat]),
             uploadParcels: async (file) => { const feats = await parseAOIFile(file); applyAOI(feats); },
             selectParcel: (i) => focusParcel(i),
+            // "AI for Roads" story map (Guntur drone survey)
+            roadsStory: async (action, ...args) => { const m = mapRef.current; if (m) await roadsStory[action](m, ...args); },
         });
     });
     useEffect(() => () => unregisterTour("mapping"), []);
@@ -1932,7 +1956,7 @@ export default function Mapping() {
             {/* ═══════════ MAP ═══════════ */}
             <main className="relative min-w-0 flex-1">
                 {/* Inline: mapbox-gl.css sets .mapboxgl-map { position: relative }, which beats the Tailwind utility. */}
-                <div ref={mapContainerRef} style={{ position: "absolute", inset: 0 }} />
+                <div ref={mapContainerRef} data-tour="map-canvas" style={{ position: "absolute", inset: 0 }} />
 
                 {/* Drawing hint */}
                 {drawMode && (
@@ -2063,6 +2087,7 @@ export default function Mapping() {
                                                 <div className="progress-sweep rounded" />
                                             </div>
                                         ) : !aoiStats ? (
+                                            aoiPotholes && aoiPotholes !== "loading" && aoiPotholes.covered ? null :
                                             <Empty>No analytics yet. Select the district that contains this AOI, or check that the model backend is online.</Empty>
                                         ) : (() => {
                                             const sel = selectedParcel != null ? aoiStats.perPolygon[selectedParcel] : null;
@@ -2134,6 +2159,45 @@ export default function Mapping() {
                                                 </>
                                             );
                                         })()}
+
+                                        {/* Road damage from the drone survey */}
+                                        {aoiPotholes === "loading" ? (
+                                            <div className="flex items-center gap-2 text-[11px]" style={{ color: "var(--text-dim)" }}>
+                                                <Spinner size={11} /> Counting potholes in this area…
+                                            </div>
+                                        ) : aoiPotholes?.covered ? (() => {
+                                            const sel = selectedParcel != null ? aoiPotholes.perPolygon[selectedParcel] : null;
+                                            const total = sel ? sel.total : aoiPotholes.total;
+                                            const pot = sel ? sel.potholes : aoiPotholes.potholes;
+                                            return (
+                                                <div>
+                                                    <div className="mb-1.5 text-[10px] uppercase tracking-[0.09em]" style={{ color: "var(--text-mute)" }}>
+                                                        Road damage · drone survey{sel ? ` · polygon ${selectedParcel + 1}` : ""}
+                                                    </div>
+                                                    <div className="stagger grid grid-cols-2 gap-1.5">
+                                                        {[
+                                                            { label: "Potholes", value: pot.toLocaleString(), color: "#EF4444" },
+                                                            { label: "Cracks & patches", value: (total - pot).toLocaleString(), color: "#F5A524" },
+                                                            { label: "Per km² ", value: (headlineArea => headlineArea ? Math.round(total / headlineArea).toLocaleString() : "—")(
+                                                                (sel ? aoiStats?.perPolygon?.[selectedParcel]?.areaKm2 : aoiStats?.totals?.areaKm2) || null), color: "#FB7185" },
+                                                            { label: "Mean confidence", value: aoiPotholes.meanConf != null && !sel ? aoiPotholes.meanConf.toFixed(2) : "—", color: "var(--signal)" },
+                                                        ].map((x) => (
+                                                            <div key={x.label} className="relative overflow-hidden rounded-[6px] px-2.5 py-2"
+                                                                style={{ background: "var(--surface-2)", border: "1px solid var(--line)" }}>
+                                                                <span className="absolute inset-x-0 top-0 h-[2px]" style={{ background: x.color }} />
+                                                                <div className="truncate text-[9.5px] uppercase tracking-[0.09em]" style={{ color: "var(--text-mute)" }}>{x.label}</div>
+                                                                <div className="mono mt-1 text-[17px] font-semibold leading-none" style={{ color: "var(--text)" }}>{x.value}</div>
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                    <p className="mt-1.5 text-[10px] leading-relaxed" style={{ color: "var(--text-mute)" }}>
+                                                        Verified on-road detections from {aoiPotholes.sources.join(", ")}.
+                                                    </p>
+                                                </div>
+                                            );
+                                        })() : aoiPotholes && !aoiPotholes.covered ? (
+                                            <p className="text-[10px]" style={{ color: "var(--text-mute)" }}>Road damage: no drone survey covers this area yet.</p>
+                                        ) : null}
                                     </div>
                                 </div>
                                 </Draggable>

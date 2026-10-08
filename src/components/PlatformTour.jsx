@@ -1,8 +1,9 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useLayoutEffect, useRef, useCallback } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { Play, Pause, ChevronRight, Compass, MapPin, Upload as UploadIcon, BarChart2, Layers, Database } from "lucide-react";
 import { callTour, fetchFile, sleep, waitForEl } from "../tour/tourBus";
+import { ROADS_STEPS, RoadsHero } from "../tour/roadsTour";
 import "./PlatformTour.css";
 
 // A small, low-density AOI on the Vijayawada outskirts (fast to analyse).
@@ -184,11 +185,27 @@ const STEPS = [
       desc: "Dashboard → live mapping & area analytics → AI segmentation & change detection → activity logs → official reports. <strong>Now it's yours to explore.</strong> Replay this walkthrough anytime from the <strong>Guided Tour</strong> button at the bottom-right.", hold: 6000 },
 ];
 
+// Tours: the platform walkthrough and the themed "AI for Roads" walkthrough.
+const TOURS = { platform: STEPS, roads: ROADS_STEPS };
+
 const CursorSvg = () => (
     <svg viewBox="0 0 24 24" fill="none"><path d="M5.65 2.92L19.08 12.03C19.56 12.35 19.36 13.1 18.79 13.13L12.48 13.46L9.8 19.23C9.56 19.75 8.8 19.67 8.68 19.12L5.05 3.61C4.94 3.12 5.28 2.67 5.65 2.92Z" fill="#2dd4bf" stroke="#0d9488" strokeWidth="0.8" /></svg>
 );
 
-function TourWelcome({ onStart, onDismiss }) {
+function TourWelcome({ onStart, onDismiss, tour, onSwitch }) {
+    if (tour === "roads") return (
+        <div className="tour-welcome">
+            <div className="tour-welcome-card">
+                <div className="tour-welcome-icon"><Compass size={26} /></div>
+                <div className="tour-welcome-title">AI for Roads, Bridges &amp; Tunnels</div>
+                <div className="tour-welcome-subtitle">A guided walkthrough of pavement-distress detection: the model, live pothole detection on drone road images, and a story map of the Guntur drone survey verified against ground-truth roads. About 3 minutes.</div>
+                <div className="tour-welcome-actions">
+                    <button className="tour-btn-dismiss" onClick={() => onSwitch("platform")}>Platform tour instead</button>
+                    <button className="tour-btn-start" onClick={onStart}><Play size={15} /> Start the walkthrough</button>
+                </div>
+            </div>
+        </div>
+    );
     return (
         <div className="tour-welcome">
             <div className="tour-welcome-card">
@@ -205,6 +222,7 @@ function TourWelcome({ onStart, onDismiss }) {
                 </div>
                 <div className="tour-welcome-actions">
                     <button className="tour-btn-dismiss" onClick={onDismiss}>Explore on my own</button>
+                    <button className="tour-btn-dismiss" onClick={() => onSwitch("roads")}>AI for Roads walkthrough</button>
                     <button className="tour-btn-start" onClick={onStart}><Play size={15} /> Start the Tour</button>
                 </div>
             </div>
@@ -216,6 +234,9 @@ export default function PlatformTour() {
     const navigate = useNavigate();
     const location = useLocation();
     const [phase, setPhase] = useState("idle"); // idle | welcome | running
+    const [tour, setTour] = useState(() => (new URLSearchParams(window.location.search).get("tour") === "roads" ? "roads" : "platform"));
+    const STEPS = TOURS[tour];
+    const stepsRef = useRef(STEPS); stepsRef.current = STEPS;
     const [si, setSi] = useState(0);
     const [paused, setPaused] = useState(false);
     const [sr, setSr] = useState(null);                 // spotlight rect
@@ -226,13 +247,27 @@ export default function PlatformTour() {
     const [ttVis, setTtVis] = useState(false);
     const [working, setWorking] = useState(false);       // long AI wait in progress
     const timer = useRef(null);
+    const ttRef = useRef(null);
     const siRef = useRef(0); siRef.current = si;
     const pausedRef = useRef(false); pausedRef.current = paused;
     const locRef = useRef(location.pathname); locRef.current = location.pathname;
     const step = STEPS[si] || null;
 
+    // Keep the caption card fully on screen whatever its height (stat chips make it taller).
+    useLayoutEffect(() => {
+        const el = ttRef.current;
+        if (!el || !ttVis) return;
+        const r = el.getBoundingClientRect(), m = 14;
+        const y = Math.max(m, Math.min(tp.y, window.innerHeight - r.height - m));
+        if (Math.abs(y - tp.y) > 1) setTp((p) => ({ ...p, y }));
+    });
+
     // Auto-show the welcome popup on first load
     useEffect(() => {
+        if (new URLSearchParams(window.location.search).get("tour")) {     // ?tour=roads opens it directly (for recording)
+            const t = setTimeout(() => setPhase("welcome"), 900);
+            return () => clearTimeout(t);
+        }
         if (!localStorage.getItem("sp_tour_seen")) {
             const t = setTimeout(() => setPhase((p) => (p === "idle" ? "welcome" : p)), 900);
             return () => clearTimeout(t);
@@ -241,7 +276,7 @@ export default function PlatformTour() {
 
     // The command bar's Guide button opens the welcome card.
     useEffect(() => {
-        const open = () => { setSi(0); setPaused(false); setPhase("welcome"); };
+        const open = (e) => { if (e?.detail?.tour) setTour(e.detail.tour); setSi(0); setPaused(false); setPhase("welcome"); };
         window.addEventListener("sp:tour", open);
         return () => window.removeEventListener("sp:tour", open);
     }, []);
@@ -319,7 +354,7 @@ export default function PlatformTour() {
     const goNext = useCallback(() => {
         if (timer.current) clearTimeout(timer.current);
         const n = siRef.current + 1;
-        if (n >= STEPS.length) { exit(); return; }
+        if (n >= stepsRef.current.length) { exit(); return; }
         setSi(n);
     }, [exit]);
 
@@ -327,12 +362,12 @@ export default function PlatformTour() {
     useEffect(() => {
         if (phase !== "running") return;
         let cancelled = false;
-        const s = STEPS[si]; if (!s) { exit(); return; }
+        const s = stepsRef.current[si]; if (!s) { exit(); return; }
         setTtVis(false); setWorking(false);
         (async () => {
             if (s.route) await goRoute(s.route);
             if (cancelled) return;
-            await focus(s.target);
+            if (s.target) await focus(s.target); else { setSr(null); posTT(null); }
             setTtVis(true);
             await sleep(1100);                        // brief pause before acting
             if (cancelled) return;
@@ -363,7 +398,7 @@ export default function PlatformTour() {
             }
             if (cancelled) return;
 
-            await focus(s.postTarget || s.target);    // re-anchor on the outcome
+            if (s.postTarget || s.target) await focus(s.postTarget || s.target);    // re-anchor on the outcome
             if (!pausedRef.current) timer.current = setTimeout(() => { if (siRef.current === si) goNext(); }, s.hold || 5000);
         })();
         return () => { cancelled = true; if (timer.current) clearTimeout(timer.current); };
@@ -374,7 +409,7 @@ export default function PlatformTour() {
         setPaused((p) => {
             const np = !p;
             if (np) { if (timer.current) clearTimeout(timer.current); }
-            else { const s = STEPS[siRef.current]; timer.current = setTimeout(() => goNext(), (s?.hold || 5000) / 2); }
+            else { const s = stepsRef.current[siRef.current]; timer.current = setTimeout(() => goNext(), (s?.hold || 5000) / 2); }
             return np;
         });
     };
@@ -386,21 +421,39 @@ export default function PlatformTour() {
         <AnimatePresence>
             {phase === "welcome" && (
                 <motion.div key="w" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.3 }}>
-                    <TourWelcome onStart={() => { setSi(0); setPhase("running"); }} onDismiss={exit} />
+                    <TourWelcome tour={tour} onSwitch={setTour} onStart={() => { setSi(0); setPhase("running"); }} onDismiss={exit} />
                 </motion.div>
             )}
             {phase === "running" && step && (
                 <motion.div key="t" className="tour-overlay" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.3 }}>
-                    {sr ? <div className="tour-spotlight" style={{ top: sr.top, left: sr.left, width: sr.width, height: sr.height }} />
+                    {step.hero ? <div className="tour-backdrop active rh-backdrop" />
+                        : step.target === '[data-tour="map-canvas"]' ? null          /* story map: keep the map bright */
+                        : sr ? <div className="tour-spotlight" style={{ top: sr.top, left: sr.left, width: sr.width, height: sr.height }} />
                         : <div className="tour-backdrop active" />}
-                    <div className={`tour-cursor ${clicking ? "clicking" : ""}`} style={{ left: cur.x, top: cur.y }}><CursorSvg /></div>
+                    {step.hero && (
+                        <motion.div key={`hero${si}`} className="rh-stage" initial={{ opacity: 0, scale: 0.97 }} animate={{ opacity: 1, scale: 1 }} transition={{ duration: 0.5 }}>
+                            <RoadsHero kind={step.hero} />
+                            <div className="rh-controls">
+                                <div className="tour-tooltip-progress">
+                                    <div className="tour-tooltip-progress-bar"><div className="tour-tooltip-progress-fill" style={{ width: `${((si + 1) / STEPS.length) * 100}%` }} /></div>
+                                    <span>{si + 1}/{STEPS.length}</span>
+                                </div>
+                                <div className="tour-tooltip-actions">
+                                    <button className="tour-btn tour-btn-skip" onClick={exit}>Skip</button>
+                                    <button className="tour-btn tour-btn-pause" onClick={togglePause}>{paused ? <Play size={12} /> : <Pause size={12} />}</button>
+                                    <button className="tour-btn tour-btn-next" onClick={goNext}>{si + 1 >= STEPS.length ? "Finish" : "Next"} <ChevronRight size={13} /></button>
+                                </div>
+                            </div>
+                        </motion.div>
+                    )}
+                    <div className={`tour-cursor ${clicking ? "clicking" : ""}`} style={{ left: cur.x, top: cur.y, opacity: step.hero ? 0 : 1 }}><CursorSvg /></div>
                     <AnimatePresence>
                         {ripple && <motion.div key={ripple.id} className="tour-cursor-ripple" style={{ left: ripple.x, top: ripple.y }}
                             initial={{ opacity: 1 }} animate={{ opacity: 0 }} transition={{ duration: 0.6 }} onAnimationComplete={() => setRipple(null)} />}
                     </AnimatePresence>
                     <AnimatePresence>
-                        {ttVis && (
-                            <motion.div key={`tt${si}`} className="tour-tooltip" style={{ left: tp.x, top: tp.y }}
+                        {ttVis && !step.hero && (
+                            <motion.div key={`tt${si}`} ref={ttRef} className="tour-tooltip" style={{ left: tp.x, top: tp.y }}
                                 initial={{ opacity: 0, y: 8, scale: 0.96 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, scale: 0.96 }} transition={{ duration: 0.2 }}>
                                 <div className="tour-tooltip-glow" />
                                 <div className="tour-tooltip-header">
@@ -408,6 +461,15 @@ export default function PlatformTour() {
                                     <span className="tour-tooltip-title">{step.title}</span>
                                 </div>
                                 <p className="tour-tooltip-desc" dangerouslySetInnerHTML={{ __html: step.desc }} />
+                                {step.stats && (
+                                    <div className="rh-stats">
+                                        {step.stats.map(([k, v], i) => (
+                                            <motion.div key={k} className="rh-stat" initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.25 + i * 0.1 }}>
+                                                <b>{v}</b><span>{k}</span>
+                                            </motion.div>
+                                        ))}
+                                    </div>
+                                )}
                                 {working && (
                                     <div className="tour-working"><span className="tour-working-spinner" /> Working — waiting for this to finish…</div>
                                 )}
