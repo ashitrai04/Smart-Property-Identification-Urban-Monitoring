@@ -16,7 +16,7 @@ for d in (RAW, COGS, RESULTS):
 API_KEY = os.environ.get("SP_API_KEY", "")          # required for ingest / jobs / deletes
 CORS_ORIGINS = [o.strip() for o in os.environ.get(
     "SP_CORS_ORIGINS",
-    "https://smart-property-identification-urban.vercel.app,http://localhost:5173,http://localhost:5179",
+    "https://smart-property-identification-urban.vercel.app,https://urbanly-ai.vercel.app,http://localhost:5173,http://localhost:5179",
 ).split(",") if o.strip()]
 
 # Compression for ingested imagery: JPEG (YCbCr) is ~10x smaller than raw RGB
