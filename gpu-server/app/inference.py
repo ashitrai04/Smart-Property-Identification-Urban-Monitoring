@@ -249,6 +249,13 @@ def _heal(pred, avg_prob):
     return pred
 
 
+# Overlapping chips are blended with a feathered weight (high in the chip centre,
+# low at its border, where the model sees least context) instead of a flat average,
+# so chip borders leave no visible seams in the class map.
+_h = np.hanning(CHIP_SIZE + 2)[1:-1].astype(np.float32)
+_FEATHER = np.maximum(np.outer(_h, _h), 0.02)
+
+
 # ───────── main entry ─────────
 def segment(model, rgb_u8: np.ndarray) -> np.ndarray:
     """Return a (H, W) int class map for an RGB uint8 image."""
@@ -295,8 +302,9 @@ def segment(model, rgb_u8: np.ndarray) -> np.ndarray:
             print(f"[segment] GPU memory short — batch -> {batch}", flush=True)
             continue
         for k, (y, x, ch, cw) in enumerate(chunk):
-            prob_sum[:, y:y+ch, x:x+cw] += probs[k, :, :ch, :cw]
-            cnt[y:y+ch, x:x+cw] += 1.0
+            w = _FEATHER[:ch, :cw]
+            prob_sum[:, y:y+ch, x:x+cw] += probs[k, :, :ch, :cw] * w
+            cnt[y:y+ch, x:x+cw] += w
         i += len(chunk)
 
     avg = prob_sum / np.maximum(cnt[None], 1e-6)

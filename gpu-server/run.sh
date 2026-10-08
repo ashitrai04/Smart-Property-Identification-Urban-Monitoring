@@ -7,6 +7,8 @@ export HF_HOME="${HF_HOME:-$PWD/weights/hf}" YOLO_CONFIG_DIR="${YOLO_CONFIG_DIR:
 # Launched from a Jupyter notebook, the process inherits MPLBACKEND=module://matplotlib_inline…,
 # which does not exist in this venv and crashes matplotlib on import. Always headless here.
 export MPLBACKEND=Agg
+# Shared GPU: return freed blocks and avoid fragmentation when memory is tight.
+export PYTORCH_CUDA_ALLOC_CONF="${PYTORCH_CUDA_ALLOC_CONF:-expandable_segments:True}"
 PORT="${PORT:-8800}"
 MIN_FREE_MB="${MIN_FREE_MB:-2500}"
 

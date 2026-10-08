@@ -26,7 +26,7 @@ else
   nohup bin/cloudflared tunnel --no-autoupdate --url "http://127.0.0.1:$PORT" > data/logs/tunnel.log 2>&1 &
   echo $! > data/tunnel.pid
   for i in $(seq 1 30); do
-    url=$(grep -oE 'https://[a-z0-9-]+\.trycloudflare\.com' data/logs/tunnel.log | head -1 || true)
+    url=$(grep -aoE 'https://[a-z0-9-]+\.trycloudflare\.com' data/logs/tunnel.log | head -1 || true)
     [ -n "$url" ] && break; sleep 1
   done
   echo "$url" > data/public_url.txt

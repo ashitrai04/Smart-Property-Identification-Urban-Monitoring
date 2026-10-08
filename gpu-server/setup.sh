@@ -31,13 +31,17 @@ mkdir -p data/raw data/cogs data/results weights/hf bin app/demo
 # Large files are fetched here from the public SegFormer Space instead of being
 # uploaded through the browser (big Jupyter uploads tend to stop partway).
 SPACE_RAW="https://huggingface.co/spaces/asashit/smart-property-segformer/resolve/main"
-fetch() {   # fetch <remote path> <local path> <min bytes>
+# Model weights live in a PRIVATE model repo: put HF_TOKEN=<read token> in config.env.
+WEIGHTS_RAW="https://huggingface.co/asashit/smart-property-weights/resolve/main"
+HF_TOKEN="${HF_TOKEN:-$(grep -E '^HF_TOKEN=' config.env 2>/dev/null | cut -d= -f2-)}"
+fetch() {   # fetch <remote path> <local path> <min bytes> [base url]
   if [ -f "$2" ] && [ "$(stat -c %s "$2")" -ge "$3" ]; then return 0; fi
   echo "== downloading $1"
-  curl -fL --retry 5 --retry-delay 3 -C - -o "$2.part" "$SPACE_RAW/$1" && mv "$2.part" "$2"
+  curl -fL --retry 5 --retry-delay 3 -C - ${HF_TOKEN:+-H "Authorization: Bearer $HF_TOKEN"} \
+    -o "$2.part" "${4:-$SPACE_RAW}/$1" && mv "$2.part" "$2"
 }
-fetch best_model.pth weights/best_model.pth 300000000      # SegFormer-B5, 323 MB
-fetch final_best.pt  weights/final_best.pt  20000000       # pothole YOLO (if not in the zip)
+fetch best_model.pth weights/best_model.pth 300000000 "$WEIGHTS_RAW"   # SegFormer-B5, 323 MB
+fetch final_best.pt  weights/final_best.pt  20000000  "$WEIGHTS_RAW"   # pothole YOLO
 for f in cd_past.png cd_present.png seg_input.png seg1_input.png seg2_input.png veg_past.png veg_present.png \
          change.json change_building.json change_veg.json segmentation.json segmentation1.json segmentation2.json; do
   fetch "demo/$f" "app/demo/$f" 1000                          # guided-tour demo assets

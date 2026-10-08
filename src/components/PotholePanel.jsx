@@ -22,11 +22,12 @@ function warm() {
     return warmPromise;
 }
 
-async function detect(file, mode, conf, signal) {
+async function detect(file, mode, conf, roadsOnly, signal) {
     const fd = new FormData();
     fd.append("file", file, file.name);
     fd.append("mode", mode);
     fd.append("conf", String(conf));
+    fd.append("roads_only", roadsOnly ? "true" : "false");   // GPU server: drop detections off the road
     const r = await modelFetch("/pothole/detect", { method: "POST", body: fd, signal });
     if (!r.ok) {
         let detail = `HTTP ${r.status}`;
@@ -113,6 +114,7 @@ export default function PotholePanel() {
     const [items, setItems] = useState([]);          // { id, file, inputUrl, status, resultUrl, message, count, ms }
     const [mode, setMode] = useState(MODES[0]);
     const [conf, setConf] = useState(0.15);
+    const [roadsOnly, setRoadsOnly] = useState(true);
     const [running, setRunning] = useState(false);
     const [stage, setStage] = useState("");
     const [drag, setDrag] = useState(false);
@@ -172,12 +174,14 @@ export default function PotholePanel() {
             patch(it.id, { status: "running", message: "" });
             const t0 = performance.now();
             try {
-                const d = await detect(it.upload, mode, conf);
+                const d = await detect(it.upload, mode, conf, roadsOnly);
                 const ms = Math.round(performance.now() - t0);
                 const breakdown = Object.entries(d.counts || {}).map(([k, v]) => `${v} ${k.toLowerCase()}`).join(" · ");
-                const message = d.count
+                const gate = d.road_filter === "on" ? ` · ${d.filtered_off_road || 0} off-road removed`
+                    : d.road_filter === "unavailable" ? " · roads-only needs the GPU server" : "";
+                const message = (d.count
                     ? `${breakdown} · confidence ≥ ${d.confidence_used}${d.tiled ? " · tiled" : ""}`
-                    : `No road damage found · confidence ≥ ${d.confidence_used}`;
+                    : `No road damage found · confidence ≥ ${d.confidence_used}`) + gate;
                 patch(it.id, { status: "done", resultUrl: d.image, message, count: d.count, potholes: d.potholes, ms });
                 logActivity({
                     type: "Pothole Detection", district: "Custom Upload", area: it.file.name, status: "Completed",
@@ -243,6 +247,17 @@ export default function PotholePanel() {
                             </button>
                         ))}
                     </div>
+                    <button onClick={() => setRoadsOnly((v) => !v)} disabled={running}
+                        className="flex w-full items-center justify-between rounded-[6px] px-3 py-2 text-left transition-colors disabled:opacity-50"
+                        style={{ border: `1px solid ${roadsOnly ? "var(--signal)" : "var(--line)"}`, background: roadsOnly ? "var(--signal-dim)" : "transparent" }}>
+                        <span>
+                            <span className="block text-[12.5px] font-medium" style={{ color: "var(--text)" }}>Roads only</span>
+                            <span className="block text-[10.5px]" style={{ color: "var(--text-mute)" }}>Ignore detections on roofs, fields and open plots (GPU server)</span>
+                        </span>
+                        <span className="h-[14px] w-[24px] shrink-0 rounded-full p-[2px] transition-colors" style={{ background: roadsOnly ? "var(--signal)" : "var(--line)" }}>
+                            <span className="block h-[10px] w-[10px] rounded-full bg-white transition-transform" style={{ transform: roadsOnly ? "translateX(10px)" : "none" }} />
+                        </span>
+                    </button>
                     {mode === "manual" && (
                         <label className="anim-fade-up block">
                             <span className="mb-1.5 flex items-center justify-between text-[11px]" style={{ color: "var(--text-dim)" }}>

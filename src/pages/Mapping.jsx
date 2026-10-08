@@ -11,6 +11,8 @@ import Draggable from "react-draggable";
 import { Button, Card, Divider, Empty, Pill, SectionHeader, Spinner, ToggleRow } from "../components/ui";
 import { useBaseMap } from "../lib/mapPrefs";
 import ServerImagery from "../components/ServerImagery";
+import DroneGrid from "../components/DroneGrid";
+import DroneLayers from "../components/DroneLayers";
 import { useGpuStatus } from "../lib/modelApi";
 import { addArcGISFeatureLayer, addLocalGeoJSONLayer, reloadVisibleLayers, removeLayerGroup } from "../utils/mapLayers";
 import { parseAOIFile, getFeaturesBounds, computeTotalAreaKm2, unionGeometry, polygonCentroid } from "../utils/aoiUtils";
@@ -1829,6 +1831,21 @@ export default function Mapping() {
                         <Empty>Pick a district above to load its AI-extracted layers.</Empty>
                     )}
 
+                    <Divider />
+
+                    {/* Ongole drone survey grid — always available, drone clips render beneath it */}
+                    <DroneGrid key={`grid-${baseMap}`} getMap={getMap} />
+                    <DroneLayers key={`drone-${baseMap}|${gpuStatus.base}`} getMap={getMap} />
+                    <Divider />
+
+                    {/* Ongole satellite, two dates — land use for each + change detection between them */}
+                    <SectionHeader>Ongole satellite · 2017 → 2026</SectionHeader>
+                    <DroneLayers key={`sat-ongole-${baseMap}|${gpuStatus.base}`} getMap={getMap} district="ongole" kind="satellite" />
+                    <Divider />
+
+                    {/* Guntur drone survey — same detections as Ongole */}
+                    <SectionHeader>Guntur drone survey</SectionHeader>
+                    <DroneLayers key={`drone-guntur-${baseMap}|${gpuStatus.base}`} getMap={getMap} district="guntur" />
                     <Divider />
 
                     {/* Imagery + batch results from the GPU server (rebuilt with the map on style change) */}

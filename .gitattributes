@@ -1,2 +1,5 @@
 # Shell scripts run on the Linux GPU server: never check them out with CRLF
 *.sh text eol=lf
+# Everything in gpu-server/ runs on Linux: always LF
+gpu-server/** text eol=lf
+gpu-server/weights/** -text

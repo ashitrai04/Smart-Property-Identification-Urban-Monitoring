@@ -1,7 +1,13 @@
+import { DRONE_DISTRICTS } from "./DroneLayers";
+import { imageryBeforeId } from "../lib/mapOrder";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Crosshair, Image as ImageIcon, RefreshCw, ScanSearch } from "lucide-react";
 import { gpuBase, probeGpu, useGpuStatus } from "../lib/modelApi";
 import { Empty, Pill, SectionHeader, Spinner, ToggleRow } from "./ui";
+import { GRID_BEFORE, clipNumber } from "./DroneGrid";
+
+// Overlays sit under the Ongole drone grid so its boundary stays on top.
+const below = (map) => (map.getLayer(GRID_BEFORE) ? GRID_BEFORE : undefined);
 
 /*
  * Imagery and results held on the GPU server: compressed COG orthomosaics served
@@ -43,7 +49,8 @@ export default function ServerImagery({ getMap }) {
                 fetch(`${GPU_BASE}/imagery`).then((r) => r.json()),
                 fetch(`${GPU_BASE}/jobs`).then((r) => r.json()),
             ]);
-            setImagery(im.filter((i) => i.status === "ready"));
+            // Ongole / Guntur drone imagery lives in its own drone section of the rail.
+            setImagery(im.filter((i) => i.status === "ready" && !DRONE_DISTRICTS.includes((i.district || "").toLowerCase())));
             setJobs(jb);
         } catch (e) {
             setErr(String(e?.message || e));
@@ -96,7 +103,7 @@ export default function ServerImagery({ getMap }) {
             type: "raster", tileSize: 256, bounds: img.bounds, maxzoom: 22,
             tiles: [`${gpuBase()}/imagery/${img.id}/tiles/{z}/{x}/{y}.webp`],
         });
-        map.addLayer({ id: key, type: "raster", source: key, paint: { "raster-opacity": 0, "raster-opacity-transition": { duration: 600 } } });
+        map.addLayer({ id: key, type: "raster", source: key, paint: { "raster-opacity": 0, "raster-opacity-transition": { duration: 600 } } }, imageryBeforeId(map));
         requestAnimationFrame(() => map.setPaintProperty(key, "raster-opacity", 1));
         setOn((p) => ({ ...p, [key]: true }));
         if (img.bounds) map.fitBounds([[img.bounds[0], img.bounds[1]], [img.bounds[2], img.bounds[3]]], { padding: 60, duration: 1400 });
@@ -113,7 +120,7 @@ export default function ServerImagery({ getMap }) {
         }
         if (layer === "classes") {
             map.addSource(key, { type: "raster", tileSize: 256, maxzoom: 22, tiles: [`${gpuBase()}/results/${job.id}/classes/{z}/{x}/{y}.png`] });
-            map.addLayer({ id: key, type: "raster", source: key, paint: { "raster-opacity": 0.85 } });
+            map.addLayer({ id: key, type: "raster", source: key, paint: { "raster-opacity": 0.85 } }, below(map));
             setOn((p) => ({ ...p, [key]: true }));
             return;
         }
@@ -122,9 +129,9 @@ export default function ServerImagery({ getMap }) {
         map.addSource(key, { type: "geojson", data: { type: "FeatureCollection", features: [] } });
         const potholeFill = ["case", ["==", ["get", "is_pothole"], true], "#EF4444", st.color];
         map.addLayer({ id: `${key}-fill`, type: "fill", source: key,
-            paint: { "fill-color": layer === "road_damage" ? potholeFill : st.color, "fill-opacity": layer === "road_damage" ? 0.25 : 0.4 } });
+            paint: { "fill-color": layer === "road_damage" ? potholeFill : st.color, "fill-opacity": layer === "road_damage" ? 0.25 : 0.4 } }, below(map));
         map.addLayer({ id: `${key}-line`, type: "line", source: key,
-            paint: { "line-color": layer === "road_damage" ? potholeFill : st.color, "line-width": layer === "road_damage" ? 2 : 1 } });
+            paint: { "line-color": layer === "road_damage" ? potholeFill : st.color, "line-width": layer === "road_damage" ? 2 : 1 } }, below(map));
         vectorKeys.current.set(key, { jobId: job.id, layer });
         setOn((p) => ({ ...p, [key]: true }));
         await reloadVectors();
@@ -159,7 +166,8 @@ export default function ServerImagery({ getMap }) {
                         <div key={img.id} className="mb-1">
                             <div className="flex items-center">
                                 <div className="min-w-0 flex-1">
-                                    <ToggleRow on={!!on[key]} onClick={() => toggleImagery(img)} colour="#2DD4BF" label={img.name}
+                                    <ToggleRow on={!!on[key]} onClick={() => toggleImagery(img)} colour="#2DD4BF"
+                                        label={clipNumber(img) && (img.district || "").toLowerCase() === "ongole" ? `Ongole · Clip ${String(clipNumber(img)).padStart(2, "0")}` : img.name}
                                         sub={`${img.kind}${img.gsd_m ? ` · ${(img.gsd_m * 100).toFixed(1)} cm` : ""}${img.cog_bytes ? ` · ${(img.cog_bytes / 2 ** 30).toFixed(1)} GB` : ""}`}
                                         icon={<ImageIcon size={12} style={{ color: "var(--signal)" }} />} />
                                 </div>

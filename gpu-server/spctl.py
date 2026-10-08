@@ -4,6 +4,7 @@
   .venv/bin/python spctl.py status
   .venv/bin/python spctl.py raw                                   # files waiting in data/raw
   .venv/bin/python spctl.py ingest data/raw/vja_drone.tif --name "Vijayawada drone Sep-26" --kind drone --district vijayawada
+  .venv/bin/python spctl.py import-r2 uploads/drone/ongole/clip_01.tif --name "Ongole clip 01" --district ongole --wait
   .venv/bin/python spctl.py imagery                               # catalog
   .venv/bin/python spctl.py job img_xxx pothole --conf 0.25
   .venv/bin/python spctl.py job img_xxx segment --gsd 0.3         # optional coarser analysis grid (m)
@@ -66,8 +67,13 @@ def main():
     p = sub.add_parser("ingest"); p.add_argument("path"); p.add_argument("--name"); p.add_argument("--kind", default="drone", choices=["drone", "satellite"])
     p.add_argument("--district"); p.add_argument("--captured"); p.add_argument("--delete-source", action="store_true")
     p.add_argument("--wait", action="store_true")
-    p = sub.add_parser("job"); p.add_argument("imagery_id"); p.add_argument("task", choices=["segment", "fusion", "pothole"])
+    p = sub.add_parser("import-r2"); p.add_argument("key"); p.add_argument("--name"); p.add_argument("--kind", default="drone", choices=["drone", "satellite"])
+    p.add_argument("--district"); p.add_argument("--captured"); p.add_argument("--keep-in-r2", action="store_true"); p.add_argument("--wait", action="store_true")
+    p = sub.add_parser("job"); p.add_argument("imagery_id"); p.add_argument("task", choices=["segment", "fusion", "pothole", "refine"])
     p.add_argument("--conf", type=float); p.add_argument("--gsd", type=float, help="analysis grid in metres (segment/fusion)")
+    p.add_argument("--roads-job", help="pothole: use roads from this finished segment/fusion job (aligned with the imagery)")
+    p.add_argument("--min-overlap", type=float, help="pothole: share of a box that must lie on a road (default 0.3)")
+    p.add_argument("--no-road-filter", action="store_true", help="pothole: keep detections everywhere (not recommended)")
     p.add_argument("--wait", action="store_true")
     p = sub.add_parser("cancel"); p.add_argument("job_id")
     a = ap.parse_args()
@@ -100,12 +106,31 @@ def main():
                     print(s["status"], s.get("error") or "")
                     break
                 time.sleep(10)
+    elif a.cmd == "import-r2":
+        r = call("POST", "/imagery/import-r2", json={"key": a.key, "name": a.name, "kind": a.kind, "district": a.district,
+                                                     "captured": a.captured, "delete_after": not a.keep_in_r2})
+        print("importing:", r["id"])
+        if a.wait:
+            while True:
+                s = call("GET", f"/imagery/{r['id']}")
+                print(f"\r{s['status']}: {s.get('error') or ''}          ", end="", flush=True)
+                if s["status"] != "ingesting":
+                    print()
+                    break
+                time.sleep(5)
     elif a.cmd == "job":
         params = {}
         if a.conf is not None:
             params["conf"] = a.conf
         if a.gsd is not None:
             params["target_gsd_m"] = a.gsd
+        if a.roads_job:
+            params["roads_job"] = a.roads_job
+            params["seg_roads"] = False          # roads already come from the segmentation job
+        if a.min_overlap is not None:
+            params["min_overlap"] = a.min_overlap
+        if a.no_road_filter:
+            params["road_filter"] = False
         r = call("POST", "/jobs", json={"imagery_id": a.imagery_id, "task": a.task, "params": params})
         print("queued:", r["id"])
         if a.wait:

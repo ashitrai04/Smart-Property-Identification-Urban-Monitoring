@@ -15,7 +15,7 @@ Server-only (heavy imagery pipeline):
   GET  /imagery                        catalog (drone / satellite COGs)
   POST /imagery/ingest                 compress a file under data/raw into a COG       [API key]
   GET  /imagery/{id}/tiles/{z}/{x}/{y}.webp   map tiles
-  POST /jobs                           run segment | fusion | pothole over a whole image [API key]
+  POST /jobs                           run segment | fusion | pothole | refine over a whole image [API key]
   GET  /jobs · /jobs/{id} · POST /jobs/{id}/cancel                                     [cancel: API key]
   GET  /results/{job}/{layer}.geojson?bbox=w,s,e,n     result vectors (bbox-filtered)
   GET  /results/{job}/classes/{z}/{x}/{y}.png          result class map tiles
@@ -29,7 +29,7 @@ sys.stdout.reconfigure(encoding="utf-8")
 
 import numpy as np
 import shapely
-from fastapi import Body, Depends, FastAPI, File, Form, Header, HTTPException, Query, UploadFile
+from fastapi import Body, Depends, FastAPI, File, Form, Header, HTTPException, Query, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import FileResponse, JSONResponse, Response
@@ -47,6 +47,14 @@ os.environ.setdefault("POTHOLE_WEIGHTS", str(config.WEIGHTS / "final_best.pt"))
 import pothole  # noqa: E402  (reads POTHOLE_WEIGHTS at import)
 
 pothole._lock = gpu.GPU_LOCK      # one GPU queue for every model
+
+
+def _road_mask_for_pothole(rgb):
+    import roads
+    return roads.seg_road_mask(rgb, None, MODEL_(), seg, target_gsd=0.12)
+
+
+pothole.ROAD_MASK_FN = _road_mask_for_pothole
 
 app = FastAPI(title="Smart Property — GPU server", version="2.0.0")
 app.add_middleware(GZipMiddleware, minimum_size=1024)
@@ -305,6 +313,93 @@ def imagery_ingest(payload: dict = Body(...)):
     return {"id": img_id, "status": "ingesting"}
 
 
+# ── Direct, resumable upload of very large files (tens of GB) straight to this server ──
+# The sender (send_to_gpu.py) PUTs ≤90 MB pieces — the free Cloudflare tunnel caps a
+# request at 100 MB — each tagged with its byte offset. Nothing is stored in R2.
+def _upload_path(name):
+    safe = os.path.basename(name).replace("..", "")
+    if not safe or not safe.lower().endswith(imagery.RASTER_EXT):
+        raise HTTPException(400, f"not a raster file name: {name}")
+    return config.RAW / safe
+
+
+def _registered(final):
+    """Imagery already created from this upload (ingest moves the file into cogs/)."""
+    for r in db.list_imagery():
+        if r.get("source_path") == str(final) and r.get("status") in ("ingesting", "ready"):
+            return r
+    return None
+
+
+@app.get("/uploads/{name}", dependencies=[Depends(require_key)])
+def upload_status(name: str):
+    final = _upload_path(name)
+    part = final.with_name(final.name + ".part")
+    reg = _registered(final)
+    if reg:   # finished and registered — never resend a 45 GB file because the sender was re-run
+        return {"name": final.name, "bytes": reg.get("source_bytes"), "complete": True, "registered": reg["id"]}
+    if final.exists():
+        return {"name": final.name, "bytes": final.stat().st_size, "complete": True}
+    return {"name": final.name, "bytes": part.stat().st_size if part.exists() else 0, "complete": False}
+
+
+@app.put("/uploads/{name}", dependencies=[Depends(require_key)])
+async def upload_piece(name: str, request: Request, offset: int = Query(...), total: int = Query(...)):
+    final = _upload_path(name)
+    part = final.with_name(final.name + ".part")
+    if final.exists():
+        return {"bytes": final.stat().st_size, "complete": True}
+    have = part.stat().st_size if part.exists() else 0
+    if offset != have:                       # sender is out of step (e.g. after a reconnect): tell it where to resume
+        return JSONResponse({"bytes": have, "complete": False, "resume_from": have}, status_code=409)
+    n = 0
+    with open(part, "ab") as fh:
+        async for chunk in request.stream():
+            fh.write(chunk)
+            n += len(chunk)
+    have += n
+    if have > total:
+        part.unlink(missing_ok=True)
+        raise HTTPException(400, "received more bytes than the declared total — upload reset, start again")
+    if have == total:
+        os.replace(part, final)
+        return {"bytes": have, "complete": True}
+    return {"bytes": have, "complete": False}
+
+
+@app.post("/uploads/{name}/ingest", dependencies=[Depends(require_key)])
+def upload_ingest(name: str, payload: dict = Body(default={})):
+    final = _upload_path(name)
+    reg = _registered(final)
+    if reg:
+        return {"id": reg["id"], "status": reg["status"], "note": "already registered"}
+    if not final.exists():
+        raise HTTPException(409, "upload not complete yet")
+    try:
+        img_id = imagery.start_ingest(str(final), payload.get("name"), payload.get("kind", "drone"),
+                                      payload.get("district"), payload.get("captured"), False)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    return {"id": img_id, "status": "ingesting"}
+
+
+@app.post("/imagery/import-r2", dependencies=[Depends(require_key)])
+def imagery_import_r2(payload: dict = Body(...)):
+    """Import a large raster that was uploaded to R2 (e.g. uploads/drone/ongole/clip_01.tif)."""
+    key = payload.get("key", "")
+    if not key.startswith("uploads/"):
+        raise HTTPException(400, "key must be under uploads/")
+    try:
+        img_id = imagery.start_import_r2(r2(), R2_BUCKET, key, payload.get("name"), payload.get("kind", "drone"),
+                                         payload.get("district"), payload.get("captured"),
+                                         payload.get("delete_after", True))
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(404, f"Could not import {key}: {e}")
+    return {"id": img_id, "status": "ingesting"}
+
+
 @app.delete("/imagery/{img_id}", dependencies=[Depends(require_key)])
 def imagery_delete(img_id: str):
     r = db.get_imagery(img_id)
@@ -324,7 +419,11 @@ def imagery_tile(img_id: str, z: int, x: int, y: int, fmt: str, size: int = Quer
     r = db.get_imagery(img_id)
     if not r or r["status"] != "ready":
         raise HTTPException(404, "imagery not ready")
-    data = imagery.tile(r["cog_path"], z, x, y, fmt=fmt, size=512 if size >= 512 else 256)
+    try:
+        data = imagery.tile(r["cog_path"], z, x, y, fmt=fmt, size=512 if size >= 512 else 256)
+    except Exception as e:   # a failed tile must not become a CORS-less 500 in the browser
+        print(f"[tile] {img_id} {z}/{x}/{y}: {e}", flush=True)
+        return Response(status_code=204, headers={"Cache-Control": "no-store"})
     if data is None:
         return Response(status_code=204)
     return Response(data, media_type="image/webp" if fmt == "webp" else "image/png",
@@ -335,8 +434,8 @@ def imagery_tile(img_id: str, z: int, x: int, y: int, fmt: str, size: int = Quer
 @app.post("/jobs", dependencies=[Depends(require_key)])
 def job_create(payload: dict = Body(...)):
     task = payload.get("task")
-    if task not in ("segment", "fusion", "pothole"):
-        raise HTTPException(400, "task must be segment | fusion | pothole")
+    if task not in ("segment", "fusion", "pothole", "refine"):
+        raise HTTPException(400, "task must be segment | fusion | pothole | refine")
     img = db.get_imagery(payload.get("imagery_id", ""))
     if not img:
         raise HTTPException(404, "imagery not found")
@@ -386,7 +485,8 @@ def result_download(jid: str):
 
 
 @app.get("/results/{jid}/{layer}.geojson")
-def result_layer(jid: str, layer: str, bbox: str = Query(None), limit: int = Query(20000), zoom: float = Query(None)):
+def result_layer(jid: str, layer: str, bbox: str = Query(None), limit: int = Query(20000), zoom: float = Query(None),
+                 on_road: int = Query(None)):
     import pyogrio
     j = _done_job(jid)
     p = os.path.join(j["result_dir"], "results.gpkg")
@@ -394,7 +494,10 @@ def result_layer(jid: str, layer: str, bbox: str = Query(None), limit: int = Que
         return JSONResponse({"type": "FeatureCollection", "features": []})
     bb = tuple(float(v) for v in bbox.split(",")) if bbox else None
     try:
-        df = pyogrio.read_dataframe(p, layer=layer, bbox=bb, max_features=max(1, min(limit, 200000)))
+        where = None
+        if on_road is not None and layer == "road_damage":
+            where = f"on_road = {1 if on_road else 0}"       # road-gated detections (or the filtered-out ones)
+        df = pyogrio.read_dataframe(p, layer=layer, bbox=bb, where=where, max_features=max(1, min(limit, 200000)))
     except Exception:
         return JSONResponse({"type": "FeatureCollection", "features": []})
     if not len(df):

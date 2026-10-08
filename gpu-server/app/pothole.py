@@ -52,6 +52,10 @@ _lock = threading.Lock()     # one inference at a time on a small CPU box
 
 router = APIRouter(prefix="/pothole", tags=["pothole"])
 
+# Set by the host app when it can segment roads (GPU server: SegFormer road class).
+# rgb uint8 -> bool road mask. None = "roads only" unavailable here.
+ROAD_MASK_FN = None
+
 
 def _m():
     global _model, NAMES
@@ -161,7 +165,8 @@ def health():
 
 
 @router.post("/detect")
-def detect(file: UploadFile = File(...), mode: str = Form("auto"), conf: float = Form(0.25)):
+def detect(file: UploadFile = File(...), mode: str = Form("auto"), conf: float = Form(0.25),
+           roads_only: bool = Form(False), min_overlap: float = Form(0.3)):
     data = file.file.read(MAX_BYTES + 1)
     if len(data) > MAX_BYTES:
         raise HTTPException(413, f"Image larger than {MAX_BYTES // 2**20} MB")
@@ -179,6 +184,22 @@ def detect(file: UploadFile = File(...), mode: str = Form("auto"), conf: float =
         else:
             used = float(min(max(conf, 0.05), 0.95))
             boxes, confs, clss = _detect(img, used)
+        # "Roads only": drop detections that do not sit on a road (fields, roofs, plots).
+        road_filter = "off"
+        off_road = 0
+        if roads_only and len(boxes):
+            if ROAD_MASK_FN is None:
+                road_filter = "unavailable"
+            else:
+                road = ROAD_MASK_FN(cv2.cvtColor(img, cv2.COLOR_BGR2RGB))
+                keep = []
+                for (x1, y1, x2, y2) in boxes:
+                    xa, ya, xb, yb = max(0, int(x1)), max(0, int(y1)), min(w, int(x2) + 1), min(h, int(y2) + 1)
+                    keep.append(xb > xa and yb > ya and float(road[ya:yb, xa:xb].mean()) >= min_overlap)
+                keep = np.array(keep, bool)
+                off_road = int((~keep).sum())
+                boxes, confs, clss = boxes[keep], confs[keep], clss[keep]
+                road_filter = "on"
     ms = int((time.time() - t0) * 1000)
 
     annotated = _draw(img, boxes, confs, clss)
@@ -203,6 +224,8 @@ def detect(file: UploadFile = File(...), mode: str = Form("auto"), conf: float =
         "confidence_used": used,
         "mode": "auto" if mode.lower().startswith("auto") else "manual",
         "tiled": max(h, w) > TILE_ABOVE,
+        "road_filter": road_filter,
+        "filtered_off_road": off_road,
         "width": w, "height": h,
         "ms": ms,
         "detections": dets,
