@@ -49,7 +49,7 @@ export default function BootOverlay({ onComplete }) {
                 <div className="boot-mark">
                     <img src="/yi.png" alt="" />
                     <div>
-                        <div className="boot-title">Smart Property</div>
+                        <div className="boot-title">Urbanly</div>
                         <div className="boot-subtitle">Urban monitoring · Andhra Pradesh</div>
                     </div>
                 </div>

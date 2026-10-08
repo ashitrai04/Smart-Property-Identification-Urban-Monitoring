@@ -132,7 +132,7 @@ export default function CommandBar() {
                 {!tiny && (
                     <div className="leading-none">
                         <div className="display text-[14px] font-bold tracking-tight" style={{ color: "var(--text)" }}>
-                            Smart Property
+                            Urbanly
                         </div>
                         <div className="mt-[3px] text-[9px] uppercase tracking-[0.14em]" style={{ color: "var(--text-mute)" }}>
                             Urban monitoring

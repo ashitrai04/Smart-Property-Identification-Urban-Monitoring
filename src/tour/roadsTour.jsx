@@ -234,7 +234,7 @@ function Impact() {
 function Outro() {
     return (
         <div className="rh-intro">
-            <motion.div {...rise(0)} className="rh-kicker">Smart Property · Urban Monitoring</motion.div>
+            <motion.div {...rise(0)} className="rh-kicker">Urbanly · AI Urban Monitoring</motion.div>
             <motion.h1 {...rise(1)} className="rh-title">Safer roads, <span>found from the air</span></motion.h1>
             <motion.p {...rise(2)} className="rh-sub">Drone imagery in. Verified, geo-located road defects out — on a live map, ready for the repair crew. The same pipeline extends to bridge decks and tunnel linings.</motion.p>
         </div>

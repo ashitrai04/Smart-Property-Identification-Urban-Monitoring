@@ -50,7 +50,7 @@ async function waitUntil(fn, timeout = 30000, interval = 400) {
  */
 const STEPS = [
     // ── HOME ──
-    { id: "welcome", route: "/", target: '[data-tour="brand"]', title: "Smart Property Identification",
+    { id: "welcome", route: "/", target: '[data-tour="brand"]', title: "Welcome to Urbanly",
       desc: "This platform keeps an <strong>AI-maintained map of urban Andhra Pradesh</strong> — every building, road, water body and open plot, kept current from satellite imagery. The tour will now operate the platform for you, exactly the way you would.", hold: 2600 },
 
     { id: "home-district", route: "/", target: '[data-tour="home-district"]', title: "Start on the Dashboard",
@@ -211,7 +211,7 @@ function TourWelcome({ onStart, onDismiss, tour, onSwitch }) {
             <div className="tour-welcome-card">
                 <div className="tour-welcome-icon"><Compass size={26} /></div>
                 <div className="tour-welcome-title">See the Platform Drive Itself</div>
-                <div className="tour-welcome-subtitle">A guided walkthrough will operate Smart Property Identification for you — selecting districts, switching layers, drawing areas, running the AI and generating a report — while explaining every feature along the way. About 4 minutes.</div>
+                <div className="tour-welcome-subtitle">A guided walkthrough will operate Urbanly for you — selecting districts, switching layers, drawing areas, running the AI and generating a report — while explaining every feature along the way. About 4 minutes.</div>
                 <div className="tour-welcome-features">
                     <div className="tour-welcome-feature"><BarChart2 size={13} /> State Dashboard</div>
                     <div className="tour-welcome-feature"><MapPin size={13} /> Live Mapping & AOI</div>

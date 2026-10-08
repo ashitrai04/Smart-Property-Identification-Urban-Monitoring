@@ -43,7 +43,7 @@ export default function Navbar() {
                     <span style={{ position: 'absolute', color: 'white', fontWeight: 800, fontSize: '14px', zIndex: -1 }}>Yi</span>
                 </div>
                 <div className="brand-text-container" style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
-                    <span style={{ fontSize: '14px', fontWeight: 700, letterSpacing: '0.5px', color: 'var(--text-primary)', lineHeight: '1.2' }}>SMART PROPERTY IDENTIFICATION</span>
+                    <span style={{ fontSize: '14px', fontWeight: 700, letterSpacing: '0.5px', color: 'var(--text-primary)', lineHeight: '1.2' }}>URBANLY</span>
                     <span style={{ fontSize: '10px', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>AI-Powered Urban Monitoring Platform</span>
                 </div>
             </div>

@@ -226,7 +226,7 @@ export default function DSS() {
         doc.text("DISTRICT ANALYSIS REPORT", pageWidth / 2, 70, { align: "center" });
         doc.setFontSize(18);
         doc.setTextColor(50, 50, 50);
-        doc.text(doc.splitTextToSize("AI-Enabled Smart Property Identification and Urban Monitoring System", pageWidth - 40), pageWidth / 2, 90, { align: "center" });
+        doc.text(doc.splitTextToSize("Urbanly — AI-Enabled Property Identification and Urban Monitoring", pageWidth - 40), pageWidth / 2, 90, { align: "center" });
         doc.setFontSize(14);
         doc.setFont("helvetica", "normal");
         doc.text(`District: ${report.district}`, pageWidth / 2, 130, { align: "center" });
