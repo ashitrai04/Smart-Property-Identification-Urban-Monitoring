@@ -34,6 +34,8 @@ const CHANGES = [
 ];
 
 export const DRONE_DISTRICTS = ["ongole", "guntur"];
+// Neon red for potholes: #EF4444 is muted and vanishes against grey tarmac.
+const NEON_RED = "#FF1744";
 const below = (map) => (map.getLayer(GRID_BEFORE) ? GRID_BEFORE : undefined);
 
 function bbox(map) {
@@ -143,11 +145,15 @@ export default function DroneLayers({ getMap, district = "ongole", kind = "drone
         const color = offRoad ? "#FEF08A" : det.color;
         map.addSource(id, { type: "geojson", data: { type: "FeatureCollection", features: [] } });
         const isDamage = det.layer === "road_damage";
-        const fill = isDamage && !offRoad ? ["case", ["==", ["get", "is_pothole"], 1], "#EF4444", color] : color;
+        // Potholes in neon red so they carry over dark asphalt; cracks and
+        // patches keep the amber road-damage colour.
+        const fill = isDamage && !offRoad ? ["case", ["==", ["get", "is_pothole"], 1], NEON_RED, color] : color;
         map.addLayer({ id: `${id}-fill`, type: "fill", source: id,
-            paint: { "fill-color": fill, "fill-opacity": offRoad ? 0.12 : isDamage ? 0.22 : det.layer === "roads" ? 0.5 : 0.4 } }, below(map));
+            paint: { "fill-color": fill, "fill-opacity": offRoad ? 0.12 : isDamage ? 0.3 : det.layer === "roads" ? 0.5 : 0.4 } }, below(map));
         map.addLayer({ id: `${id}-line`, type: "line", source: id,
-            paint: { "line-color": fill, "line-width": isDamage ? 2 : 1, ...(offRoad ? { "line-dasharray": [2, 2] } : {}) } }, below(map));
+            paint: { "line-color": fill, "line-width": isDamage ? 2.4 : 1,
+                     ...(isDamage && !offRoad ? { "line-blur": 0.4 } : {}),
+                     ...(offRoad ? { "line-dasharray": [2, 2] } : {}) } }, below(map));
         if (isDamage) {
             // Every detection carries its class and confidence, always visible once zoomed in.
             map.addLayer({ id: `${id}-label`, type: "symbol", source: id, minzoom: 17,
@@ -156,7 +162,7 @@ export default function DroneLayers({ getMap, district = "ongole", kind = "drone
                           "text-size": ["interpolate", ["linear"], ["zoom"], 17, 10, 21, 14],
                           "text-font": ["DIN Offc Pro Medium", "Arial Unicode MS Bold"],
                           "text-offset": [0, -1.2], "text-allow-overlap": true, "text-ignore-placement": true },
-                paint: { "text-color": offRoad ? "#FEF08A" : "#FFFFFF", "text-halo-color": offRoad ? "#3F3F12" : "#B91C1C", "text-halo-width": 1.6 } },
+                paint: { "text-color": offRoad ? "#FEF08A" : "#FFFFFF", "text-halo-color": offRoad ? "#3F3F12" : "#4A0010", "text-halo-width": 1.6 } },
                 below(map));
         }
         const q = isDamage ? `?on_road=${offRoad ? 0 : 1}` : "";
