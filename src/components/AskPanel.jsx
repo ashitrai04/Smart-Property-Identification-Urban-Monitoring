@@ -14,6 +14,7 @@ import { gpuBase, probeGpu, useGpuStatus } from "../lib/modelApi";
 const SRC = "ask-roads";
 const PIN = "ask-pins";
 const CAR = "ask-car";
+const IMG = "ask-img";
 
 const SUGGESTIONS = [
     "Give me the most damaged road",
@@ -125,6 +126,8 @@ export default function AskPanel({ getMap }) {
         if (map) {
             if (map.getLayer(CAR)) map.removeLayer(CAR);
             if (map.getSource(CAR)) map.removeSource(CAR);
+            if (map.getLayer(IMG)) map.removeLayer(IMG);
+            if (map.getSource(IMG)) map.removeSource(IMG);
         }
         setDriving(null);
         setStep(null);
@@ -133,10 +136,31 @@ export default function AskPanel({ getMap }) {
     /* Story mode, the way the walkthrough does it: stop at each pothole in turn,
      * from one end of the road to the other, with the damage layer switched on
      * so the box being discussed is visible. Flat view — no tilt. */
-    const tourRoad = useCallback((r, startAt = 0) => {
+    const tourRoad = useCallback(async (r, startAt = 0) => {
         const map = getMap?.();
         const list = r.pothole_list || [];
         if (!map || !list.length) return;
+
+        // Put the drone imagery under it. At z20 the basemap is a blur, and a
+        // story about potholes has to show the pothole.
+        if (!map.getSource(IMG)) {
+            try {
+                const imgs = await (await fetch(`${gpuBase()}/imagery`)).json();
+                const hit = imgs.find((im) => {
+                    const b = im.bounds;
+                    return im.status === "ready" && im.kind !== "satellite" && Array.isArray(b)
+                        && r.lon >= b[0] && r.lon <= b[2] && r.lat >= b[1] && r.lat <= b[3];
+                });
+                if (hit) {
+                    map.addSource(IMG, { type: "raster", tileSize: 512, maxzoom: 21,
+                        bounds: hit.bounds,
+                        tiles: [`${gpuBase()}/imagery/${hit.id}/tiles/{z}/{x}/{y}.webp?size=512`] });
+                    const under = map.getLayer(`${SRC}-glow`) ? `${SRC}-glow` : undefined;
+                    map.addLayer({ id: IMG, type: "raster", source: IMG,
+                        paint: { "raster-opacity": 1 } }, under);
+                }
+            } catch { /* basemap will have to do */ }
+        }
         clearTimeout(drive.current.timer);
         drive.current.stop = false;
         setDriving(r.road);
@@ -201,8 +225,8 @@ export default function AskPanel({ getMap }) {
         <>
             {/* story caption — which pothole, where along the road, how certain */}
             {step && (
-                <div className="absolute bottom-5 left-1/2 z-30 w-[380px] max-w-[calc(100vw-2rem)]
-                                -translate-x-1/2 rounded-[10px] border border-[var(--line)]
+                <div className="absolute bottom-5 left-5 z-30 w-[380px] max-w-[calc(100vw-2rem)]
+                                rounded-[10px] border border-[var(--line)]
                                 bg-[var(--surface-1)] px-3.5 py-3 shadow-2xl">
                     <div className="flex items-center gap-2">
                         <span className="rounded-[5px] px-1.5 py-0.5 text-[11px] font-semibold"
