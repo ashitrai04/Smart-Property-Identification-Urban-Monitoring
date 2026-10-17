@@ -25,11 +25,13 @@ NUM_CTX = 8192
 METRICS = ["severity", "potholes", "density", "length", "width", "area"]
 GRADES = ["good", "fair", "poor", "bad", "critical"]
 INTENTS = ["rank", "detail", "count", "list", "summary", "unknown"]
+TOPICS = ["road_damage", "buildings", "water", "roads", "compare", "overview"]
 
 SYSTEM = """You turn a question about a city road survey into a JSON query plan.
 Reply with ONLY the JSON object, no prose, no markdown.
 
-{"intent":"rank|detail|count|list|summary|unknown",
+{"topic":"road_damage|buildings|water|roads|compare|overview",
+ "intent":"rank|detail|count|list|summary|unknown",
  "metric":"severity|potholes|density|length|width|area|none",
  "order":"desc|asc",
  "limit":1,
@@ -37,6 +39,13 @@ Reply with ONLY the JSON object, no prose, no markdown.
  "grade":"",
  "min_confidence":0}
 
+topic:
+  road_damage - potholes, cracks, road condition, which road is worst (Guntur)
+  buildings   - buildings, houses, structures, footprints (Ongole)
+  water       - lakes, tanks, ponds, water bodies (Ongole)
+  roads       - the road network itself: how many km, how wide (Ongole)
+  compare     - 2017 vs 2026, change, growth
+  overview    - what data is there, summarise everything
 intent:
   rank    - "worst", "most damaged", "best", "top 5", "least damaged"
   detail  - facts about ONE road the user names
@@ -52,6 +61,50 @@ grade:  one of good, fair, poor, bad, critical if the user names a condition.
 min_confidence: only if the user asks for a confidence threshold, else 0."""
 
 _kb = {"path": None, "mtime": 0, "data": None, "geo": None, "ph": None}
+_city = {"mtime": 0, "data": None, "geo": None}
+
+
+def city_kb(data_dir):
+    """Ongole buildings / water / road network, so the bot is not only potholes."""
+    p = Path(data_dir) / "_kb" / "city.json"
+    if not p.is_file():
+        return None
+    mt = p.stat().st_mtime
+    if _city["data"] is None or _city["mtime"] != mt:
+        with open(p, encoding="utf-8") as f:
+            _city["data"] = json.load(f)
+        _city["mtime"] = mt
+        _city["geo"] = None
+    return _city["data"]
+
+
+def city_top_geom(data_dir, layer, k):
+    """Geometry of the top-k features of a layer, for pinning."""
+    import geopandas as gpd
+    g = _city.get("geo")
+    if g is None:
+        p = Path(data_dir) / "city_kb.gpkg"
+        if not p.is_file():
+            return []
+        g = _city["geo"] = gpd.read_file(p, layer="top_features").to_crs(4326)
+    sub = g[g["layer"] == layer].sort_values("value", ascending=False).head(k)
+    out = []
+    for _, r in sub.iterrows():
+        geom = r.geometry
+        if geom is None:
+            continue
+        if geom.geom_type in ("Polygon",):
+            rings = [[[round(x, 6), round(y, 6)] for x, y in geom.exterior.coords]]
+        elif geom.geom_type == "MultiPolygon":
+            rings = [[[round(x, 6), round(y, 6)] for x, y in gg.exterior.coords] for gg in geom.geoms]
+        elif geom.geom_type == "LineString":
+            rings = [[[round(x, 6), round(y, 6)] for x, y in geom.coords]]
+        else:
+            continue
+        c = geom.centroid
+        out.append({"value": float(r["value"]), "lon": round(c.x, 6), "lat": round(c.y, 6),
+                    "parts": rings, "kind": geom.geom_type})
+    return out
 
 
 # ── knowledge base ───────────────────────────────────────────────
@@ -149,12 +202,39 @@ DENS = re.compile(r"\bper\s*km\b|\bdensity\b", re.I)
 # so "what is the widest road" came back with the narrowest one.
 MAXW = re.compile(r"\b(widest|longest|largest|biggest|highest|most|maximum|max|worst)\b", re.I)
 MINW = re.compile(r"\b(narrowest|shortest|smallest|lowest|fewest|least|minimum|min|best)\b", re.I)
+# which dataset the question is about
+T_BLD = re.compile(r"\b(building|buildings|house|houses|structure|structures|footprint|footprints|rooftop|property|properties)\b", re.I)
+T_WAT = re.compile(r"\b(water|waterbody|waterbodies|lake|lakes|tank|tanks|pond|ponds|reservoir|canal)\b", re.I)
+T_DMG = re.compile(r"\b(pothole|potholes|crack|cracks|damage|damaged|defect|defects|repaired|repair|condition)\b", re.I)
+T_CMP = re.compile(r"\b(2017|2026|change|changed|growth|grew|compare|comparison|since)\b", re.I)
+T_RD = re.compile(r"\b(road|roads|street|streets|lane|carriageway|network)\b", re.I)
+T_NET = re.compile(r"\b(network|total|km|kilomet\w*|wide|width|widest|long|longest|length|surface)\b", re.I)
+T_DATA = re.compile(r"\b(what data|which data|what layers|what do you have|what can you|datasets?)\b", re.I)
+
+
+def topic_of(q):
+    """Which dataset the question is about. Damage wins over the bare word
+    "road", because "which road is worst" is a condition question, while
+    "how many km of road" is a question about the network."""
+    if T_CMP.search(q) and (T_BLD.search(q) or re.search(r"(2017|2026)", q)):
+        return "compare"
+    if T_DMG.search(q):
+        return "road_damage"
+    if T_BLD.search(q):
+        return "buildings"
+    if T_WAT.search(q):
+        return "water"
+    if T_RD.search(q):
+        return "roads" if T_NET.search(q) else "road_damage"
+    if SUMW.search(q) or T_DATA.search(q):
+        return "overview"
+    return "road_damage"
 
 
 def rules(q):
     """Fallback plan, and the sanity check the model's plan is repaired against."""
-    p = {"intent": "unknown", "metric": "severity", "order": "desc", "limit": 1,
-         "road": "", "grade": "", "min_confidence": 0.0}
+    p = {"topic": topic_of(q), "intent": "unknown", "metric": "severity", "order": "desc",
+         "limit": 1, "road": "", "grade": "", "min_confidence": 0.0}
     if SUMW.search(q):
         p["intent"] = "summary"
     elif COUNTW.search(q):
@@ -192,6 +272,11 @@ def clean(raw, q):
     r = rules(q)
     p = dict(r)
     if isinstance(raw, dict):
+        v = str(raw.get("topic", "")).lower().strip()
+        # the keywords in the question are a stronger signal than a 3B model's
+        # guess, so the model only gets to set the topic when nothing matched
+        if v in TOPICS and not (T_DMG.search(q) or T_BLD.search(q) or T_WAT.search(q)):
+            p["topic"] = v
         v = str(raw.get("intent", "")).lower().strip()
         if v in INTENTS and v != "unknown":
             p["intent"] = v
@@ -288,6 +373,91 @@ SORT_KEY = {"severity": "severity", "potholes": "potholes", "density": "per_km",
             "length": "length_m", "width": "width_m", "area": "area_m2"}
 
 
+def _fmt(n):
+    return f"{n:,.0f}" if abs(n) >= 1000 else f"{n:,.1f}".rstrip("0").rstrip(".")
+
+
+def answer_city(p, q, data_dir):
+    """buildings / water / road network / 2017-vs-2026, for Ongole."""
+    c = city_kb(data_dir)
+    if not c:
+        return {"ok": True, "answer": "The city layers have not been indexed yet "
+                                      "(run local-server/build_city_kb.py).",
+                "plan": p, "roads": [], "features": []}
+    t = p["topic"]
+    feats, ans = [], ""
+
+    if t == "compare":
+        k = c["compare"]
+        a, b = k["y2017"], k["y2026"]
+        ans = (f"Within the {k['extent_km2']} km² the 2017 labels cover, there are "
+               f"{a['count']:,} buildings in 2017 ({a['ha']} ha, median {a['median_m2']:.0f} m²) "
+               f"and {b['count']:,} in 2026 ({b['ha']} ha, median {b['median_m2']:.0f} m²). "
+               f"Read that carefully: {k['caveat']}. The 2026 layer finds fewer but much "
+               f"larger shapes, which is the model merging neighbouring buildings rather "
+               f"than buildings disappearing.")
+
+    elif t == "overview":
+        b = c["layers"]["buildings"]; w = c["layers"]["water"]; r = c["layers"]["roads"]
+        ans = (f"Ongole, from the 2026 satellite: {b['count']:,} buildings covering "
+               f"{b['total_ha']:,.0f} ha (median {b['median_m2']:.0f} m²); "
+               f"{r['total_km']:,.0f} km of road across {r['count']:,} segments, "
+               f"{r['surface_ha']:,.0f} ha of surface, median width {r['width_median_m']:.1f} m; "
+               f"and {w['count']} water bodies covering {w['total_ha']:,.0f} ha. "
+               f"Guntur has the drone survey with the road damage.")
+
+    elif t == "roads":
+        r = c["layers"]["roads"]
+        if p["intent"] == "count" or MAXW.search(q) is None and p["intent"] != "rank":
+            ans = (f"Ongole has {r['total_km']:,.0f} km of road across {r['count']:,} segments, "
+                   f"covering {r['surface_ha']:,.0f} ha of surface. Median width "
+                   f"{r['width_median_m']:.1f} m, 90th percentile {r['width_p90_m']:.1f} m, "
+                   f"widest {r['width_max_m']:.1f} m.")
+        else:
+            key = "roads_wide" if re.search(r"wid", q, re.I) else "roads"
+            top = c["top"].get(key, [])[:max(1, p["limit"])]
+            unit = "m wide" if key == "roads_wide" else "m long"
+            feats = city_top_geom(data_dir, "roads", max(1, p["limit"]))
+            lines = "\n".join(f"{i}. {x['value']:,.0f} {unit}"
+                              for i, x in enumerate(top, 1))
+            ans = f"Longest/widest roads in Ongole:\n{lines}" if top \
+                else "No road features indexed."
+
+    else:  # buildings | water
+        lay = "buildings" if t == "buildings" else "water"
+        st = c["layers"][lay]
+        thing = "buildings" if lay == "buildings" else "water bodies"
+        # "the largest water body" is a top-N question whatever intent the
+        # model attached to it; only an explicit count asks for totals.
+        wants_top = (MAXW.search(q) or MINW.search(q)
+                     or p["intent"] in ("rank", "list"))
+        if wants_top and p["intent"] != "count":
+            k = max(1, p["limit"])
+            top = c["top"][lay][:k]
+            feats = city_top_geom(data_dir, lay, k)
+            if k == 1 and top:
+                x = top[0]
+                ans = (f"The largest of Ongole's {st['count']:,} {thing} covers "
+                       f"{_fmt(x['value'])} m² ({x['value']/1e4:.2f} ha). "
+                       f"Median is {st['median_m2']:.0f} m², so it is "
+                       f"{x['value']/max(st['median_m2'],1):,.0f}x the typical one.")
+            else:
+                lines = "\n".join(
+                    f"{i}. {_fmt(x['value'])} m² ({x['value'] / 1e4:.2f} ha)"
+                    for i, x in enumerate(top, 1))
+                ans = f"Largest {thing} in Ongole by area:\n{lines}"
+        else:
+            extra = (f" {st['over_1000_m2']:,} of them are over 1,000 m²."
+                     if lay == "buildings" else "")
+            ans = (f"Ongole has {st['count']:,} {thing} covering {st['total_ha']:,.1f} ha "
+                   f"({_fmt(st['total_m2'])} m²). Median {st['median_m2']:.0f} m², "
+                   f"mean {st['mean_m2']:.0f} m², largest {_fmt(st['max_m2'])} m².{extra} "
+                   f"Source: {st['source']}.")
+
+    return {"ok": True, "answer": ans, "plan": p, "roads": [], "features": feats,
+            "city": {k: v for k, v in c["layers"].items()}}
+
+
 def run(q, data_dir):
     data = kb(data_dir)
     if not data:
@@ -295,6 +465,8 @@ def run(q, data_dir):
                 "roads": [], "plan": None}
     roads = data["roads"]
     p = plan_for(q)
+    if p.get("topic") and p["topic"] != "road_damage":
+        return answer_city(p, q, data_dir)
     tot = data["totals"]
     key = SORT_KEY.get(p["metric"], "severity")
     hits, answer = [], ""

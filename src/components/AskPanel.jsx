@@ -18,10 +18,11 @@ const IMG = "ask-img";
 
 const SUGGESTIONS = [
     "Give me the most damaged road",
-    "Top 5 worst roads",
-    "How many potholes on Arundelpet 6th line?",
-    "Which roads are in good condition?",
-    "Summarise the survey",
+    "How many buildings are there?",
+    "What is the largest water body?",
+    "Total road length in Ongole",
+    "Compare 2017 and 2026 buildings",
+    "What data do you have?",
 ];
 
 const GRADE_COLOUR = {
@@ -51,6 +52,52 @@ export default function AskPanel({ getMap }) {
     }, [getMap]);
 
     /* Draw the answer: the road itself, a numbered pin per road, and fit to it. */
+    /* Buildings, water bodies and road segments returned for non-damage
+     * questions: outline each one and fit to them. */
+    const showFeatures = useCallback((feats) => {
+        const map = getMap?.();
+        if (!map || !feats?.length) return;
+        clearMap();
+        const fc = { type: "FeatureCollection", features: [] };
+        const pins = { type: "FeatureCollection", features: [] };
+        let minX = 180, minY = 90, maxX = -180, maxY = -90;
+        feats.forEach((f, i) => {
+            for (const ring of f.parts || []) {
+                if (!(ring?.length > 1)) continue;
+                const line = f.kind && f.kind.includes("Line");
+                fc.features.push({
+                    type: "Feature", properties: {},
+                    geometry: line ? { type: "LineString", coordinates: ring }
+                                   : { type: "Polygon", coordinates: [ring] },
+                });
+                for (const [x, y] of ring) {
+                    minX = Math.min(minX, x); maxX = Math.max(maxX, x);
+                    minY = Math.min(minY, y); maxY = Math.max(maxY, y);
+                }
+            }
+            pins.features.push({ type: "Feature",
+                properties: { n: String(i + 1), v: `${Math.round(f.value).toLocaleString()} m²` },
+                geometry: { type: "Point", coordinates: [f.lon, f.lat] } });
+        });
+        map.addSource(SRC, { type: "geojson", data: fc });
+        map.addLayer({ id: `${SRC}-glow`, type: "line", source: SRC,
+            paint: { "line-color": "#22D3EE", "line-width": 10, "line-opacity": 0.22, "line-blur": 6 } });
+        map.addLayer({ id: `${SRC}-line`, type: "line", source: SRC,
+            paint: { "line-color": "#22D3EE", "line-width": 2.5 } });
+        map.addSource(PIN, { type: "geojson", data: pins });
+        map.addLayer({ id: `${PIN}-dot`, type: "circle", source: PIN,
+            paint: { "circle-radius": 13, "circle-color": "#22D3EE",
+                     "circle-stroke-color": "#0B1220", "circle-stroke-width": 2 } });
+        map.addLayer({ id: `${PIN}-label`, type: "symbol", source: PIN,
+            layout: { "text-field": ["get", "n"], "text-size": 13,
+                      "text-font": ["DIN Offc Pro Medium", "Arial Unicode MS Bold"],
+                      "text-allow-overlap": true },
+            paint: { "text-color": "#0B1220" } });
+        if (maxX > minX || maxY > minY)
+            map.fitBounds([[minX, minY], [maxX, maxY]],
+                { padding: { top: 90, left: 60, right: 480, bottom: 140 }, duration: 2000, maxZoom: 19 });
+    }, [getMap, clearMap]);
+
     const show = useCallback((roads) => {
         const map = getMap?.();
         if (!map || !roads?.length) return;
@@ -212,6 +259,7 @@ export default function AskPanel({ getMap }) {
             setTurns((t) => [...t, { role: "ai", text: d.answer || "No answer.",
                                      roads: d.roads || [], plan: d.plan }]);
             if (d.roads?.length) show(d.roads);
+            else if (d.features?.length) showFeatures(d.features);
         } catch (e) {
             setTurns((t) => [...t, { role: "ai", text: `Could not answer: ${e.message}`, roads: [] }]);
         } finally {
@@ -272,7 +320,7 @@ export default function AskPanel({ getMap }) {
                         <Sparkles size={14} style={{ color: "var(--accent)" }} />
                         <div className="min-w-0 flex-1">
                             <div className="text-[12px] font-medium">Ask the survey</div>
-                            <div className="text-[10px] opacity-60">Guntur roads · answers come from the data</div>
+                            <div className="text-[10px] opacity-60">Roads, buildings, water · answers come from the data</div>
                         </div>
                         {driving && (
                             <button onClick={stopTour} title="Stop"
