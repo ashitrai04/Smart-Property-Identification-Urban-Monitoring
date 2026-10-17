@@ -51,7 +51,7 @@ road:   the road name if the user names one, else "".
 grade:  one of good, fair, poor, bad, critical if the user names a condition.
 min_confidence: only if the user asks for a confidence threshold, else 0."""
 
-_kb = {"path": None, "mtime": 0, "data": None, "geo": None}
+_kb = {"path": None, "mtime": 0, "data": None, "geo": None, "ph": None}
 
 
 # ── knowledge base ───────────────────────────────────────────────
@@ -66,34 +66,52 @@ def kb(data_dir):
             _kb["data"] = json.load(f)
         _kb["mtime"] = mt
         _kb["geo"] = None
+        _kb["ph"] = None
         print(f"[ask] loaded {len(_kb['data']['roads'])} roads", flush=True)
     return _kb["data"]
 
 
 def geometry_for(data_dir, names):
-    """GeoJSON for the named roads: map pins and the story-mode path."""
+    """Full road geometry + its potholes in order, for the map and the story.
+
+    The road is returned as a LIST OF PARTS, not one line: the drone segments are
+    cut at junctions, and chaining them into a single line to draw bridged those
+    gaps and overstated a road by up to 75%. Parts drawn as-is match length_m.
+    """
     import geopandas as gpd
     g = _kb.get("geo")
     if g is None:
         p = Path(data_dir) / "guntur_roads_kb.gpkg"
         if not p.is_file():
-            return {}
+            return {}, {}
         g = _kb["geo"] = gpd.read_file(p, layer="road_kb").to_crs(4326)
-    sub = g[g["road"].isin(list(names))]
-    out = {}
-    for _, r in sub.iterrows():
+    ph = _kb.get("ph")
+    if ph is None:
+        p = Path(data_dir) / "guntur_roads_kb.gpkg"
+        try:
+            ph = _kb["ph"] = gpd.read_file(p, layer="road_potholes").to_crs(4326)
+        except Exception:
+            ph = _kb["ph"] = False
+
+    names = list(names)
+    parts, holes = {}, {}
+    for _, r in g[g["road"].isin(names)].iterrows():
         geom = r.geometry
         if geom is None:
             continue
-        coords = []
-        if geom.geom_type == "LineString":
-            coords = [[round(x, 6), round(y, 6)] for x, y in geom.coords]
-        elif geom.geom_type == "MultiLineString":
-            best = max(geom.geoms, key=lambda s: s.length)
-            coords = [[round(x, 6), round(y, 6)] for x, y in best.coords]
-        if coords:
-            out[r["road"]] = coords
-    return out
+        segs = [geom] if geom.geom_type == "LineString" else list(geom.geoms)
+        parts[r["road"]] = [[[round(x, 6), round(y, 6)] for x, y in s.coords]
+                            for s in segs if len(s.coords) > 1]
+    if ph is not False and ph is not None and len(ph):
+        sub = ph[ph["road"].isin(names)].sort_values(["road", "idx"])
+        for road, grp in sub.groupby("road"):
+            holes[road] = [{"idx": int(x["idx"]), "lon": float(x["lon"]), "lat": float(x["lat"]),
+                            "along_m": float(x["along_m"]), "label": str(x["label"]),
+                            "confidence": round(float(x["confidence"]), 2),
+                            "size_m": round(float(x["size_m"]), 1),
+                            "is_pothole": int(x["is_pothole"])}
+                           for _, x in grp.iterrows()]
+    return parts, holes
 
 
 # ── prompt -> plan ───────────────────────────────────────────────
@@ -368,9 +386,8 @@ def run(q, data_dir):
                     f"{r['length_m']:.0f} m, {r['grade']}"
                     for i, r in enumerate(hits, 1))
 
-    paths = geometry_for(data_dir, [h["road"] for h in hits]) if hits else {}
-    for h in hits:
-        h = h.setdefault("path", paths.get(h["road"], []))
+    parts, holes = geometry_for(data_dir, [h["road"] for h in hits]) if hits else ({}, {})
     return {"ok": True, "answer": answer, "plan": p,
-            "roads": [{**h, "path": paths.get(h["road"], [])} for h in hits],
+            "roads": [{**h, "parts": parts.get(h["road"], []),
+                       "pothole_list": holes.get(h["road"], [])} for h in hits],
             "totals": tot}

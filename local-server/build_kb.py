@@ -82,13 +82,57 @@ def _num(v, default=0.0):
 
 
 def path_of(geoms):
-    """One drivable path per road, for story mode. linemerge joins touching
-    segments; the longest piece is the road's spine."""
-    merged = linemerge(MultiLineString([g for g in geoms if g is not None and g.length > 0]))
-    if isinstance(merged, LineString):
-        return merged
-    parts = sorted(merged.geoms, key=lambda s: s.length, reverse=True)
-    return parts[0] if parts else None
+    """One continuous path covering the WHOLE road, for story mode.
+
+    linemerge alone is not enough: the drone segments are cut at junctions and
+    their endpoints do not coincide exactly, so merging leaves a pile of
+    fragments. Taking the longest fragment drew 15-22% of a road and called it
+    the road — Arundelpet 6th line is 788 m and the story ran 120 m of it.
+
+    So the fragments are chained end-to-end: start at the most extreme endpoint
+    and repeatedly jump to the nearest unused endpoint, flipping each piece to
+    face the right way. Gaps at junctions are bridged, which is what "connect
+    the whole road" means here.
+    """
+    lines = [g for g in geoms if g is not None and g.length > 0]
+    if not lines:
+        return None
+    merged = linemerge(MultiLineString(lines)) if len(lines) > 1 else lines[0]
+    parts = [merged] if isinstance(merged, LineString) else list(merged.geoms)
+    parts = [p for p in parts if p.length > 0]
+    if len(parts) == 1:
+        return parts[0]
+
+    coords = [list(p.coords) for p in parts]
+    # start from the endpoint farthest from the centre: an end of the road,
+    # not the middle, so the drive runs end to end
+    cx = np.mean([c[0] for cs in coords for c in cs])
+    cy = np.mean([c[1] for cs in coords for c in cs])
+    best, bi, bend = -1.0, 0, 0
+    for i, cs in enumerate(coords):
+        for e in (0, -1):
+            d = (cs[e][0] - cx) ** 2 + (cs[e][1] - cy) ** 2
+            if d > best:
+                best, bi, bend = d, i, e
+    cur = coords[bi][::-1] if bend == -1 else coords[bi]
+    used = {bi}
+    out = list(cur)
+    while len(used) < len(coords):
+        tail = out[-1]
+        pick, flip, pd = None, False, None
+        for i, cs in enumerate(coords):
+            if i in used:
+                continue
+            for e, fl in ((0, False), (-1, True)):
+                d = (cs[e][0] - tail[0]) ** 2 + (cs[e][1] - tail[1]) ** 2
+                if pd is None or d < pd:
+                    pick, flip, pd = i, fl, d
+        if pick is None:
+            break
+        nxt = coords[pick][::-1] if flip else coords[pick]
+        used.add(pick)
+        out.extend(nxt if nxt[0] != out[-1] else nxt[1:])
+    return LineString(out) if len(out) > 1 else parts[0]
 
 
 def main():
@@ -143,7 +187,9 @@ def main():
         ph = int(gdf["potholes"].sum())
         df_ = int(gdf["defects"].sum())
         wt = gdf["length_m"] / max(L, 1e-9)
-        p = path_of(list(gdf.geometry.values))
+        parts = [g for g in gdf.geometry.values if g is not None and g.length > 0]
+        chain = path_of(parts)          # ordering only — it bridges junction gaps
+        draw = parts[0] if len(parts) == 1 else MultiLineString(parts)
         rows.append({
             "road": road, "name": gdf["name"].iloc[0], "highway": gdf["highway"].iloc[0],
             "segments": len(gdf), "length_m": round(L, 1), "length_km": round(L / 1000, 3),
@@ -156,7 +202,12 @@ def main():
             "conf_mean": round(_num(gdf.loc[gdf["defects"] > 0, "conf_mean"].mean()), 3),
             "size_mean": round(_num(gdf.loc[gdf["defects"] > 0, "size_mean"].mean()), 2),
             "size_max": round(float(gdf["size_max"].max()), 2),
-            "geometry": p if p is not None else gdf.geometry.iloc[0],
+            # Drawn geometry is the real segments, so the highlighted road is
+            # exactly as long as length_m says. The chained version bridges gaps
+            # between disjoint stretches and came out up to 175% of the true
+            # length — fine for ordering, wrong to draw.
+            "geometry": draw,
+            "_chain": chain,
         })
     rd = gpd.GeoDataFrame(rows, crs=M)
 
@@ -176,9 +227,32 @@ def main():
     rd.loc[rk.index, "rank"] = np.arange(1, len(rk) + 1)
     rd = rd.sort_values(["rankable", "severity"], ascending=[False, False]).reset_index(drop=True)
 
+    # Every pothole, tied to its road and ordered ALONG it, so the story can
+    # visit them one by one from one end of the road to the other rather than
+    # in whatever order they came out of the detector.
+    seg2road = dict(zip(seg["seg_id"], seg["road"]))
+    paths = dict(zip(rd["road"], rd["_chain"]))
+    ph = j.copy()
+    ph["road"] = ph["seg_id"].map(seg2road)
+    ph = ph[ph["road"].notna()].copy()
+    ph["along_m"] = [
+        round(float(paths[r].project(g)), 1) if r in paths else 0.0
+        for r, g in zip(ph["road"], ph.geometry)
+    ]
+    ph = ph.sort_values(["road", "along_m"]).reset_index(drop=True)
+    ph["idx"] = ph.groupby("road").cumcount() + 1
+    ph4 = gpd.GeoDataFrame(
+        ph[["road", "seg_id", "idx", "along_m", "label", "confidence",
+            "size_m", "is_pothole"]],
+        geometry=ph.geometry, crs=M).to_crs(4326)
+    ph4["lon"] = ph4.geometry.x.round(6)
+    ph4["lat"] = ph4.geometry.y.round(6)
+
+    rd = rd.drop(columns=["_chain"])
     rd4 = rd.to_crs(4326)
     rd4.to_file(OUT_GPKG, layer="road_kb", driver="GPKG")
     seg.to_crs(4326).to_file(OUT_GPKG, layer="segment_kb", driver="GPKG")
+    ph4.to_file(OUT_GPKG, layer="road_potholes", driver="GPKG")
 
     tab = rd.drop(columns="geometry").copy()
     c = rd4.geometry.centroid

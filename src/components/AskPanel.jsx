@@ -35,7 +35,8 @@ export default function AskPanel({ getMap }) {
     const [busy, setBusy] = useState(false);
     const [turns, setTurns] = useState([]);
     const [driving, setDriving] = useState(null);
-    const drive = useRef({ raf: 0, stop: false });
+    const drive = useRef({ timer: 0, stop: false, go: null });
+    const [step, setStep] = useState(null);
     const endRef = useRef(null);
 
     useEffect(() => { endRef.current?.scrollIntoView({ behavior: "smooth" }); }, [turns, busy]);
@@ -58,12 +59,15 @@ export default function AskPanel({ getMap }) {
         let minX = 180, minY = 90, maxX = -180, maxY = -90;
         roads.forEach((r, i) => {
             const colour = GRADE_COLOUR[r.grade] || "#FF1744";
-            if (r.path?.length > 1) {
+            // parts, not one line: the road is cut at junctions and joining the
+            // pieces to draw them overstated some roads by up to 75 %
+            for (const part of r.parts || []) {
+                if (!(part?.length > 1)) continue;
                 lines.features.push({
                     type: "Feature", properties: { colour },
-                    geometry: { type: "LineString", coordinates: r.path },
+                    geometry: { type: "LineString", coordinates: part },
                 });
-                for (const [x, y] of r.path) {
+                for (const [x, y] of part) {
                     minX = Math.min(minX, x); maxX = Math.max(maxX, x);
                     minY = Math.min(minY, y); maxY = Math.max(maxY, y);
                 }
@@ -114,73 +118,62 @@ export default function AskPanel({ getMap }) {
     }, [getMap, clearMap]);
 
     /* Story mode: run a marker along the centreline with the camera following. */
-    const stopDrive = useCallback(() => {
+    const stopTour = useCallback(() => {
+        clearTimeout(drive.current.timer);
         drive.current.stop = true;
-        cancelAnimationFrame(drive.current.raf);
         const map = getMap?.();
-        if (map && map.getLayer(CAR)) map.removeLayer(CAR);
-        if (map && map.getSource(CAR)) map.removeSource(CAR);
+        if (map) {
+            if (map.getLayer(CAR)) map.removeLayer(CAR);
+            if (map.getSource(CAR)) map.removeSource(CAR);
+        }
         setDriving(null);
+        setStep(null);
     }, [getMap]);
 
-    const driveRoad = useCallback((r) => {
+    /* Story mode, the way the walkthrough does it: stop at each pothole in turn,
+     * from one end of the road to the other, with the damage layer switched on
+     * so the box being discussed is visible. Flat view — no tilt. */
+    const tourRoad = useCallback((r, startAt = 0) => {
         const map = getMap?.();
-        if (!map || !(r.path?.length > 1)) return;
-        stopDrive();
+        const list = r.pothole_list || [];
+        if (!map || !list.length) return;
+        clearTimeout(drive.current.timer);
         drive.current.stop = false;
         setDriving(r.road);
 
-        // cumulative length so the marker moves at a constant speed, not a
-        // constant number of vertices per frame
-        const pts = r.path;
-        const seg = [0];
-        for (let i = 1; i < pts.length; i++) {
-            const dx = (pts[i][0] - pts[i - 1][0]) * Math.cos(pts[i][1] * Math.PI / 180);
-            const dy = pts[i][1] - pts[i - 1][1];
-            seg.push(seg[i - 1] + Math.hypot(dx, dy));
+        // the potholes themselves, so the story has something to point at
+        if (!map.getSource(CAR)) {
+            map.addSource(CAR, { type: "geojson", data: { type: "FeatureCollection", features: [] } });
+            map.addLayer({ id: CAR, type: "circle", source: CAR,
+                paint: { "circle-radius": ["case", ["==", ["get", "on"], 1], 15, 7],
+                         "circle-color": "#FF1744",
+                         "circle-opacity": ["case", ["==", ["get", "on"], 1], 0.35, 0.18],
+                         "circle-stroke-color": "#FF1744",
+                         "circle-stroke-width": ["case", ["==", ["get", "on"], 1], 3, 1.5] } });
         }
-        const total = seg[seg.length - 1] || 1;
-        const at = (t) => {
-            const d = t * total;
-            let i = seg.findIndex((s) => s >= d);
-            if (i <= 0) i = 1;
-            const f = (d - seg[i - 1]) / Math.max(seg[i] - seg[i - 1], 1e-12);
-            return [pts[i - 1][0] + (pts[i][0] - pts[i - 1][0]) * f,
-                    pts[i - 1][1] + (pts[i][1] - pts[i - 1][1]) * f];
-        };
-        const bearing = (a, b) => (Math.atan2(
-            (b[0] - a[0]) * Math.cos(b[1] * Math.PI / 180), b[1] - a[1]) * 180) / Math.PI;
 
-        map.addSource(CAR, { type: "geojson",
-            data: { type: "Feature", geometry: { type: "Point", coordinates: pts[0] } } });
-        map.addLayer({ id: CAR, type: "circle", source: CAR,
-            paint: { "circle-radius": 9, "circle-color": "#22D3EE",
-                     "circle-stroke-color": "#FFFFFF", "circle-stroke-width": 3 } });
-
-        const ms = Math.min(16000, Math.max(6000, (r.length_m || 300) * 14));
-        const t0 = performance.now();
-        map.easeTo({ center: pts[0], zoom: 18.4, pitch: 60,
-                     bearing: bearing(pts[0], at(0.03)), duration: 1600 });
-        const step = () => {
-            if (drive.current.stop) return;
-            const t = Math.min(1, (performance.now() - t0 - 1600) / ms);
-            if (t > 0) {
-                const c = at(t);
-                map.getSource(CAR)?.setData(
-                    { type: "Feature", geometry: { type: "Point", coordinates: c } });
-                map.easeTo({ center: c, bearing: bearing(c, at(Math.min(1, t + 0.04))),
-                             duration: 120, easing: (x) => x });
+        const goto = (i) => {
+            if (drive.current.stop || i >= list.length) {
+                if (!drive.current.stop) setDriving(null), setStep(null);
+                return;
             }
-            if (t < 1) drive.current.raf = requestAnimationFrame(step);
-            else {
-                map.easeTo({ pitch: 0, duration: 1200 });
-                setDriving(null);
-            }
+            const p = list[i];
+            setStep({ i: i + 1, n: list.length, p, road: r.road });
+            map.getSource(CAR)?.setData({
+                type: "FeatureCollection",
+                features: list.map((x, k) => ({
+                    type: "Feature", properties: { on: k === i ? 1 : 0 },
+                    geometry: { type: "Point", coordinates: [x.lon, x.lat] },
+                })),
+            });
+            map.easeTo({ center: [p.lon, p.lat], zoom: 20.2, pitch: 0, bearing: 0, duration: 1500 });
+            drive.current.timer = setTimeout(() => goto(i + 1), 3600);
         };
-        drive.current.raf = requestAnimationFrame(step);
-    }, [getMap, stopDrive]);
+        drive.current.go = goto;
+        goto(startAt);
+    }, [getMap]);
 
-    useEffect(() => () => { drive.current.stop = true; cancelAnimationFrame(drive.current.raf); }, []);
+    useEffect(() => () => { drive.current.stop = true; clearTimeout(drive.current.timer); }, []);
 
     const send = async (text) => {
         const question = (text ?? q).trim();
@@ -206,6 +199,36 @@ export default function AskPanel({ getMap }) {
 
     return (
         <>
+            {/* story caption — which pothole, where along the road, how certain */}
+            {step && (
+                <div className="absolute bottom-5 left-1/2 z-30 w-[380px] max-w-[calc(100vw-2rem)]
+                                -translate-x-1/2 rounded-[10px] border border-[var(--line)]
+                                bg-[var(--surface-1)] px-3.5 py-3 shadow-2xl">
+                    <div className="flex items-center gap-2">
+                        <span className="rounded-[5px] px-1.5 py-0.5 text-[11px] font-semibold"
+                            style={{ background: "#FF1744", color: "#fff" }}>
+                            {step.i}/{step.n}
+                        </span>
+                        <span className="min-w-0 flex-1 truncate text-[12.5px] font-medium">{step.road}</span>
+                        <button onClick={() => { clearTimeout(drive.current.timer); drive.current.go?.(Math.max(0, step.i - 2)); }}
+                            className="rounded px-1.5 py-0.5 text-[11px] hover:bg-[var(--surface-2)]">Prev</button>
+                        <button onClick={() => { clearTimeout(drive.current.timer); drive.current.go?.(step.i); }}
+                            className="rounded px-1.5 py-0.5 text-[11px] hover:bg-[var(--surface-2)]">Next</button>
+                        <button onClick={stopTour}
+                            className="rounded p-1 hover:bg-[var(--surface-2)]"><Square size={12} /></button>
+                    </div>
+                    <div className="mt-1.5 flex items-center gap-3 text-[11.5px] opacity-80">
+                        <span>{step.p.label}</span>
+                        <span>confidence {step.p.confidence.toFixed(2)}</span>
+                        <span>{step.p.size_m.toFixed(1)} m</span>
+                        <span>{Math.round(step.p.along_m)} m along</span>
+                    </div>
+                    <div className="mt-2 h-[3px] w-full rounded bg-[var(--surface-2)]">
+                        <div className="h-full rounded" style={{ width: `${(step.i / step.n) * 100}%`, background: "#FF1744" }} />
+                    </div>
+                </div>
+            )}
+
             {!open && (
                 <button onClick={() => setOpen(true)} title="Ask the survey"
                     className="absolute bottom-5 right-5 z-20 flex items-center gap-2 rounded-full
@@ -225,10 +248,10 @@ export default function AskPanel({ getMap }) {
                             <div className="text-[10px] opacity-60">Guntur roads · answers come from the data</div>
                         </div>
                         {driving && (
-                            <button onClick={stopDrive} title="Stop"
+                            <button onClick={stopTour} title="Stop"
                                 className="rounded p-1 hover:bg-[var(--surface-2)]"><Square size={13} /></button>
                         )}
-                        <button onClick={() => { setOpen(false); stopDrive(); clearMap(); }}
+                        <button onClick={() => { setOpen(false); stopTour(); clearMap(); }}
                             className="rounded p-1 hover:bg-[var(--surface-2)]"><X size={14} /></button>
                     </div>
 
@@ -267,8 +290,8 @@ export default function AskPanel({ getMap }) {
                                                     className="shrink-0 rounded p-0.5 hover:bg-[var(--surface-2)]">
                                                     <MapPin size={12} />
                                                 </button>
-                                                <button title="Drive along it" onClick={() => driveRoad(r)}
-                                                    disabled={!(r.path?.length > 1)}
+                                                <button title="Play the potholes one by one" onClick={() => tourRoad(r)}
+                                                    disabled={!(r.pothole_list?.length)}
                                                     className="shrink-0 rounded p-0.5 hover:bg-[var(--surface-2)] disabled:opacity-30">
                                                     <Play size={12} />
                                                 </button>
