@@ -13,6 +13,7 @@ import { useBaseMap } from "../lib/mapPrefs";
 import ServerImagery from "../components/ServerImagery";
 import DroneGrid from "../components/DroneGrid";
 import DroneLayers from "../components/DroneLayers";
+import AskPanel from "../components/AskPanel";
 import { useGpuStatus } from "../lib/modelApi";
 import { addArcGISFeatureLayer, addLocalGeoJSONLayer, reloadVisibleLayers, removeLayerGroup } from "../utils/mapLayers";
 import { parseAOIFile, getFeaturesBounds, computeTotalAreaKm2, unionGeometry, polygonCentroid } from "../utils/aoiUtils";
@@ -1988,6 +1989,9 @@ export default function Mapping() {
                         <span className="coords-display">{coords.lat}°N · {coords.lng}°E</span>
                     </div>
                 )}
+
+                {/* ═══════════ Ask the survey — chat, map pins, story mode ═══════════ */}
+                <AskPanel getMap={getMap} />
 
                 {/* ═══════════ AOI — floating card, drag it by its header ═══════════ */}
                 <Draggable nodeRef={aoiCardRef} handle=".aoi-drag" cancel="button" bounds="parent">
