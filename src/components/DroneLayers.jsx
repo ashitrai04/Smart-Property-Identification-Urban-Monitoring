@@ -119,8 +119,11 @@ export default function DroneLayers({ getMap, district = "ongole", kind = "drone
         if (!map) return;
         const id = `srv-img-${img.id}`;
         if (on[id]) { remove(map, id); setOn((p) => ({ ...p, [id]: false })); return; }
-        map.addSource(id, { type: "raster", tileSize: 256, bounds: img.bounds, maxzoom: 22,
-            tiles: [`${gpuBase()}/imagery/${img.id}/tiles/{z}/{x}/{y}.webp`] });
+        // 512 px tiles: a quarter as many requests for the same screen. Over a
+        // tunnel the round trip dominates, so this is the difference between
+        // imagery crawling in and appearing at once.
+        map.addSource(id, { type: "raster", tileSize: 512, bounds: img.bounds, maxzoom: 22,
+            tiles: [`${gpuBase()}/imagery/${img.id}/tiles/{z}/{x}/{y}.webp?size=512`] });
         // imagery sits right on the basemap; every other layer stays above it
         map.addLayer({ id, type: "raster", source: id, paint: { "raster-opacity": 0, "raster-opacity-transition": { duration: 600 } } }, imageryBeforeId(map));
         requestAnimationFrame(() => map.setPaintProperty(id, "raster-opacity", 1));
