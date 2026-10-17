@@ -122,7 +122,11 @@ export default function DroneLayers({ getMap, district = "ongole", kind = "drone
         // 512 px tiles: a quarter as many requests for the same screen. Over a
         // tunnel the round trip dominates, so this is the difference between
         // imagery crawling in and appearing at once.
-        map.addSource(id, { type: "raster", tileSize: 512, bounds: img.bounds, maxzoom: 22,
+        // maxzoom is 21, not 22: a 512 px tile at z21 already carries the detail
+        // of a 256 px tile at z22, which is about native for 3-4 cm imagery.
+        // Leaving it at 22 asks for detail the source does not have, so the
+        // deepest zoom comes back upsampled and soft.
+        map.addSource(id, { type: "raster", tileSize: 512, bounds: img.bounds, maxzoom: 21,
             tiles: [`${gpuBase()}/imagery/${img.id}/tiles/{z}/{x}/{y}.webp?size=512`] });
         // imagery sits right on the basemap; every other layer stays above it
         map.addLayer({ id, type: "raster", source: id, paint: { "raster-opacity": 0, "raster-opacity-transition": { duration: 600 } } }, imageryBeforeId(map));

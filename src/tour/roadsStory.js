@@ -14,6 +14,25 @@ let markers = [];
 let spin = null;
 
 const load = async () => (story ||= await (await fetch(`${BASE}/story.json`)).json());
+
+/* Which imagery carries the story area.
+ * The id is whatever the current server calls it — the A100 box used database
+ * ids, the local folder server names images after their files — so ask for the
+ * drone image covering the story bounds instead of hard-coding one. Getting this
+ * wrong is silent: the tiles 404 and the tour plays over a stretched basemap. */
+async function gunturImageryId(bounds) {
+    try {
+        const list = await (await fetch(`${gpuBase()}/imagery`)).json();
+        const [w, s, e, n] = bounds;
+        const hit = list.find((i) => {
+            const b = i.bounds;
+            return i.status === "ready" && i.kind !== "satellite" && Array.isArray(b)
+                && !(b[2] < w || b[0] > e || b[3] < s || b[1] > n);
+        });
+        if (hit) return hit.id;
+    } catch { /* fall through */ }
+    return GUNTUR_DRONE;
+}
 // Keep the subject clear of the left rail, the AOI card (top right) and the caption (bottom right).
 const FRAME = { top: 70, left: 40, right: 460, bottom: 170 };
 const fly = (map, opts) => new Promise((res) => {
@@ -57,8 +76,9 @@ export async function start(map) {
 
     // drone imagery right on the basemap
     if (await probeGpu()) {
+        const imgId = await gunturImageryId(st.summary.bounds);
         map.addSource(S.img, { type: "raster", tileSize: 256, maxzoom: 22, bounds: st.summary.bounds,
-            tiles: [`${gpuBase()}/imagery/${GUNTUR_DRONE}/tiles/{z}/{x}/{y}.webp`] });
+            tiles: [`${gpuBase()}/imagery/${imgId}/tiles/{z}/{x}/{y}.webp`] });
         map.addLayer({ id: S.img, type: "raster", source: S.img, paint: { "raster-opacity": 1 } }, imageryBeforeId(map));
     }
     const all = await (await fetch(`${BASE}/guntur_detections.geojson`)).json();
