@@ -226,8 +226,9 @@ export default function AskPanel({ getMap }) {
             {/* story caption — which pothole, where along the road, how certain */}
             {step && (
                 <div className="absolute bottom-5 left-5 z-30 w-[380px] max-w-[calc(100vw-2rem)]
-                                rounded-[10px] border border-[var(--line)]
-                                bg-[var(--surface-1)] px-3.5 py-3 shadow-2xl">
+                                rounded-[10px] px-3.5 py-3"
+                    style={{ background: "var(--surface)", border: "1px solid var(--line)",
+                             boxShadow: "var(--sh-lg)", color: "var(--text)" }}>
                     <div className="flex items-center gap-2">
                         <span className="rounded-[5px] px-1.5 py-0.5 text-[11px] font-semibold"
                             style={{ background: "#FF1744", color: "#fff" }}>
@@ -263,9 +264,11 @@ export default function AskPanel({ getMap }) {
             )}
             {open && (
                 <div className="absolute bottom-5 right-5 z-20 flex w-[380px] max-w-[calc(100vw-2rem)]
-                                flex-col overflow-hidden rounded-[10px] border border-[var(--line)]
-                                bg-[var(--surface-1)] shadow-2xl" style={{ maxHeight: "min(620px, 78vh)" }}>
-                    <div className="flex items-center gap-2 border-b border-[var(--line)] px-3 py-2.5">
+                                flex-col overflow-hidden rounded-[10px]"
+                    style={{ maxHeight: "min(620px, 78vh)", background: "var(--surface)",
+                             border: "1px solid var(--line)", boxShadow: "var(--sh-lg)",
+                             color: "var(--text)" }}>
+                    <div className="flex items-center gap-2 px-3 py-2.5" style={{ borderBottom: "1px solid var(--line)" }}>
                         <Sparkles size={14} style={{ color: "var(--accent)" }} />
                         <div className="min-w-0 flex-1">
                             <div className="text-[12px] font-medium">Ask the survey</div>
@@ -285,8 +288,9 @@ export default function AskPanel({ getMap }) {
                                 <div className="text-[11px] opacity-60">Try asking:</div>
                                 {SUGGESTIONS.map((s) => (
                                     <button key={s} onClick={() => send(s)}
-                                        className="block w-full rounded-[6px] border border-[var(--line)]
-                                                   px-2.5 py-1.5 text-left text-[11.5px] hover:bg-[var(--surface-2)]">
+                                        className="block w-full rounded-[6px] px-2.5 py-1.5 text-left text-[11.5px]
+                                                   hover:bg-[var(--surface-2)]"
+                                        style={{ border: "1px solid var(--line)", color: "var(--text)" }}>
                                         {s}
                                     </button>
                                 ))}
@@ -297,15 +301,18 @@ export default function AskPanel({ getMap }) {
                                 <div className={`inline-block max-w-[94%] whitespace-pre-wrap rounded-[8px] px-2.5 py-1.5
                                     text-[12px] leading-[1.5] ${t.role === "you"
                                         ? "bg-[var(--accent)] text-black"
-                                        : "border border-[var(--line)] bg-[var(--surface-2)]"}`}>
+                                        : ""}`}
+                                    style={t.role === "you" ? undefined : {
+                                        background: "var(--surface-2)",
+                                        border: "1px solid var(--line)", color: "var(--text)" }}>
                                     {t.text}
                                 </div>
                                 {!!t.roads?.length && (
                                     <div className="mt-1.5 space-y-1">
                                         {t.roads.slice(0, 6).map((r, k) => (
                                             <div key={r.road + k}
-                                                className="flex items-center gap-2 rounded-[6px] border
-                                                           border-[var(--line)] px-2 py-1 text-[11px]">
+                                                className="flex items-center gap-2 rounded-[6px] px-2 py-1 text-[11px]"
+                                                style={{ border: "1px solid var(--line)", background: "var(--surface-2)" }}>
                                                 <span className="inline-block h-2.5 w-2.5 shrink-0 rounded-full"
                                                     style={{ background: GRADE_COLOUR[r.grade] || "#FF1744" }} />
                                                 <span className="min-w-0 flex-1 truncate">{r.road}</span>
@@ -329,13 +336,13 @@ export default function AskPanel({ getMap }) {
                         <div ref={endRef} />
                     </div>
 
-                    <div className="flex items-center gap-1.5 border-t border-[var(--line)] p-2">
+                    <div className="flex items-center gap-1.5 p-2" style={{ borderTop: "1px solid var(--line)" }}>
                         <input value={q} onChange={(e) => setQ(e.target.value)}
                             onKeyDown={(e) => e.key === "Enter" && send()}
                             placeholder="Which road is worst?"
-                            className="min-w-0 flex-1 rounded-[6px] border border-[var(--line)]
-                                       bg-[var(--surface-2)] px-2.5 py-1.5 text-[12px] outline-none
-                                       focus:border-[var(--accent)]" />
+                            className="min-w-0 flex-1 rounded-[6px] px-2.5 py-1.5 text-[12px] outline-none"
+                            style={{ border: "1px solid var(--line)", background: "var(--surface-2)",
+                                     color: "var(--text)" }} />
                         <button onClick={() => send()} disabled={busy || !q.trim()}
                             className="rounded-[6px] bg-[var(--accent)] p-1.5 text-black disabled:opacity-40">
                             <Send size={14} />
