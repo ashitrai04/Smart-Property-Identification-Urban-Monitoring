@@ -175,11 +175,32 @@ export default function DroneLayers({ getMap, district = "ongole", kind = "drone
         // detection click → details
         const onClick = (e) => {
             const p = e.features?.[0]?.properties || {};
-            const rows = isDamage
-                ? [["Type", p.label], ["Confidence", p.confidence], ["Size", `${p.size_m} m`], ["On road", p.on_road ? "yes" : `no (${Math.round(100 * (p.road_overlap || 0))}% on road)`]]
-                : [["Area", p.area_m2 ? `${p.area_m2} m²` : "—"],
-                   ...(p.outline ? [["Outline", p.outline === "sam" ? `SAM-snapped (score ${p.sam_score})` : "SegFormer (cleaned)"]] : [])];
-            new mapboxgl.Popup({ maxWidth: "240px" }).setLngLat(e.lngLat)
+            const num = (v, d = 2) => (v === undefined || v === null || v === "" ? null : Number(v).toFixed(d));
+            // Show whatever the feature actually carries. The old version only
+            // handled road_damage and fell back to "Area" for everything else,
+            // so measured depth, volume and cost were fetched but never shown.
+            const rows = [];
+            if (p.label) rows.push(["Type", p.label]);
+            if (p.confidence !== undefined) rows.push(["Confidence", num(p.confidence, 2)]);
+            if (p.size_m !== undefined) rows.push(["Size", `${num(p.size_m, 1)} m`]);
+            if (p.depth_max_m !== undefined) rows.push(["Depth (max)", `${num(p.depth_max_m * 100, 1)} cm`]);
+            if (p.depth_mean_m !== undefined) rows.push(["Depth (mean)", `${num(p.depth_mean_m * 100, 1)} cm`]);
+            if (p.volume_m3 !== undefined) rows.push(["Volume", `${num(p.volume_m3, 3)} m³`]);
+            if (p.tonnes !== undefined) rows.push(["Material", `${num(p.tonnes, 3)} t`]);
+            if (p.cost_inr !== undefined) rows.push(["Est. cost", `₹${Math.round(p.cost_inr).toLocaleString("en-IN")}`]);
+            if (p.risk) rows.push(["Risk", String(p.risk).toUpperCase()]);
+            if (p.pond_depth_m !== undefined) rows.push(["Ponding", `${num(p.pond_depth_m * 100, 1)} cm`]);
+            if (p.max_depth_m !== undefined) rows.push(["Ponding (max)", `${num(p.max_depth_m * 100, 1)} cm`]);
+            if (p.slope !== undefined) rows.push(["Cross slope", `${num(p.slope * 100, 2)} %`]);
+            if (p.crosses_channel !== undefined) rows.push(["Water crosses", p.crosses_channel ? "yes" : "no"]);
+            if (p.kind) rows.push(["Kind", p.kind]);
+            if (p.height_max_m !== undefined) rows.push(["Height", `${num(p.height_max_m, 2)} m`]);
+            if (p.vegetation_frac !== undefined) rows.push(["Vegetation", `${Math.round(p.vegetation_frac * 100)} %`]);
+            if (p.area_m2 !== undefined) rows.push(["Area", `${num(p.area_m2, 2)} m²`]);
+            if (p.name) rows.push(["Road", p.name]);
+            if (p.fclass) rows.push(["Class", p.fclass]);
+            if (!rows.length) rows.push(["—", "no attributes"]);
+            new mapboxgl.Popup({ maxWidth: "260px" }).setLngLat(e.lngLat)
                 .setHTML(`<div class="popup-title">${det.label}</div>${rows.map(([k, v]) => `<div class="popup-row"><span class="popup-key">${k}</span><span class="popup-value">${v ?? "—"}</span></div>`).join("")}`)
                 .addTo(map);
         };
