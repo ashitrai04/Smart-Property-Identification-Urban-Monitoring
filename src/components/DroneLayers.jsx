@@ -22,6 +22,10 @@ const DETECTIONS = [
     { layer: "roads", label: "Roads", color: "#F1F5F9", task: ["segment", "fusion", "refine"], minzoom: 13, icon: Route },
     { layer: "waterbodies", label: "Water bodies", color: "#38BDF8", task: ["segment", "fusion", "refine"], minzoom: 12, icon: Droplets },
     { layer: "openareas", label: "Open areas", color: "#FBBF24", task: ["segment", "refine"], minzoom: 14, icon: LandPlot },
+    // step-3 products: measured on the DSM/DTM, not predicted from the image
+    { layer: "pothole_depth", label: "Pothole depth", sub: "measured from the DSM", color: "#FF1744", task: ["pothole"], minzoom: 16, icon: ScanSearch },
+    { layer: "waterlog", label: "Waterlogging risk", sub: "ponding, slope and flow", color: "#38BDF8", task: ["segment"], minzoom: 14, icon: Droplets },
+    { layer: "encroachment", label: "Encroachment", sub: "obstructions in the road", color: "#F97316", task: ["segment"], minzoom: 15, icon: LandPlot },
 ];
 // Districts with their own drone section in the rail (kept out of "Server imagery").
 // Change detection between two dates (task "change", stored on the newer image).

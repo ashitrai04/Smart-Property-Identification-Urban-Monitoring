@@ -52,6 +52,9 @@ DEFAULT_DISTRICT = os.environ.get("GEO_DEFAULT_DISTRICT", "ongole").lower()
 # Layer name -> pattern, most specific first (a "new buildings" file must not
 # become plain "buildings", and "road damage" must not become "roads").
 LAYER_RULES = [
+    ("pothole_depth",     r"potholedepth|pothole_depth|depth"),
+    ("waterlog",          r"waterlog|ponding|flooding"),
+    ("encroachment",      r"encroach"),
     ("road_damage",       r"damage|pothole|crack"),
     ("new_buildings",     r"(new|added)[_\- ]*(building|bldg|footprint)|building[_\- ]*new"),
     ("removed_buildings", r"(removed|demolish|lost)[_\- ]*(building|bldg)|building[_\- ]*(removed|lost)"),
@@ -65,7 +68,9 @@ LAYER_RULES = [
 ]
 CHANGE_LAYERS = {"new_buildings", "removed_buildings", "new_roads", "water_gained", "water_lost"}
 # Task each layer is published under, so the webapp's task filters match.
-TASK_FOR = {"road_damage": "pothole", **{k: "change" for k in CHANGE_LAYERS}}
+TASK_FOR = {"road_damage": "pothole", "pothole_depth": "pothole",
+            "waterlog": "segment", "encroachment": "segment",
+            **{k: "change" for k in CHANGE_LAYERS}}
 GENERIC_TOKENS = {"ongole", "guntur", "final", "clip", "clipped", "output", "result",
                   "results", "data", "layer", "merged", "copy", "new", "old", "v1", "v2", "v3"}
 
@@ -202,6 +207,11 @@ def _best_imagery(imgs, vpath, vbounds, vlayer):
 
 # ── folder scan ──────────────────────────────────────────────────
 def _usable(p):
+    # Anything under a folder starting with "_" is working data, not a layer to
+    # publish: _kb holds the road signal, raw model output and knowledge bases,
+    # and they were being served as imagery and as a damage layer.
+    if any(part.startswith("_") for part in p.relative_to(DATA_DIR).parts[:-1]):
+        return False
     """A data file that is not still being written.
 
     GDAL writes .tmp/partial files while converting; picking one up mid-write
