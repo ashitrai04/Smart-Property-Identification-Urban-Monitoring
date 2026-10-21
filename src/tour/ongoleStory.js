@@ -150,10 +150,10 @@ export async function ongoleStart(map, which) {
     const top = cache[which].spots[0];
     _fx.setPoi(map, false);
     await _fx.fly(map, { center: top ? top.center : centreOf(fc.features[0].geometry),
-                         zoom: 15.2, pitch: 0, bearing: 0, duration: 3200 });
+                         zoom: 15.2, pitch: 0, bearing: 0, duration: 2600 });
     overlay(map, true);
     _fx.badge(map, `${spec.label} — ${fc.features.length.toLocaleString()} across 24 clips`);
-    await _fx.wait(1500);
+    await _fx.wait(1100);
     _fx.badge(map, null);
 }
 
@@ -165,25 +165,27 @@ export async function ongoleStop(map, which, i) {
     const p = c.spots[i];
     if (!p) return;
 
+    // Paced to finish inside the step's 9 s hold. The two reveal beats keep
+    // most of their time; what came out is dead air between the moves.
     _fx.stopSpin();
     _fx.clearMarkers();
     _fx.pushMarker(_fx.marker(map, i + 1, p.center));
     overlay(map, true);
-    await _fx.fly(map, { center: p.center, zoom: spec.zoomCluster, pitch: 0, bearing: 0, duration: 2600 });
+    await _fx.fly(map, { center: p.center, zoom: spec.zoomCluster, pitch: 0, bearing: 0, duration: 2200 });
     _fx.badge(map, `${p.n} within 250 m`);
-    await _fx.wait(1000);
+    await _fx.wait(650);
 
     _fx.clearMarkers();
     _fx.badge(map, null);
-    await _fx.fly(map, { center: p.best, zoom: spec.zoomIn, pitch: 0, bearing: 0, duration: 1700, curve: 1.1 });
-    await _fx.wait(800);
+    await _fx.fly(map, { center: p.best, zoom: spec.zoomIn, pitch: 0, bearing: 0, duration: 1450, curve: 1.1 });
+    await _fx.wait(450);
 
     overlay(map, false);
     _fx.badge(map, "Layers off — the raw drone image at 3 cm");
-    await _fx.wait(2300);
+    await _fx.wait(1900);
     overlay(map, true);
     _fx.badge(map, spec.say(p.bestProps));
-    await _fx.wait(1900);
+    await _fx.wait(1100);
     _fx.badge(map, null);
 }
 

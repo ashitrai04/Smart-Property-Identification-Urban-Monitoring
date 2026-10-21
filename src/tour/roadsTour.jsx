@@ -24,9 +24,9 @@ const STOPS = [
 ];
 
 export const ROADS_STEPS = [
-    { id: "r-intro", hero: "intro", title: "AI for Roads, Bridges & Tunnels", hold: 9000 },
-    { id: "r-pipeline", hero: "pipeline", title: "From drone flight to repair list", hold: 11000 },
-    { id: "r-model", hero: "model", title: "The road-damage model", hold: 12500 },
+    { id: "r-intro", hero: "intro", title: "AI for Roads, Bridges & Tunnels", hold: 5500 },
+    { id: "r-pipeline", hero: "pipeline", title: "From drone flight to repair list", hold: 7000 },
+    { id: "r-model", hero: "model", title: "The road-damage model", hold: 7500 },
 
     /* ═══ 1. MAPPING — the delivered result on a live map ═══════════════
      * Mapping comes before Analysis deliberately: the finished survey is the
@@ -62,43 +62,27 @@ export const ROADS_STEPS = [
     { id: "r-ong-depth", route: "/mapping", target: '[data-tour="map-canvas"]', title: "Pothole depth, measured from the terrain",
       desc: "Detection says <strong>where</strong>. The surface model minus the terrain model says <strong>how deep</strong>: a ring 0.25–1.0 m around each hole is taken as the road it should have been, and depth is the difference. <strong>2,824</strong> of 9,336 passed that test — the rest sat on ground too uneven to measure against.",
       stats: [["Measured", "2,824"], ["Median", "4.1 cm"], ["Void", "133.5 m³"], ["Mix", "384 t"]],
-      script: [{ run: async () => { await callTour("mapping", "roadsStory", "ongoleStart", "pothole_depth"); } }], hold: 7500 },
-    ...[0, 1, 2].map((i) => ({
+      script: [{ run: async () => { await callTour("mapping", "roadsStory", "ongoleStart", "pothole_depth"); } }], hold: 6000 },
+    ...[0, 1].map((i) => ({
         id: `r-ong-depth-${i}`, route: "/mapping", target: '[data-tour="map-canvas"]',
         title: `Worst depth cluster ${i + 1}`,
         desc: "Flying to the cluster, then to the deepest hole in it — and with the layers switched <strong>off</strong>, the pothole is there in the raw 3 cm image. The depth beside it is measured off the terrain, not guessed from the picture.",
-        script: [{ run: async () => { await callTour("mapping", "roadsStory", "ongoleStop", "pothole_depth", i); } }], hold: 10500,
+        script: [{ run: async () => { await callTour("mapping", "roadsStory", "ongoleStop", "pothole_depth", i); } }], hold: 9600,
     })),
 
     { id: "r-ong-water", route: "/mapping", target: '[data-tour="map-canvas"]', title: "Where water will stand",
       desc: "Depressions are found by filling the road in from its edges and subtracting — what is left is a basin. Flow accumulation adds where the water arrives from. <strong>11,320 ponds</strong> holding <strong>12,657 m³</strong>, and every 30 m of road scored: <strong>2,155 sections are high risk</strong>, meaning water both collects and cannot drain.",
       stats: [["Ponds", "11,320"], ["Volume", "12,657 m³"], ["High risk", "2,155"], ["Scored", "626 km"]],
-      script: [{ run: async () => { await callTour("mapping", "roadsStory", "ongoleStart", "waterlog"); } }], hold: 7500 },
+      script: [{ run: async () => { await callTour("mapping", "roadsStory", "ongoleStart", "waterlog"); } }], hold: 6000 },
     ...[0, 1].map((i) => ({
         id: `r-ong-water-${i}`, route: "/mapping", target: '[data-tour="map-canvas"]',
         title: `Ponding hotspot ${i + 1}`,
         desc: "The deepest basin in the cluster, then the raw image underneath it. Shallow and wide is what floods a carriageway — the depth and the volume are both measured.",
-        script: [{ run: async () => { await callTour("mapping", "roadsStory", "ongoleStop", "waterlog", i); } }], hold: 10500,
+        script: [{ run: async () => { await callTour("mapping", "roadsStory", "ongoleStop", "waterlog", i); } }], hold: 9600,
     })),
 
-    { id: "r-ong-enc", route: "/mapping", target: '[data-tour="map-canvas"]', title: "What is standing in the road",
-      desc: "Three sources decide this, not one: the right of way, the carriageway traced from the imagery, and the height model. An object counts only if it is raised, inside the reserve, <strong>not</strong> part of the road, and close enough to obstruct. Red is a structure matched to a building; orange is a stall, wall or dumped material.",
-      stats: [["Objects", "5,389"], ["Structures", "254"], ["Area", "9.01 ha"], ["Height", "3.0 m"]],
-      script: [{ run: async () => { await callTour("mapping", "roadsStory", "ongoleStart", "encroachment"); } }], hold: 7500 },
-    /* One stop, not two. The second-ranked hotspot kept landing on parked
-     * trucks, and nothing in the data separates a loaded truck from a roadside
-     * structure: the verified-good frontage is MORE elongated (4.8) than the
-     * trucks (4.1), and building distance splits them by 5 m. One example that
-     * holds up beats two where the second is wrong. */
-    ...[0].map((i) => ({
-        id: `r-ong-enc-${i}`, route: "/mapping", target: '[data-tour="map-canvas"]',
-        title: "The clearest encroachment on the corridor",
-        desc: "A roadside shack and its spill of material, <strong>137 m²</strong> inside the road reserve — checked against the raw image with the layers off. Two filters had to come off first: tree canopy, which greenness removed (<strong>3,910 objects, 42%</strong>), and the central median of the dual carriageway, which is raised and inside the reserve but is part of the road's design, not an encroachment (<strong>430 more</strong>).",
-        script: [{ run: async () => { await callTour("mapping", "roadsStory", "ongoleStop", "encroachment", i); } }], hold: 10500,
-    })),
-
-    { id: "r-ong-wide", route: "/mapping", target: '[data-tour="map-canvas"]', title: "All of it, across the corridor",
-      desc: "Pulled back, the three layers are one picture of the road: where it is broken, where it floods, and what is in the way. Every feature carries the measurement behind it, and a reviewed copy records why each call was made.",
+    { id: "r-ong-wide", route: "/mapping", target: '[data-tour="map-canvas"]', title: "Across the corridor",
+      desc: "Pulled back, the layers are one picture of the road: where it is broken and where it floods. Every feature carries the measurement behind it, and a reviewed copy records why each call was made.",
       script: [{ run: async () => {
           await callTour("mapping", "roadsStory", "ongoleWide");
           // hold the wide shot, then tidy the map before the walkthrough
