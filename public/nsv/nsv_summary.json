@@ -1,0 +1,25 @@
+{
+ "corridor": "NH148N",
+ "lane": "L2",
+ "chainage_start": 247310.0,
+ "chainage_end": 290600.0,
+ "length_km": 43.29,
+ "blocks": 433,
+ "status_counts": {
+  "good": 278,
+  "approaching": 107,
+  "exceeds": 48
+ },
+ "roughness_median": 1134.0,
+ "roughness_limit": 2400.0,
+ "roughness_over": 9,
+ "rut_median": 4.5,
+ "crack_median": 0.003,
+ "crack_over_0_1": 15,
+ "video": {
+  "file": "L2_web.mp4",
+  "fps": 5.0,
+  "native": "2048x2652",
+  "frames": 8669
+ }
+}

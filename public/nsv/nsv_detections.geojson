@@ -1,0 +1,5146 @@
+{
+ "type": "FeatureCollection",
+ "properties": {
+  "source": "L2.mp4 NSV forward camera",
+  "model": "YOLOv8s RDD (final_best.pt)",
+  "confirmed_rule": "seen in >=2 frames and conf >=0.4",
+  "camera_assumptions": {
+   "height_m": 2.2,
+   "hfov_deg": 82.0,
+   "focal_px": 1178,
+   "y_horizon": 1430
+  }
+ },
+ "features": [
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     76.2359302,
+     26.2809658
+    ]
+   },
+   "properties": {
+    "defect_id": 35,
+    "label": "pothole",
+    "class_raw": "potholes",
+    "status": "confirmed",
+    "confidence": 0.98,
+    "seen_in_frames": 2,
+    "chainage_m": 256312.7,
+    "frame": 1800,
+    "t_sec": 360.0,
+    "range_ahead_m": 6.7,
+    "box_px": [
+     539,
+     1730,
+     746,
+     1839
+    ],
+    "position": "vehicle position from telemetry band, +/-0.6 m",
+    "caveat": "range_ahead_m assumes camera height and FOV; treat as +/-50%"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     76.2585914,
+     25.9926306
+    ]
+   },
+   "properties": {
+    "defect_id": 134,
+    "label": "pothole",
+    "class_raw": "potholes",
+    "status": "confirmed",
+    "confidence": 0.892,
+    "seen_in_frames": 7,
+    "chainage_m": 288505.3,
+    "frame": 8236,
+    "t_sec": 1647.2,
+    "range_ahead_m": 6.4,
+    "box_px": [
+     919,
+     1539,
+     1130,
+     1838
+    ],
+    "position": "vehicle position from telemetry band, +/-0.6 m",
+    "caveat": "range_ahead_m assumes camera height and FOV; treat as +/-50%"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     76.2355729,
+     26.2374665
+    ]
+   },
+   "properties": {
+    "defect_id": 156,
+    "label": "repair_patch",
+    "class_raw": "Repair",
+    "status": "confirmed",
+    "confidence": 0.805,
+    "seen_in_frames": 2,
+    "chainage_m": 261152.7,
+    "frame": 2768,
+    "t_sec": 553.6,
+    "range_ahead_m": 5.4,
+    "box_px": [
+     24,
+     1520,
+     1393,
+     1913
+    ],
+    "position": "vehicle position from telemetry band, +/-0.6 m",
+    "caveat": "range_ahead_m assumes camera height and FOV; treat as +/-50%"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     76.262651,
+     26.0267132
+    ]
+   },
+   "properties": {
+    "defect_id": 120,
+    "label": "pothole",
+    "class_raw": "potholes",
+    "status": "confirmed",
+    "confidence": 0.766,
+    "seen_in_frames": 2,
+    "chainage_m": 284670.1,
+    "frame": 7471,
+    "t_sec": 1494.2,
+    "range_ahead_m": 6.0,
+    "box_px": [
+     900,
+     1757,
+     1022,
+     1868
+    ],
+    "position": "vehicle position from telemetry band, +/-0.6 m",
+    "caveat": "range_ahead_m assumes camera height and FOV; treat as +/-50%"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     76.2631912,
+     26.0215682
+    ]
+   },
+   "properties": {
+    "defect_id": 27,
+    "label": "longitudinal_crack",
+    "class_raw": "D00",
+    "status": "confirmed",
+    "confidence": 0.687,
+    "seen_in_frames": 2,
+    "chainage_m": 285242.5,
+    "frame": 7586,
+    "t_sec": 1517.2,
+    "range_ahead_m": 2.9,
+    "box_px": [
+     1133,
+     1649,
+     1540,
+     2313
+    ],
+    "position": "vehicle position from telemetry band, +/-0.6 m",
+    "caveat": "range_ahead_m assumes camera height and FOV; treat as +/-50%"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     76.2516214,
+     26.1126319
+    ]
+   },
+   "properties": {
+    "defect_id": 80,
+    "label": "pothole",
+    "class_raw": "potholes",
+    "status": "confirmed",
+    "confidence": 0.646,
+    "seen_in_frames": 2,
+    "chainage_m": 275082.6,
+    "frame": 5554,
+    "t_sec": 1110.8,
+    "range_ahead_m": 6.5,
+    "box_px": [
+     1111,
+     1750,
+     1198,
+     1831
+    ],
+    "position": "vehicle position from telemetry band, +/-0.6 m",
+    "caveat": "range_ahead_m assumes camera height and FOV; treat as +/-50%"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     76.2475914,
+     26.1439951
+    ]
+   },
+   "properties": {
+    "defect_id": 62,
+    "label": "pothole",
+    "class_raw": "potholes",
+    "status": "confirmed",
+    "confidence": 0.635,
+    "seen_in_frames": 2,
+    "chainage_m": 271582.7,
+    "frame": 4854,
+    "t_sec": 970.8,
+    "range_ahead_m": 4.5,
+    "box_px": [
+     833,
+     1917,
+     948,
+     2079
+    ],
+    "position": "vehicle position from telemetry band, +/-0.6 m",
+    "caveat": "range_ahead_m assumes camera height and FOV; treat as +/-50%"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     76.2435687,
+     26.3229388
+    ]
+   },
+   "properties": {
+    "defect_id": 147,
+    "label": "repair_patch",
+    "class_raw": "Repair",
+    "status": "confirmed",
+    "confidence": 0.634,
+    "seen_in_frames": 2,
+    "chainage_m": 251597.8,
+    "frame": 857,
+    "t_sec": 171.4,
+    "range_ahead_m": 4.2,
+    "box_px": [
+     541,
+     1534,
+     2024,
+     2078
+    ],
+    "position": "vehicle position from telemetry band, +/-0.6 m",
+    "caveat": "range_ahead_m assumes camera height and FOV; treat as +/-50%"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     76.2589446,
+     26.0555779
+    ]
+   },
+   "properties": {
+    "defect_id": 24,
+    "label": "longitudinal_crack",
+    "class_raw": "D00",
+    "status": "confirmed",
+    "confidence": 0.626,
+    "seen_in_frames": 4,
+    "chainage_m": 281450.0,
+    "frame": 6826,
+    "t_sec": 1365.2,
+    "range_ahead_m": 3.7,
+    "box_px": [
+     109,
+     1972,
+     342,
+     2138
+    ],
+    "position": "vehicle position from telemetry band, +/-0.6 m",
+    "caveat": "range_ahead_m assumes camera height and FOV; treat as +/-50%"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     76.2563492,
+     25.9874421
+    ]
+   },
+   "properties": {
+    "defect_id": 140,
+    "label": "pothole",
+    "class_raw": "potholes",
+    "status": "confirmed",
+    "confidence": 0.585,
+    "seen_in_frames": 4,
+    "chainage_m": 289122.7,
+    "frame": 8361,
+    "t_sec": 1672.2,
+    "range_ahead_m": 6.4,
+    "box_px": [
+     912,
+     1548,
+     1151,
+     1834
+    ],
+    "position": "vehicle position from telemetry band, +/-0.6 m",
+    "caveat": "range_ahead_m assumes camera height and FOV; treat as +/-50%"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     76.2382004,
+     26.2170301
+    ]
+   },
+   "properties": {
+    "defect_id": 13,
+    "label": "longitudinal_crack",
+    "class_raw": "D00",
+    "status": "confirmed",
+    "confidence": 0.58,
+    "seen_in_frames": 4,
+    "chainage_m": 263432.7,
+    "frame": 3223,
+    "t_sec": 644.6,
+    "range_ahead_m": 2.9,
+    "box_px": [
+     798,
+     1772,
+     944,
+     2311
+    ],
+    "position": "vehicle position from telemetry band, +/-0.6 m",
+    "caveat": "range_ahead_m assumes camera height and FOV; treat as +/-50%"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     76.2628221,
+     26.0089765
+    ]
+   },
+   "properties": {
+    "defect_id": 126,
+    "label": "pothole",
+    "class_raw": "potholes",
+    "status": "confirmed",
+    "confidence": 0.573,
+    "seen_in_frames": 2,
+    "chainage_m": 286640.2,
+    "frame": 7865,
+    "t_sec": 1573.0,
+    "range_ahead_m": 4.2,
+    "box_px": [
+     1600,
+     1994,
+     1718,
+     2064
+    ],
+    "position": "vehicle position from telemetry band, +/-0.6 m",
+    "caveat": "range_ahead_m assumes camera height and FOV; treat as +/-50%"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     76.2553302,
+     26.0837529
+    ]
+   },
+   "properties": {
+    "defect_id": 96,
+    "label": "pothole",
+    "class_raw": "potholes",
+    "status": "confirmed",
+    "confidence": 0.551,
+    "seen_in_frames": 3,
+    "chainage_m": 278305.3,
+    "frame": 6198,
+    "t_sec": 1239.6,
+    "range_ahead_m": 6.1,
+    "box_px": [
+     1059,
+     1764,
+     1209,
+     1858
+    ],
+    "position": "vehicle position from telemetry band, +/-0.6 m",
+    "caveat": "range_ahead_m assumes camera height and FOV; treat as +/-50%"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     76.2614552,
+     26.0360135
+    ]
+   },
+   "properties": {
+    "defect_id": 114,
+    "label": "pothole",
+    "class_raw": "potholes",
+    "status": "confirmed",
+    "confidence": 0.506,
+    "seen_in_frames": 2,
+    "chainage_m": 283632.7,
+    "frame": 7264,
+    "t_sec": 1452.8,
+    "range_ahead_m": 6.0,
+    "box_px": [
+     897,
+     1767,
+     1014,
+     1859
+    ],
+    "position": "vehicle position from telemetry band, +/-0.6 m",
+    "caveat": "range_ahead_m assumes camera height and FOV; treat as +/-50%"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     76.2594954,
+     26.0512932
+    ]
+   },
+   "properties": {
+    "defect_id": 106,
+    "label": "pothole",
+    "class_raw": "potholes",
+    "status": "confirmed",
+    "confidence": 0.497,
+    "seen_in_frames": 2,
+    "chainage_m": 281927.8,
+    "frame": 6923,
+    "t_sec": 1384.6,
+    "range_ahead_m": 6.0,
+    "box_px": [
+     895,
+     1736,
+     1028,
+     1863
+    ],
+    "position": "vehicle position from telemetry band, +/-0.6 m",
+    "caveat": "range_ahead_m assumes camera height and FOV; treat as +/-50%"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     76.2564037,
+     26.075401
+    ]
+   },
+   "properties": {
+    "defect_id": 100,
+    "label": "pothole",
+    "class_raw": "potholes",
+    "status": "confirmed",
+    "confidence": 0.485,
+    "seen_in_frames": 2,
+    "chainage_m": 279237.5,
+    "frame": 6385,
+    "t_sec": 1277.0,
+    "range_ahead_m": 5.9,
+    "box_px": [
+     895,
+     1766,
+     1014,
+     1871
+    ],
+    "position": "vehicle position from telemetry band, +/-0.6 m",
+    "caveat": "range_ahead_m assumes camera height and FOV; treat as +/-50%"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     76.262047,
+     26.0314186
+    ]
+   },
+   "properties": {
+    "defect_id": 116,
+    "label": "pothole",
+    "class_raw": "potholes",
+    "status": "confirmed",
+    "confidence": 0.455,
+    "seen_in_frames": 3,
+    "chainage_m": 284145.3,
+    "frame": 7366,
+    "t_sec": 1473.2,
+    "range_ahead_m": 6.0,
+    "box_px": [
+     856,
+     1783,
+     991,
+     1859
+    ],
+    "position": "vehicle position from telemetry band, +/-0.6 m",
+    "caveat": "range_ahead_m assumes camera height and FOV; treat as +/-50%"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     76.2360291,
+     26.2339276
+    ]
+   },
+   "properties": {
+    "defect_id": 40,
+    "label": "pothole",
+    "class_raw": "potholes",
+    "status": "confirmed",
+    "confidence": 0.41,
+    "seen_in_frames": 2,
+    "chainage_m": 261547.7,
+    "frame": 2847,
+    "t_sec": 569.4,
+    "range_ahead_m": 4.2,
+    "box_px": [
+     755,
+     1999,
+     905,
+     2090
+    ],
+    "position": "vehicle position from telemetry band, +/-0.6 m",
+    "caveat": "range_ahead_m assumes camera height and FOV; treat as +/-50%"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     76.2515091,
+     26.1135045
+    ]
+   },
+   "properties": {
+    "defect_id": 79,
+    "label": "pothole",
+    "class_raw": "potholes",
+    "status": "unconfirmed",
+    "confidence": 0.908,
+    "seen_in_frames": 1,
+    "chainage_m": 274985.1,
+    "frame": 5535,
+    "t_sec": 1107.0,
+    "range_ahead_m": 4.2,
+    "box_px": [
+     877,
+     1804,
+     979,
+     2042
+    ],
+    "position": "vehicle position from telemetry band, +/-0.6 m",
+    "caveat": "range_ahead_m assumes camera height and FOV; treat as +/-50%"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     76.2544222,
+     25.9830601
+    ]
+   },
+   "properties": {
+    "defect_id": 167,
+    "label": "repair_patch",
+    "class_raw": "Repair",
+    "status": "unconfirmed",
+    "confidence": 0.709,
+    "seen_in_frames": 1,
+    "chainage_m": 289645.3,
+    "frame": 8467,
+    "t_sec": 1693.4,
+    "range_ahead_m": 4.4,
+    "box_px": [
+     24,
+     1520,
+     1300,
+     2021
+    ],
+    "position": "vehicle position from telemetry band, +/-0.6 m",
+    "caveat": "range_ahead_m assumes camera height and FOV; treat as +/-50%"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     76.2543187,
+     26.0916406
+    ]
+   },
+   "properties": {
+    "defect_id": 90,
+    "label": "pothole",
+    "class_raw": "potholes",
+    "status": "unconfirmed",
+    "confidence": 0.708,
+    "seen_in_frames": 1,
+    "chainage_m": 277425.1,
+    "frame": 6023,
+    "t_sec": 1204.6,
+    "range_ahead_m": 6.0,
+    "box_px": [
+     895,
+     1739,
+     1025,
+     1863
+    ],
+    "position": "vehicle position from telemetry band, +/-0.6 m",
+    "caveat": "range_ahead_m assumes camera height and FOV; treat as +/-50%"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     76.2623233,
+     26.0292228
+    ]
+   },
+   "properties": {
+    "defect_id": 117,
+    "label": "pothole",
+    "class_raw": "potholes",
+    "status": "unconfirmed",
+    "confidence": 0.644,
+    "seen_in_frames": 1,
+    "chainage_m": 284390.1,
+    "frame": 7416,
+    "t_sec": 1483.2,
+    "range_ahead_m": 6.0,
+    "box_px": [
+     910,
+     1767,
+     1021,
+     1864
+    ],
+    "position": "vehicle position from telemetry band, +/-0.6 m",
+    "caveat": "range_ahead_m assumes camera height and FOV; treat as +/-50%"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     76.245776,
+     26.1581332
+    ]
+   },
+   "properties": {
+    "defect_id": 57,
+    "label": "pothole",
+    "class_raw": "potholes",
+    "status": "unconfirmed",
+    "confidence": 0.616,
+    "seen_in_frames": 1,
+    "chainage_m": 270005.1,
+    "frame": 4539,
+    "t_sec": 907.8,
+    "range_ahead_m": 5.8,
+    "box_px": [
+     896,
+     1744,
+     1016,
+     1875
+    ],
+    "position": "vehicle position from telemetry band, +/-0.6 m",
+    "caveat": "range_ahead_m assumes camera height and FOV; treat as +/-50%"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     76.2565043,
+     26.0746171
+    ]
+   },
+   "properties": {
+    "defect_id": 23,
+    "label": "longitudinal_crack",
+    "class_raw": "D00",
+    "status": "unconfirmed",
+    "confidence": 0.613,
+    "seen_in_frames": 1,
+    "chainage_m": 279325.1,
+    "frame": 6403,
+    "t_sec": 1280.6,
+    "range_ahead_m": 3.4,
+    "box_px": [
+     576,
+     2007,
+     779,
+     2194
+    ],
+    "position": "vehicle position from telemetry band, +/-0.6 m",
+    "caveat": "range_ahead_m assumes camera height and FOV; treat as +/-50%"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     76.2366009,
+     26.2294687
+    ]
+   },
+   "properties": {
+    "defect_id": 11,
+    "label": "longitudinal_crack",
+    "class_raw": "D00",
+    "status": "unconfirmed",
+    "confidence": 0.612,
+    "seen_in_frames": 1,
+    "chainage_m": 262045.1,
+    "frame": 2947,
+    "t_sec": 589.4,
+    "range_ahead_m": 2.9,
+    "box_px": [
+     1526,
+     2009,
+     1982,
+     2318
+    ],
+    "position": "vehicle position from telemetry band, +/-0.6 m",
+    "caveat": "range_ahead_m assumes camera height and FOV; treat as +/-50%"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     76.2439199,
+     26.1725577
+    ]
+   },
+   "properties": {
+    "defect_id": 51,
+    "label": "pothole",
+    "class_raw": "potholes",
+    "status": "unconfirmed",
+    "confidence": 0.606,
+    "seen_in_frames": 1,
+    "chainage_m": 268395.3,
+    "frame": 4217,
+    "t_sec": 843.4,
+    "range_ahead_m": 5.1,
+    "box_px": [
+     811,
+     1828,
+     949,
+     1957
+    ],
+    "position": "vehicle position from telemetry band, +/-0.6 m",
+    "caveat": "range_ahead_m assumes camera height and FOV; treat as +/-50%"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     76.2339115,
+     26.2550605
+    ]
+   },
+   "properties": {
+    "defect_id": 155,
+    "label": "repair_patch",
+    "class_raw": "Repair",
+    "status": "unconfirmed",
+    "confidence": 0.605,
+    "seen_in_frames": 1,
+    "chainage_m": 259195.1,
+    "frame": 2377,
+    "t_sec": 475.4,
+    "range_ahead_m": 2.9,
+    "box_px": [
+     24,
+     2044,
+     1630,
+     2320
+    ],
+    "position": "vehicle position from telemetry band, +/-0.6 m",
+    "caveat": "range_ahead_m assumes camera height and FOV; treat as +/-50%"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     76.2506109,
+     26.1204898
+    ]
+   },
+   "properties": {
+    "defect_id": 73,
+    "label": "pothole",
+    "class_raw": "potholes",
+    "status": "unconfirmed",
+    "confidence": 0.577,
+    "seen_in_frames": 1,
+    "chainage_m": 274205.1,
+    "frame": 5379,
+    "t_sec": 1075.8,
+    "range_ahead_m": 6.0,
+    "box_px": [
+     893,
+     1761,
+     1012,
+     1864
+    ],
+    "position": "vehicle position from telemetry band, +/-0.6 m",
+    "caveat": "range_ahead_m assumes camera height and FOV; treat as +/-50%"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     76.2424403,
+     26.3167297
+    ]
+   },
+   "properties": {
+    "defect_id": 150,
+    "label": "repair_patch",
+    "class_raw": "Repair",
+    "status": "unconfirmed",
+    "confidence": 0.565,
+    "seen_in_frames": 1,
+    "chainage_m": 252295.2,
+    "frame": 997,
+    "t_sec": 199.4,
+    "range_ahead_m": 4.8,
+    "box_px": [
+     247,
+     1520,
+     1788,
+     1977
+    ],
+    "position": "vehicle position from telemetry band, +/-0.6 m",
+    "caveat": "range_ahead_m assumes camera height and FOV; treat as +/-50%"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     76.2582107,
+     25.9917002
+    ]
+   },
+   "properties": {
+    "defect_id": 137,
+    "label": "pothole",
+    "class_raw": "potholes",
+    "status": "unconfirmed",
+    "confidence": 0.56,
+    "seen_in_frames": 1,
+    "chainage_m": 288615.2,
+    "frame": 8261,
+    "t_sec": 1652.2,
+    "range_ahead_m": 3.2,
+    "box_px": [
+     439,
+     2035,
+     588,
+     2230
+    ],
+    "position": "vehicle position from telemetry band, +/-0.6 m",
+    "caveat": "range_ahead_m assumes camera height and FOV; treat as +/-50%"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     76.2396085,
+     26.3012003
+    ]
+   },
+   "properties": {
+    "defect_id": 151,
+    "label": "repair_patch",
+    "class_raw": "Repair",
+    "status": "unconfirmed",
+    "confidence": 0.56,
+    "seen_in_frames": 1,
+    "chainage_m": 254040.3,
+    "frame": 1346,
+    "t_sec": 269.2,
+    "range_ahead_m": 2.9,
+    "box_px": [
+     24,
+     1871,
+     449,
+     2320
+    ],
+    "position": "vehicle position from telemetry band, +/-0.6 m",
+    "caveat": "range_ahead_m assumes camera height and FOV; treat as +/-50%"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     76.2446221,
+     26.328703
+    ]
+   },
+   "properties": {
+    "defect_id": 146,
+    "label": "repair_patch",
+    "class_raw": "Repair",
+    "status": "unconfirmed",
+    "confidence": 0.557,
+    "seen_in_frames": 1,
+    "chainage_m": 250950.2,
+    "frame": 728,
+    "t_sec": 145.6,
+    "range_ahead_m": 2.9,
+    "box_px": [
+     1451,
+     1900,
+     1958,
+     2311
+    ],
+    "position": "vehicle position from telemetry band, +/-0.6 m",
+    "caveat": "range_ahead_m assumes camera height and FOV; treat as +/-50%"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     76.2346528,
+     26.2447069
+    ]
+   },
+   "properties": {
+    "defect_id": 39,
+    "label": "pothole",
+    "class_raw": "D40",
+    "status": "unconfirmed",
+    "confidence": 0.55,
+    "seen_in_frames": 1,
+    "chainage_m": 260345.2,
+    "frame": 2607,
+    "t_sec": 521.4,
+    "range_ahead_m": 2.9,
+    "box_px": [
+     582,
+     2199,
+     652,
+     2312
+    ],
+    "position": "vehicle position from telemetry band, +/-0.6 m",
+    "caveat": "range_ahead_m assumes camera height and FOV; treat as +/-50%"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     76.2453416,
+     26.1614903
+    ]
+   },
+   "properties": {
+    "defect_id": 56,
+    "label": "pothole",
+    "class_raw": "potholes",
+    "status": "unconfirmed",
+    "confidence": 0.55,
+    "seen_in_frames": 1,
+    "chainage_m": 269630.3,
+    "frame": 4464,
+    "t_sec": 892.8,
+    "range_ahead_m": 3.5,
+    "box_px": [
+     1632,
+     2070,
+     1746,
+     2181
+    ],
+    "position": "vehicle position from telemetry band, +/-0.6 m",
+    "caveat": "range_ahead_m assumes camera height and FOV; treat as +/-50%"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     76.247877,
+     26.1417766
+    ]
+   },
+   "properties": {
+    "defect_id": 63,
+    "label": "pothole",
+    "class_raw": "D40",
+    "status": "unconfirmed",
+    "confidence": 0.545,
+    "seen_in_frames": 1,
+    "chainage_m": 271830.1,
+    "frame": 4904,
+    "t_sec": 980.8,
+    "range_ahead_m": 3.0,
+    "box_px": [
+     788,
+     2095,
+     967,
+     2304
+    ],
+    "position": "vehicle position from telemetry band, +/-0.6 m",
+    "caveat": "range_ahead_m assumes camera height and FOV; treat as +/-50%"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     76.2625025,
+     26.0278797
+    ]
+   },
+   "properties": {
+    "defect_id": 118,
+    "label": "pothole",
+    "class_raw": "potholes",
+    "status": "unconfirmed",
+    "confidence": 0.54,
+    "seen_in_frames": 1,
+    "chainage_m": 284540.0,
+    "frame": 7446,
+    "t_sec": 1489.2,
+    "range_ahead_m": 5.6,
+    "box_px": [
+     840,
+     1728,
+     975,
+     1892
+    ],
+    "position": "vehicle position from telemetry band, +/-0.6 m",
+    "caveat": "range_ahead_m assumes camera height and FOV; treat as +/-50%"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     76.2450699,
+     26.1635962
+    ]
+   },
+   "properties": {
+    "defect_id": 54,
+    "label": "pothole",
+    "class_raw": "potholes",
+    "status": "unconfirmed",
+    "confidence": 0.533,
+    "seen_in_frames": 1,
+    "chainage_m": 269395.2,
+    "frame": 4417,
+    "t_sec": 883.4,
+    "range_ahead_m": 3.8,
+    "box_px": [
+     1657,
+     2048,
+     1744,
+     2109
+    ],
+    "position": "vehicle position from telemetry band, +/-0.6 m",
+    "caveat": "range_ahead_m assumes camera height and FOV; treat as +/-50%"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     76.2536437,
+     26.0968809
+    ]
+   },
+   "properties": {
+    "defect_id": 85,
+    "label": "pothole",
+    "class_raw": "potholes",
+    "status": "unconfirmed",
+    "confidence": 0.531,
+    "seen_in_frames": 1,
+    "chainage_m": 276840.0,
+    "frame": 5906,
+    "t_sec": 1181.2,
+    "range_ahead_m": 5.9,
+    "box_px": [
+     902,
+     1771,
+     1040,
+     1872
+    ],
+    "position": "vehicle position from telemetry band, +/-0.6 m",
+    "caveat": "range_ahead_m assumes camera height and FOV; treat as +/-50%"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     76.2614019,
+     26.0364379
+    ]
+   },
+   "properties": {
+    "defect_id": 113,
+    "label": "pothole",
+    "class_raw": "potholes",
+    "status": "unconfirmed",
+    "confidence": 0.527,
+    "seen_in_frames": 1,
+    "chainage_m": 283585.3,
+    "frame": 7255,
+    "t_sec": 1451.0,
+    "range_ahead_m": 6.0,
+    "box_px": [
+     886,
+     1752,
+     1015,
+     1865
+    ],
+    "position": "vehicle position from telemetry band, +/-0.6 m",
+    "caveat": "range_ahead_m assumes camera height and FOV; treat as +/-50%"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     76.2459276,
+     26.1569238
+    ]
+   },
+   "properties": {
+    "defect_id": 18,
+    "label": "longitudinal_crack",
+    "class_raw": "D00",
+    "status": "unconfirmed",
+    "confidence": 0.517,
+    "seen_in_frames": 1,
+    "chainage_m": 270140.0,
+    "frame": 4566,
+    "t_sec": 913.2,
+    "range_ahead_m": 3.0,
+    "box_px": [
+     370,
+     1708,
+     827,
+     2300
+    ],
+    "position": "vehicle position from telemetry band, +/-0.6 m",
+    "caveat": "range_ahead_m assumes camera height and FOV; treat as +/-50%"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     76.2630348,
+     26.010907
+    ]
+   },
+   "properties": {
+    "defect_id": 125,
+    "label": "pothole",
+    "class_raw": "potholes",
+    "status": "unconfirmed",
+    "confidence": 0.516,
+    "seen_in_frames": 1,
+    "chainage_m": 286425.1,
+    "frame": 7823,
+    "t_sec": 1564.6,
+    "range_ahead_m": 10.1,
+    "box_px": [
+     1164,
+     1622,
+     1248,
+     1687
+    ],
+    "position": "vehicle position from telemetry band, +/-0.6 m",
+    "caveat": "range_ahead_m assumes camera height and FOV; treat as +/-50%"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     76.2414828,
+     26.3114817
+    ]
+   },
+   "properties": {
+    "defect_id": 1,
+    "label": "alligator_crack",
+    "class_raw": "D20",
+    "status": "unconfirmed",
+    "confidence": 0.508,
+    "seen_in_frames": 1,
+    "chainage_m": 252885.3,
+    "frame": 1115,
+    "t_sec": 223.0,
+    "range_ahead_m": 2.9,
+    "box_px": [
+     457,
+     1846,
+     1031,
+     2316
+    ],
+    "position": "vehicle position from telemetry band, +/-0.6 m",
+    "caveat": "range_ahead_m assumes camera height and FOV; treat as +/-50%"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     76.2487486,
+     26.3513654
+    ]
+   },
+   "properties": {
+    "defect_id": 144,
+    "label": "repair_patch",
+    "class_raw": "Repair",
+    "status": "unconfirmed",
+    "confidence": 0.507,
+    "seen_in_frames": 1,
+    "chainage_m": 248405.2,
+    "frame": 219,
+    "t_sec": 43.8,
+    "range_ahead_m": 2.9,
+    "box_px": [
+     602,
+     1955,
+     982,
+     2314
+    ],
+    "position": "vehicle position from telemetry band, +/-0.6 m",
+    "caveat": "range_ahead_m assumes camera height and FOV; treat as +/-50%"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     76.2339728,
+     26.2637651
+    ]
+   },
+   "properties": {
+    "defect_id": 8,
+    "label": "longitudinal_crack",
+    "class_raw": "D00",
+    "status": "unconfirmed",
+    "confidence": 0.504,
+    "seen_in_frames": 1,
+    "chainage_m": 258230.2,
+    "frame": 2184,
+    "t_sec": 436.8,
+    "range_ahead_m": 3.5,
+    "box_px": [
+     125,
+     2083,
+     248,
+     2177
+    ],
+    "position": "vehicle position from telemetry band, +/-0.6 m",
+    "caveat": "range_ahead_m assumes camera height and FOV; treat as +/-50%"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     76.2439315,
+     26.172468
+    ]
+   },
+   "properties": {
+    "defect_id": 157,
+    "label": "repair_patch",
+    "class_raw": "Repair",
+    "status": "unconfirmed",
+    "confidence": 0.504,
+    "seen_in_frames": 1,
+    "chainage_m": 268405.3,
+    "frame": 4219,
+    "t_sec": 843.8,
+    "range_ahead_m": 2.9,
+    "box_px": [
+     470,
+     1849,
+     2024,
+     2318
+    ],
+    "position": "vehicle position from telemetry band, +/-0.6 m",
+    "caveat": "range_ahead_m assumes camera height and FOV; treat as +/-50%"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     76.2490394,
+     26.1327261
+    ]
+   },
+   "properties": {
+    "defect_id": 66,
+    "label": "pothole",
+    "class_raw": "potholes",
+    "status": "unconfirmed",
+    "confidence": 0.495,
+    "seen_in_frames": 1,
+    "chainage_m": 272840.0,
+    "frame": 5106,
+    "t_sec": 1021.2,
+    "range_ahead_m": 6.0,
+    "box_px": [
+     895,
+     1744,
+     1011,
+     1861
+    ],
+    "position": "vehicle position from telemetry band, +/-0.6 m",
+    "caveat": "range_ahead_m assumes camera height and FOV; treat as +/-50%"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     76.2340858,
+     26.2659746
+    ]
+   },
+   "properties": {
+    "defect_id": 38,
+    "label": "pothole",
+    "class_raw": "potholes",
+    "status": "unconfirmed",
+    "confidence": 0.493,
+    "seen_in_frames": 1,
+    "chainage_m": 257985.3,
+    "frame": 2135,
+    "t_sec": 427.0,
+    "range_ahead_m": 4.2,
+    "box_px": [
+     174,
+     1881,
+     557,
+     2043
+    ],
+    "position": "vehicle position from telemetry band, +/-0.6 m",
+    "caveat": "range_ahead_m assumes camera height and FOV; treat as +/-50%"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     76.2393364,
+     26.2996873
+    ]
+   },
+   "properties": {
+    "defect_id": 152,
+    "label": "repair_patch",
+    "class_raw": "Repair",
+    "status": "unconfirmed",
+    "confidence": 0.488,
+    "seen_in_frames": 1,
+    "chainage_m": 254210.0,
+    "frame": 1380,
+    "t_sec": 276.0,
+    "range_ahead_m": 4.0,
+    "box_px": [
+     504,
+     1533,
+     2024,
+     2086
+    ],
+    "position": "vehicle position from telemetry band, +/-0.6 m",
+    "caveat": "range_ahead_m assumes camera height and FOV; treat as +/-50%"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     76.2549016,
+     26.0870673
+    ]
+   },
+   "properties": {
+    "defect_id": 93,
+    "label": "pothole",
+    "class_raw": "potholes",
+    "status": "unconfirmed",
+    "confidence": 0.487,
+    "seen_in_frames": 1,
+    "chainage_m": 277935.3,
+    "frame": 6125,
+    "t_sec": 1225.0,
+    "range_ahead_m": 5.9,
+    "box_px": [
+     906,
+     1775,
+     1006,
+     1867
+    ],
+    "position": "vehicle position from telemetry band, +/-0.6 m",
+    "caveat": "range_ahead_m assumes camera height and FOV; treat as +/-50%"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     76.2430443,
+     26.3200681
+    ]
+   },
+   "properties": {
+    "defect_id": 31,
+    "label": "pothole",
+    "class_raw": "D40",
+    "status": "unconfirmed",
+    "confidence": 0.473,
+    "seen_in_frames": 1,
+    "chainage_m": 251920.3,
+    "frame": 922,
+    "t_sec": 184.4,
+    "range_ahead_m": 2.9,
+    "box_px": [
+     645,
+     2214,
+     767,
+     2312
+    ],
+    "position": "vehicle position from telemetry band, +/-0.6 m",
+    "caveat": "range_ahead_m assumes camera height and FOV; treat as +/-50%"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     76.2609003,
+     26.0403365
+    ]
+   },
+   "properties": {
+    "defect_id": 112,
+    "label": "pothole",
+    "class_raw": "potholes",
+    "status": "unconfirmed",
+    "confidence": 0.455,
+    "seen_in_frames": 1,
+    "chainage_m": 283150.2,
+    "frame": 7168,
+    "t_sec": 1433.6,
+    "range_ahead_m": 5.8,
+    "box_px": [
+     892,
+     1772,
+     1014,
+     1873
+    ],
+    "position": "vehicle position from telemetry band, +/-0.6 m",
+    "caveat": "range_ahead_m assumes camera height and FOV; treat as +/-50%"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     76.234046,
+     26.265255
+    ]
+   },
+   "properties": {
+    "defect_id": 154,
+    "label": "repair_patch",
+    "class_raw": "Repair",
+    "status": "unconfirmed",
+    "confidence": 0.455,
+    "seen_in_frames": 1,
+    "chainage_m": 258065.1,
+    "frame": 2151,
+    "t_sec": 430.2,
+    "range_ahead_m": 2.9,
+    "box_px": [
+     28,
+     2007,
+     1509,
+     2320
+    ],
+    "position": "vehicle position from telemetry band, +/-0.6 m",
+    "caveat": "range_ahead_m assumes camera height and FOV; treat as +/-50%"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     76.2425125,
+     26.3171308
+    ]
+   },
+   "properties": {
+    "defect_id": 149,
+    "label": "repair_patch",
+    "class_raw": "Repair",
+    "status": "unconfirmed",
+    "confidence": 0.443,
+    "seen_in_frames": 1,
+    "chainage_m": 252250.2,
+    "frame": 988,
+    "t_sec": 197.6,
+    "range_ahead_m": 4.2,
+    "box_px": [
+     479,
+     1520,
+     2024,
+     2046
+    ],
+    "position": "vehicle position from telemetry band, +/-0.6 m",
+    "caveat": "range_ahead_m assumes camera height and FOV; treat as +/-50%"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     76.2622289,
+     26.0299842
+    ]
+   },
+   "properties": {
+    "defect_id": 25,
+    "label": "longitudinal_crack",
+    "class_raw": "D00",
+    "status": "unconfirmed",
+    "confidence": 0.442,
+    "seen_in_frames": 1,
+    "chainage_m": 284305.2,
+    "frame": 7399,
+    "t_sec": 1479.8,
+    "range_ahead_m": 3.2,
+    "box_px": [
+     631,
+     2159,
+     712,
+     2236
+    ],
+    "position": "vehicle position from telemetry band, +/-0.6 m",
+    "caveat": "range_ahead_m assumes camera height and FOV; treat as +/-50%"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     76.2428541,
+     26.3189993
+    ]
+   },
+   "properties": {
+    "defect_id": 148,
+    "label": "repair_patch",
+    "class_raw": "Repair",
+    "status": "unconfirmed",
+    "confidence": 0.437,
+    "seen_in_frames": 1,
+    "chainage_m": 252040.3,
+    "frame": 946,
+    "t_sec": 189.2,
+    "range_ahead_m": 2.9,
+    "box_px": [
+     146,
+     1880,
+     1820,
+     2317
+    ],
+    "position": "vehicle position from telemetry band, +/-0.6 m",
+    "caveat": "range_ahead_m assumes camera height and FOV; treat as +/-50%"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     76.2602022,
+     26.0458025
+    ]
+   },
+   "properties": {
+    "defect_id": 165,
+    "label": "repair_patch",
+    "class_raw": "Repair",
+    "status": "unconfirmed",
+    "confidence": 0.432,
+    "seen_in_frames": 1,
+    "chainage_m": 282540.2,
+    "frame": 7046,
+    "t_sec": 1409.2,
+    "range_ahead_m": 3.8,
+    "box_px": [
+     388,
+     1533,
+     2024,
+     2117
+    ],
+    "position": "vehicle position from telemetry band, +/-0.6 m",
+    "caveat": "range_ahead_m assumes camera height and FOV; treat as +/-50%"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     76.2435728,
+     26.3229606
+    ]
+   },
+   "properties": {
+    "defect_id": 30,
+    "label": "pothole",
+    "class_raw": "potholes",
+    "status": "unconfirmed",
+    "confidence": 0.43,
+    "seen_in_frames": 1,
+    "chainage_m": 251595.3,
+    "frame": 857,
+    "t_sec": 171.4,
+    "range_ahead_m": 3.6,
+    "box_px": [
+     1522,
+     2052,
+     1625,
+     2143
+    ],
+    "position": "vehicle position from telemetry band, +/-0.6 m",
+    "caveat": "range_ahead_m assumes camera height and FOV; treat as +/-50%"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     76.261314,
+     26.0010239
+    ]
+   },
+   "properties": {
+    "defect_id": 128,
+    "label": "pothole",
+    "class_raw": "potholes",
+    "status": "unconfirmed",
+    "confidence": 0.429,
+    "seen_in_frames": 1,
+    "chainage_m": 287535.0,
+    "frame": 8045,
+    "t_sec": 1609.0,
+    "range_ahead_m": 6.8,
+    "box_px": [
+     936,
+     1542,
+     1121,
+     1813
+    ],
+    "position": "vehicle position from telemetry band, +/-0.6 m",
+    "caveat": "range_ahead_m assumes camera height and FOV; treat as +/-50%"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     76.2558999,
+     25.9864159
+    ]
+   },
+   "properties": {
+    "defect_id": 141,
+    "label": "pothole",
+    "class_raw": "potholes",
+    "status": "unconfirmed",
+    "confidence": 0.429,
+    "seen_in_frames": 1,
+    "chainage_m": 289245.0,
+    "frame": 8387,
+    "t_sec": 1677.4,
+    "range_ahead_m": 7.1,
+    "box_px": [
+     928,
+     1541,
+     1133,
+     1796
+    ],
+    "position": "vehicle position from telemetry band, +/-0.6 m",
+    "caveat": "range_ahead_m assumes camera height and FOV; treat as +/-50%"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     76.2510545,
+     26.1170381
+    ]
+   },
+   "properties": {
+    "defect_id": 77,
+    "label": "pothole",
+    "class_raw": "potholes",
+    "status": "unconfirmed",
+    "confidence": 0.423,
+    "seen_in_frames": 1,
+    "chainage_m": 274590.3,
+    "frame": 5456,
+    "t_sec": 1091.2,
+    "range_ahead_m": 6.0,
+    "box_px": [
+     896,
+     1787,
+     1001,
+     1859
+    ],
+    "position": "vehicle position from telemetry band, +/-0.6 m",
+    "caveat": "range_ahead_m assumes camera height and FOV; treat as +/-50%"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     76.2485777,
+     26.1363095
+    ]
+   },
+   "properties": {
+    "defect_id": 19,
+    "label": "longitudinal_crack",
+    "class_raw": "D00",
+    "status": "unconfirmed",
+    "confidence": 0.419,
+    "seen_in_frames": 1,
+    "chainage_m": 272440.0,
+    "frame": 5026,
+    "t_sec": 1005.2,
+    "range_ahead_m": 3.0,
+    "box_px": [
+     1189,
+     2189,
+     1325,
+     2307
+    ],
+    "position": "vehicle position from telemetry band, +/-0.6 m",
+    "caveat": "range_ahead_m assumes camera height and FOV; treat as +/-50%"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     76.2514735,
+     26.1137733
+    ]
+   },
+   "properties": {
+    "defect_id": 161,
+    "label": "repair_patch",
+    "class_raw": "Repair",
+    "status": "unconfirmed",
+    "confidence": 0.419,
+    "seen_in_frames": 1,
+    "chainage_m": 274955.0,
+    "frame": 5529,
+    "t_sec": 1105.8,
+    "range_ahead_m": 2.9,
+    "box_px": [
+     1579,
+     1963,
+     2021,
+     2309
+    ],
+    "position": "vehicle position from telemetry band, +/-0.6 m",
+    "caveat": "range_ahead_m assumes camera height and FOV; treat as +/-50%"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     76.2618612,
+     26.0328548
+    ]
+   },
+   "properties": {
+    "defect_id": 115,
+    "label": "pothole",
+    "class_raw": "potholes",
+    "status": "unconfirmed",
+    "confidence": 0.416,
+    "seen_in_frames": 1,
+    "chainage_m": 283985.2,
+    "frame": 7335,
+    "t_sec": 1467.0,
+    "range_ahead_m": 6.0,
+    "box_px": [
+     895,
+     1734,
+     1015,
+     1864
+    ],
+    "position": "vehicle position from telemetry band, +/-0.6 m",
+    "caveat": "range_ahead_m assumes camera height and FOV; treat as +/-50%"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     76.2458937,
+     26.1571918
+    ]
+   },
+   "properties": {
+    "defect_id": 159,
+    "label": "repair_patch",
+    "class_raw": "Repair",
+    "status": "unconfirmed",
+    "confidence": 0.415,
+    "seen_in_frames": 1,
+    "chainage_m": 270110.1,
+    "frame": 4560,
+    "t_sec": 912.0,
+    "range_ahead_m": 3.7,
+    "box_px": [
+     27,
+     1915,
+     1172,
+     2140
+    ],
+    "position": "vehicle position from telemetry band, +/-0.6 m",
+    "caveat": "range_ahead_m assumes camera height and FOV; treat as +/-50%"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     76.2383665,
+     26.2157509
+    ]
+   },
+   "properties": {
+    "defect_id": 44,
+    "label": "pothole",
+    "class_raw": "potholes",
+    "status": "unconfirmed",
+    "confidence": 0.414,
+    "seen_in_frames": 1,
+    "chainage_m": 263575.3,
+    "frame": 3253,
+    "t_sec": 650.6,
+    "range_ahead_m": 3.2,
+    "box_px": [
+     1854,
+     2179,
+     2004,
+     2251
+    ],
+    "position": "vehicle position from telemetry band, +/-0.6 m",
+    "caveat": "range_ahead_m assumes camera height and FOV; treat as +/-50%"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     76.2608742,
+     25.9993546
+    ]
+   },
+   "properties": {
+    "defect_id": 132,
+    "label": "pothole",
+    "class_raw": "potholes",
+    "status": "unconfirmed",
+    "confidence": 0.414,
+    "seen_in_frames": 1,
+    "chainage_m": 287725.2,
+    "frame": 8083,
+    "t_sec": 1616.6,
+    "range_ahead_m": 3.2,
+    "box_px": [
+     428,
+     2043,
+     590,
+     2239
+    ],
+    "position": "vehicle position from telemetry band, +/-0.6 m",
+    "caveat": "range_ahead_m assumes camera height and FOV; treat as +/-50%"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     76.2610191,
+     25.999879
+    ]
+   },
+   "properties": {
+    "defect_id": 131,
+    "label": "pothole",
+    "class_raw": "potholes",
+    "status": "unconfirmed",
+    "confidence": 0.41,
+    "seen_in_frames": 1,
+    "chainage_m": 287665.3,
+    "frame": 8071,
+    "t_sec": 1614.2,
+    "range_ahead_m": 6.1,
+    "box_px": [
+     910,
+     1532,
+     1160,
+     1857
+    ],
+    "position": "vehicle position from telemetry band, +/-0.6 m",
+    "caveat": "range_ahead_m assumes camera height and FOV; treat as +/-50%"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     76.2597982,
+     26.0489418
+    ]
+   },
+   "properties": {
+    "defect_id": 108,
+    "label": "pothole",
+    "class_raw": "potholes",
+    "status": "unconfirmed",
+    "confidence": 0.4,
+    "seen_in_frames": 1,
+    "chainage_m": 282190.0,
+    "frame": 6976,
+    "t_sec": 1395.2,
+    "range_ahead_m": 5.8,
+    "box_px": [
+     901,
+     1767,
+     1021,
+     1877
+    ],
+    "position": "vehicle position from telemetry band, +/-0.6 m",
+    "caveat": "range_ahead_m assumes camera height and FOV; treat as +/-50%"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     76.2510251,
+     26.1172631
+    ]
+   },
+   "properties": {
+    "defect_id": 76,
+    "label": "pothole",
+    "class_raw": "potholes",
+    "status": "unconfirmed",
+    "confidence": 0.399,
+    "seen_in_frames": 1,
+    "chainage_m": 274565.2,
+    "frame": 5451,
+    "t_sec": 1090.2,
+    "range_ahead_m": 6.0,
+    "box_px": [
+     901,
+     1758,
+     1007,
+     1862
+    ],
+    "position": "vehicle position from telemetry band, +/-0.6 m",
+    "caveat": "range_ahead_m assumes camera height and FOV; treat as +/-50%"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     76.2429713,
+     26.1799475
+    ]
+   },
+   "properties": {
+    "defect_id": 50,
+    "label": "pothole",
+    "class_raw": "potholes",
+    "status": "unconfirmed",
+    "confidence": 0.395,
+    "seen_in_frames": 1,
+    "chainage_m": 267570.2,
+    "frame": 4052,
+    "t_sec": 810.4,
+    "range_ahead_m": 5.9,
+    "box_px": [
+     906,
+     1756,
+     1012,
+     1869
+    ],
+    "position": "vehicle position from telemetry band, +/-0.6 m",
+    "caveat": "range_ahead_m assumes camera height and FOV; treat as +/-50%"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     76.2579663,
+     26.0631959
+    ]
+   },
+   "properties": {
+    "defect_id": 103,
+    "label": "pothole",
+    "class_raw": "potholes",
+    "status": "unconfirmed",
+    "confidence": 0.393,
+    "seen_in_frames": 1,
+    "chainage_m": 280600.0,
+    "frame": 6658,
+    "t_sec": 1331.6,
+    "range_ahead_m": 5.2,
+    "box_px": [
+     546,
+     1810,
+     586,
+     1926
+    ],
+    "position": "vehicle position from telemetry band, +/-0.6 m",
+    "caveat": "range_ahead_m assumes camera height and FOV; treat as +/-50%"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     76.248073,
+     26.1402512
+    ]
+   },
+   "properties": {
+    "defect_id": 64,
+    "label": "pothole",
+    "class_raw": "potholes",
+    "status": "unconfirmed",
+    "confidence": 0.389,
+    "seen_in_frames": 1,
+    "chainage_m": 272000.3,
+    "frame": 4938,
+    "t_sec": 987.6,
+    "range_ahead_m": 4.3,
+    "box_px": [
+     879,
+     1786,
+     1050,
+     2036
+    ],
+    "position": "vehicle position from telemetry band, +/-0.6 m",
+    "caveat": "range_ahead_m assumes camera height and FOV; treat as +/-50%"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     76.2544371,
+     26.090701
+    ]
+   },
+   "properties": {
+    "defect_id": 91,
+    "label": "pothole",
+    "class_raw": "potholes",
+    "status": "unconfirmed",
+    "confidence": 0.387,
+    "seen_in_frames": 1,
+    "chainage_m": 277530.0,
+    "frame": 6044,
+    "t_sec": 1208.8,
+    "range_ahead_m": 5.9,
+    "box_px": [
+     892,
+     1762,
+     1013,
+     1869
+    ],
+    "position": "vehicle position from telemetry band, +/-0.6 m",
+    "caveat": "range_ahead_m assumes camera height and FOV; treat as +/-50%"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     76.2577835,
+     26.0646272
+    ]
+   },
+   "properties": {
+    "defect_id": 102,
+    "label": "pothole",
+    "class_raw": "potholes",
+    "status": "unconfirmed",
+    "confidence": 0.387,
+    "seen_in_frames": 1,
+    "chainage_m": 280440.2,
+    "frame": 6626,
+    "t_sec": 1325.2,
+    "range_ahead_m": 6.3,
+    "box_px": [
+     1272,
+     1738,
+     1372,
+     1843
+    ],
+    "position": "vehicle position from telemetry band, +/-0.6 m",
+    "caveat": "range_ahead_m assumes camera height and FOV; treat as +/-50%"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     76.2420032,
+     26.3143281
+    ]
+   },
+   "properties": {
+    "defect_id": 33,
+    "label": "pothole",
+    "class_raw": "potholes",
+    "status": "unconfirmed",
+    "confidence": 0.383,
+    "seen_in_frames": 1,
+    "chainage_m": 252565.3,
+    "frame": 1051,
+    "t_sec": 210.2,
+    "range_ahead_m": 3.1,
+    "box_px": [
+     454,
+     2052,
+     579,
+     2272
+    ],
+    "position": "vehicle position from telemetry band, +/-0.6 m",
+    "caveat": "range_ahead_m assumes camera height and FOV; treat as +/-50%"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     76.254404,
+     25.9830181
+    ]
+   },
+   "properties": {
+    "defect_id": 142,
+    "label": "pothole",
+    "class_raw": "potholes",
+    "status": "unconfirmed",
+    "confidence": 0.381,
+    "seen_in_frames": 1,
+    "chainage_m": 289650.3,
+    "frame": 8468,
+    "t_sec": 1693.6,
+    "range_ahead_m": 7.1,
+    "box_px": [
+     925,
+     1547,
+     1138,
+     1794
+    ],
+    "position": "vehicle position from telemetry band, +/-0.6 m",
+    "caveat": "range_ahead_m assumes camera height and FOV; treat as +/-50%"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     76.2459248,
+     26.1569453
+    ]
+   },
+   "properties": {
+    "defect_id": 58,
+    "label": "pothole",
+    "class_raw": "potholes",
+    "status": "unconfirmed",
+    "confidence": 0.374,
+    "seen_in_frames": 2,
+    "chainage_m": 270137.6,
+    "frame": 4565,
+    "t_sec": 913.0,
+    "range_ahead_m": 5.9,
+    "box_px": [
+     899,
+     1776,
+     1012,
+     1869
+    ],
+    "position": "vehicle position from telemetry band, +/-0.6 m",
+    "caveat": "range_ahead_m assumes camera height and FOV; treat as +/-50%"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     76.2627161,
+     26.0262211
+    ]
+   },
+   "properties": {
+    "defect_id": 121,
+    "label": "pothole",
+    "class_raw": "potholes",
+    "status": "unconfirmed",
+    "confidence": 0.373,
+    "seen_in_frames": 1,
+    "chainage_m": 284725.0,
+    "frame": 7483,
+    "t_sec": 1496.6,
+    "range_ahead_m": 8.8,
+    "box_px": [
+     1002,
+     1650,
+     1089,
+     1726
+    ],
+    "position": "vehicle position from telemetry band, +/-0.6 m",
+    "caveat": "range_ahead_m assumes camera height and FOV; treat as +/-50%"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     76.2493676,
+     26.1301682
+    ]
+   },
+   "properties": {
+    "defect_id": 68,
+    "label": "pothole",
+    "class_raw": "potholes",
+    "status": "unconfirmed",
+    "confidence": 0.369,
+    "seen_in_frames": 1,
+    "chainage_m": 273125.3,
+    "frame": 5163,
+    "t_sec": 1032.6,
+    "range_ahead_m": 2.9,
+    "box_px": [
+     1543,
+     2004,
+     2024,
+     2309
+    ],
+    "position": "vehicle position from telemetry band, +/-0.6 m",
+    "caveat": "range_ahead_m assumes camera height and FOV; treat as +/-50%"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     76.246045,
+     26.1560244
+    ]
+   },
+   "properties": {
+    "defect_id": 59,
+    "label": "pothole",
+    "class_raw": "potholes",
+    "status": "unconfirmed",
+    "confidence": 0.368,
+    "seen_in_frames": 1,
+    "chainage_m": 270240.3,
+    "frame": 4586,
+    "t_sec": 917.2,
+    "range_ahead_m": 6.0,
+    "box_px": [
+     891,
+     1737,
+     1017,
+     1861
+    ],
+    "position": "vehicle position from telemetry band, +/-0.6 m",
+    "caveat": "range_ahead_m assumes camera height and FOV; treat as +/-50%"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     76.2561868,
+     26.0770801
+    ]
+   },
+   "properties": {
+    "defect_id": 170,
+    "label": "transverse_crack",
+    "class_raw": "D10",
+    "status": "unconfirmed",
+    "confidence": 0.366,
+    "seen_in_frames": 1,
+    "chainage_m": 279050.2,
+    "frame": 6348,
+    "t_sec": 1269.6,
+    "range_ahead_m": 4.4,
+    "box_px": [
+     646,
+     1928,
+     940,
+     2025
+    ],
+    "position": "vehicle position from telemetry band, +/-0.6 m",
+    "caveat": "range_ahead_m assumes camera height and FOV; treat as +/-50%"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     76.2450409,
+     26.163819
+    ]
+   },
+   "properties": {
+    "defect_id": 53,
+    "label": "pothole",
+    "class_raw": "potholes",
+    "status": "unconfirmed",
+    "confidence": 0.363,
+    "seen_in_frames": 1,
+    "chainage_m": 269370.3,
+    "frame": 4412,
+    "t_sec": 882.4,
+    "range_ahead_m": 3.2,
+    "box_px": [
+     1554,
+     2182,
+     1647,
+     2234
+    ],
+    "position": "vehicle position from telemetry band, +/-0.6 m",
+    "caveat": "range_ahead_m assumes camera height and FOV; treat as +/-50%"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     76.2514764,
+     26.1137506
+    ]
+   },
+   "properties": {
+    "defect_id": 78,
+    "label": "pothole",
+    "class_raw": "potholes",
+    "status": "unconfirmed",
+    "confidence": 0.363,
+    "seen_in_frames": 2,
+    "chainage_m": 274957.5,
+    "frame": 5529,
+    "t_sec": 1105.8,
+    "range_ahead_m": 4.7,
+    "box_px": [
+     1245,
+     1937,
+     1416,
+     2041
+    ],
+    "position": "vehicle position from telemetry band, +/-0.6 m",
+    "caveat": "range_ahead_m assumes camera height and FOV; treat as +/-50%"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     76.2627513,
+     26.0259268
+    ]
+   },
+   "properties": {
+    "defect_id": 122,
+    "label": "pothole",
+    "class_raw": "potholes",
+    "status": "unconfirmed",
+    "confidence": 0.357,
+    "seen_in_frames": 2,
+    "chainage_m": 284757.7,
+    "frame": 7489,
+    "t_sec": 1497.8,
+    "range_ahead_m": 4.5,
+    "box_px": [
+     611,
+     1904,
+     715,
+     2065
+    ],
+    "position": "vehicle position from telemetry band, +/-0.6 m",
+    "caveat": "range_ahead_m assumes camera height and FOV; treat as +/-50%"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     76.2584192,
+     25.992207
+    ]
+   },
+   "properties": {
+    "defect_id": 135,
+    "label": "pothole",
+    "class_raw": "potholes",
+    "status": "unconfirmed",
+    "confidence": 0.357,
+    "seen_in_frames": 1,
+    "chainage_m": 288555.3,
+    "frame": 8249,
+    "t_sec": 1649.8,
+    "range_ahead_m": 3.1,
+    "box_px": [
+     431,
+     2051,
+     594,
+     2261
+    ],
+    "position": "vehicle position from telemetry band, +/-0.6 m",
+    "caveat": "range_ahead_m assumes camera height and FOV; treat as +/-50%"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     76.2633112,
+     26.0191315
+    ]
+   },
+   "properties": {
+    "defect_id": 123,
+    "label": "pothole",
+    "class_raw": "potholes",
+    "status": "unconfirmed",
+    "confidence": 0.348,
+    "seen_in_frames": 2,
+    "chainage_m": 285512.7,
+    "frame": 7640,
+    "t_sec": 1528.0,
+    "range_ahead_m": 5.5,
+    "box_px": [
+     906,
+     1534,
+     1152,
+     1897
+    ],
+    "position": "vehicle position from telemetry band, +/-0.6 m",
+    "caveat": "range_ahead_m assumes camera height and FOV; treat as +/-50%"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     76.2581159,
+     26.0620296
+    ]
+   },
+   "properties": {
+    "defect_id": 163,
+    "label": "repair_patch",
+    "class_raw": "Repair",
+    "status": "unconfirmed",
+    "confidence": 0.348,
+    "seen_in_frames": 1,
+    "chainage_m": 280730.3,
+    "frame": 6684,
+    "t_sec": 1336.8,
+    "range_ahead_m": 2.9,
+    "box_px": [
+     1779,
+     1924,
+     2024,
+     2318
+    ],
+    "position": "vehicle position from telemetry band, +/-0.6 m",
+    "caveat": "range_ahead_m assumes camera height and FOV; treat as +/-50%"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     76.2517438,
+     26.1116703
+    ]
+   },
+   "properties": {
+    "defect_id": 81,
+    "label": "pothole",
+    "class_raw": "potholes",
+    "status": "unconfirmed",
+    "confidence": 0.347,
+    "seen_in_frames": 1,
+    "chainage_m": 275190.0,
+    "frame": 5576,
+    "t_sec": 1115.2,
+    "range_ahead_m": 6.0,
+    "box_px": [
+     897,
+     1761,
+     1026,
+     1862
+    ],
+    "position": "vehicle position from telemetry band, +/-0.6 m",
+    "caveat": "range_ahead_m assumes camera height and FOV; treat as +/-50%"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     76.2561301,
+     26.0775283
+    ]
+   },
+   "properties": {
+    "defect_id": 162,
+    "label": "repair_patch",
+    "class_raw": "Repair",
+    "status": "unconfirmed",
+    "confidence": 0.345,
+    "seen_in_frames": 1,
+    "chainage_m": 279000.2,
+    "frame": 6338,
+    "t_sec": 1267.6,
+    "range_ahead_m": 3.0,
+    "box_px": [
+     150,
+     1927,
+     1810,
+     2305
+    ],
+    "position": "vehicle position from telemetry band, +/-0.6 m",
+    "caveat": "range_ahead_m assumes camera height and FOV; treat as +/-50%"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     76.2375528,
+     26.2220731
+    ]
+   },
+   "properties": {
+    "defect_id": 43,
+    "label": "pothole",
+    "class_raw": "potholes",
+    "status": "unconfirmed",
+    "confidence": 0.343,
+    "seen_in_frames": 1,
+    "chainage_m": 262870.1,
+    "frame": 3112,
+    "t_sec": 622.4,
+    "range_ahead_m": 3.5,
+    "box_px": [
+     1055,
+     1987,
+     1204,
+     2177
+    ],
+    "position": "vehicle position from telemetry band, +/-0.6 m",
+    "caveat": "range_ahead_m assumes camera height and FOV; treat as +/-50%"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     76.2492749,
+     26.1308874
+    ]
+   },
+   "properties": {
+    "defect_id": 67,
+    "label": "pothole",
+    "class_raw": "potholes",
+    "status": "unconfirmed",
+    "confidence": 0.343,
+    "seen_in_frames": 1,
+    "chainage_m": 273045.0,
+    "frame": 5147,
+    "t_sec": 1029.4,
+    "range_ahead_m": 6.0,
+    "box_px": [
+     893,
+     1750,
+     1031,
+     1863
+    ],
+    "position": "vehicle position from telemetry band, +/-0.6 m",
+    "caveat": "range_ahead_m assumes camera height and FOV; treat as +/-50%"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     76.2480836,
+     26.3477154
+    ]
+   },
+   "properties": {
+    "defect_id": 28,
+    "label": "pothole",
+    "class_raw": "potholes",
+    "status": "unconfirmed",
+    "confidence": 0.342,
+    "seen_in_frames": 1,
+    "chainage_m": 248815.0,
+    "frame": 301,
+    "t_sec": 60.2,
+    "range_ahead_m": 3.6,
+    "box_px": [
+     1729,
+     2074,
+     1826,
+     2143
+    ],
+    "position": "vehicle position from telemetry band, +/-0.6 m",
+    "caveat": "range_ahead_m assumes camera height and FOV; treat as +/-50%"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     76.2471351,
+     26.1475572
+    ]
+   },
+   "properties": {
+    "defect_id": 60,
+    "label": "pothole",
+    "class_raw": "potholes",
+    "status": "unconfirmed",
+    "confidence": 0.341,
+    "seen_in_frames": 1,
+    "chainage_m": 271185.3,
+    "frame": 4775,
+    "t_sec": 955.0,
+    "range_ahead_m": 6.0,
+    "box_px": [
+     907,
+     1777,
+     1029,
+     1862
+    ],
+    "position": "vehicle position from telemetry band, +/-0.6 m",
+    "caveat": "range_ahead_m assumes camera height and FOV; treat as +/-50%"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     76.2436568,
+     26.3234069
+    ]
+   },
+   "properties": {
+    "defect_id": 29,
+    "label": "pothole",
+    "class_raw": "potholes",
+    "status": "unconfirmed",
+    "confidence": 0.34,
+    "seen_in_frames": 1,
+    "chainage_m": 251545.1,
+    "frame": 847,
+    "t_sec": 169.4,
+    "range_ahead_m": 8.0,
+    "box_px": [
+     946,
+     1556,
+     1132,
+     1754
+    ],
+    "position": "vehicle position from telemetry band, +/-0.6 m",
+    "caveat": "range_ahead_m assumes camera height and FOV; treat as +/-50%"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     76.2502363,
+     26.1234044
+    ]
+   },
+   "properties": {
+    "defect_id": 72,
+    "label": "pothole",
+    "class_raw": "potholes",
+    "status": "unconfirmed",
+    "confidence": 0.34,
+    "seen_in_frames": 1,
+    "chainage_m": 273880.0,
+    "frame": 5314,
+    "t_sec": 1062.8,
+    "range_ahead_m": 3.8,
+    "box_px": [
+     1545,
+     1942,
+     1772,
+     2108
+    ],
+    "position": "vehicle position from telemetry band, +/-0.6 m",
+    "caveat": "range_ahead_m assumes camera height and FOV; treat as +/-50%"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     76.2524426,
+     26.1062439
+    ]
+   },
+   "properties": {
+    "defect_id": 21,
+    "label": "longitudinal_crack",
+    "class_raw": "D00",
+    "status": "unconfirmed",
+    "confidence": 0.339,
+    "seen_in_frames": 1,
+    "chainage_m": 275795.2,
+    "frame": 5697,
+    "t_sec": 1139.4,
+    "range_ahead_m": 3.0,
+    "box_px": [
+     1109,
+     1695,
+     1493,
+     2292
+    ],
+    "position": "vehicle position from telemetry band, +/-0.6 m",
+    "caveat": "range_ahead_m assumes camera height and FOV; treat as +/-50%"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     76.2375301,
+     26.2897582
+    ]
+   },
+   "properties": {
+    "defect_id": 34,
+    "label": "pothole",
+    "class_raw": "D40",
+    "status": "unconfirmed",
+    "confidence": 0.337,
+    "seen_in_frames": 1,
+    "chainage_m": 255325.3,
+    "frame": 1603,
+    "t_sec": 320.6,
+    "range_ahead_m": 3.9,
+    "box_px": [
+     971,
+     1952,
+     1067,
+     2105
+    ],
+    "position": "vehicle position from telemetry band, +/-0.6 m",
+    "caveat": "range_ahead_m assumes camera height and FOV; treat as +/-50%"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     76.2494423,
+     26.1295885
+    ]
+   },
+   "properties": {
+    "defect_id": 70,
+    "label": "pothole",
+    "class_raw": "potholes",
+    "status": "unconfirmed",
+    "confidence": 0.337,
+    "seen_in_frames": 1,
+    "chainage_m": 273190.1,
+    "frame": 5176,
+    "t_sec": 1035.2,
+    "range_ahead_m": 4.0,
+    "box_px": [
+     1625,
+     2038,
+     1696,
+     2080
+    ],
+    "position": "vehicle position from telemetry band, +/-0.6 m",
+    "caveat": "range_ahead_m assumes camera height and FOV; treat as +/-50%"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     76.2351448,
+     26.2762129
+    ]
+   },
+   "properties": {
+    "defect_id": 37,
+    "label": "pothole",
+    "class_raw": "potholes",
+    "status": "unconfirmed",
+    "confidence": 0.336,
+    "seen_in_frames": 1,
+    "chainage_m": 256845.2,
+    "frame": 1907,
+    "t_sec": 381.4,
+    "range_ahead_m": 4.2,
+    "box_px": [
+     1554,
+     1962,
+     1677,
+     2043
+    ],
+    "position": "vehicle position from telemetry band, +/-0.6 m",
+    "caveat": "range_ahead_m assumes camera height and FOV; treat as +/-50%"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     76.2451336,
+     26.163103
+    ]
+   },
+   "properties": {
+    "defect_id": 55,
+    "label": "pothole",
+    "class_raw": "potholes",
+    "status": "unconfirmed",
+    "confidence": 0.335,
+    "seen_in_frames": 1,
+    "chainage_m": 269450.2,
+    "frame": 4428,
+    "t_sec": 885.6,
+    "range_ahead_m": 6.0,
+    "box_px": [
+     898,
+     1745,
+     1016,
+     1865
+    ],
+    "position": "vehicle position from telemetry band, +/-0.6 m",
+    "caveat": "range_ahead_m assumes camera height and FOV; treat as +/-50%"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     76.2541744,
+     26.0927594
+    ]
+   },
+   "properties": {
+    "defect_id": 88,
+    "label": "pothole",
+    "class_raw": "potholes",
+    "status": "unconfirmed",
+    "confidence": 0.335,
+    "seen_in_frames": 1,
+    "chainage_m": 277300.2,
+    "frame": 5998,
+    "t_sec": 1199.6,
+    "range_ahead_m": 6.0,
+    "box_px": [
+     912,
+     1760,
+     1019,
+     1862
+    ],
+    "position": "vehicle position from telemetry band, +/-0.6 m",
+    "caveat": "range_ahead_m assumes camera height and FOV; treat as +/-50%"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     76.255751,
+     26.0804832
+    ]
+   },
+   "properties": {
+    "defect_id": 98,
+    "label": "pothole",
+    "class_raw": "potholes",
+    "status": "unconfirmed",
+    "confidence": 0.335,
+    "seen_in_frames": 1,
+    "chainage_m": 278670.3,
+    "frame": 6272,
+    "t_sec": 1254.4,
+    "range_ahead_m": 5.8,
+    "box_px": [
+     895,
+     1763,
+     1024,
+     1880
+    ],
+    "position": "vehicle position from telemetry band, +/-0.6 m",
+    "caveat": "range_ahead_m assumes camera height and FOV; treat as +/-50%"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     76.2536848,
+     26.0965646
+    ]
+   },
+   "properties": {
+    "defect_id": 86,
+    "label": "pothole",
+    "class_raw": "potholes",
+    "status": "unconfirmed",
+    "confidence": 0.334,
+    "seen_in_frames": 1,
+    "chainage_m": 276875.3,
+    "frame": 5913,
+    "t_sec": 1182.6,
+    "range_ahead_m": 5.8,
+    "box_px": [
+     901,
+     1749,
+     1043,
+     1874
+    ],
+    "position": "vehicle position from telemetry band, +/-0.6 m",
+    "caveat": "range_ahead_m assumes camera height and FOV; treat as +/-50%"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     76.2607733,
+     25.9990048
+    ]
+   },
+   "properties": {
+    "defect_id": 133,
+    "label": "pothole",
+    "class_raw": "potholes",
+    "status": "unconfirmed",
+    "confidence": 0.334,
+    "seen_in_frames": 1,
+    "chainage_m": 287765.3,
+    "frame": 8091,
+    "t_sec": 1618.2,
+    "range_ahead_m": 4.5,
+    "box_px": [
+     1390,
+     1912,
+     1639,
+     2006
+    ],
+    "position": "vehicle position from telemetry band, +/-0.6 m",
+    "caveat": "range_ahead_m assumes camera height and FOV; treat as +/-50%"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     76.235423,
+     26.2780451
+    ]
+   },
+   "properties": {
+    "defect_id": 36,
+    "label": "pothole",
+    "class_raw": "potholes",
+    "status": "unconfirmed",
+    "confidence": 0.333,
+    "seen_in_frames": 1,
+    "chainage_m": 256640.2,
+    "frame": 1866,
+    "t_sec": 373.2,
+    "range_ahead_m": 4.1,
+    "box_px": [
+     794,
+     2023,
+     856,
+     2058
+    ],
+    "position": "vehicle position from telemetry band, +/-0.6 m",
+    "caveat": "range_ahead_m assumes camera height and FOV; treat as +/-50%"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     76.2434631,
+     26.1761184
+    ]
+   },
+   "properties": {
+    "defect_id": 16,
+    "label": "longitudinal_crack",
+    "class_raw": "D00",
+    "status": "unconfirmed",
+    "confidence": 0.331,
+    "seen_in_frames": 2,
+    "chainage_m": 267997.6,
+    "frame": 4137,
+    "t_sec": 827.4,
+    "range_ahead_m": 2.9,
+    "box_px": [
+     1118,
+     1784,
+     1331,
+     2316
+    ],
+    "position": "vehicle position from telemetry band, +/-0.6 m",
+    "caveat": "range_ahead_m assumes camera height and FOV; treat as +/-50%"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     76.2422199,
+     26.1858176
+    ]
+   },
+   "properties": {
+    "defect_id": 47,
+    "label": "pothole",
+    "class_raw": "potholes",
+    "status": "unconfirmed",
+    "confidence": 0.331,
+    "seen_in_frames": 1,
+    "chainage_m": 266915.1,
+    "frame": 3921,
+    "t_sec": 784.2,
+    "range_ahead_m": 4.5,
+    "box_px": [
+     889,
+     1744,
+     1132,
+     2006
+    ],
+    "position": "vehicle position from telemetry band, +/-0.6 m",
+    "caveat": "range_ahead_m assumes camera height and FOV; treat as +/-50%"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     76.2420567,
+     26.187073
+    ]
+   },
+   "properties": {
+    "defect_id": 15,
+    "label": "longitudinal_crack",
+    "class_raw": "D00",
+    "status": "unconfirmed",
+    "confidence": 0.329,
+    "seen_in_frames": 1,
+    "chainage_m": 266775.0,
+    "frame": 3893,
+    "t_sec": 778.6,
+    "range_ahead_m": 3.5,
+    "box_px": [
+     469,
+     1837,
+     709,
+     2165
+    ],
+    "position": "vehicle position from telemetry band, +/-0.6 m",
+    "caveat": "range_ahead_m assumes camera height and FOV; treat as +/-50%"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     76.2423829,
+     26.1845172
+    ]
+   },
+   "properties": {
+    "defect_id": 49,
+    "label": "pothole",
+    "class_raw": "D40",
+    "status": "unconfirmed",
+    "confidence": 0.327,
+    "seen_in_frames": 1,
+    "chainage_m": 267060.1,
+    "frame": 3950,
+    "t_sec": 790.0,
+    "range_ahead_m": 3.3,
+    "box_px": [
+     677,
+     2090,
+     788,
+     2210
+    ],
+    "position": "vehicle position from telemetry band, +/-0.6 m",
+    "caveat": "range_ahead_m assumes camera height and FOV; treat as +/-50%"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     76.2454877,
+     26.3334693
+    ]
+   },
+   "properties": {
+    "defect_id": 6,
+    "label": "longitudinal_crack",
+    "class_raw": "D00",
+    "status": "unconfirmed",
+    "confidence": 0.325,
+    "seen_in_frames": 1,
+    "chainage_m": 250415.1,
+    "frame": 621,
+    "t_sec": 124.2,
+    "range_ahead_m": 3.0,
+    "box_px": [
+     1039,
+     2194,
+     1133,
+     2289
+    ],
+    "position": "vehicle position from telemetry band, +/-0.6 m",
+    "caveat": "range_ahead_m assumes camera height and FOV; treat as +/-50%"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     76.2599362,
+     26.0478416
+    ]
+   },
+   "properties": {
+    "defect_id": 109,
+    "label": "pothole",
+    "class_raw": "potholes",
+    "status": "unconfirmed",
+    "confidence": 0.325,
+    "seen_in_frames": 2,
+    "chainage_m": 282312.7,
+    "frame": 7000,
+    "t_sec": 1400.0,
+    "range_ahead_m": 5.2,
+    "box_px": [
+     861,
+     1749,
+     1041,
+     1948
+    ],
+    "position": "vehicle position from telemetry band, +/-0.6 m",
+    "caveat": "range_ahead_m assumes camera height and FOV; treat as +/-50%"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     76.2506792,
+     26.119952
+    ]
+   },
+   "properties": {
+    "defect_id": 169,
+    "label": "transverse_crack",
+    "class_raw": "D10",
+    "status": "unconfirmed",
+    "confidence": 0.325,
+    "seen_in_frames": 1,
+    "chainage_m": 274265.1,
+    "frame": 5391,
+    "t_sec": 1078.2,
+    "range_ahead_m": 2.9,
+    "box_px": [
+     25,
+     1823,
+     616,
+     2311
+    ],
+    "position": "vehicle position from telemetry band, +/-0.6 m",
+    "caveat": "range_ahead_m assumes camera height and FOV; treat as +/-50%"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     76.2366597,
+     26.2290197
+    ]
+   },
+   "properties": {
+    "defect_id": 12,
+    "label": "longitudinal_crack",
+    "class_raw": "D00",
+    "status": "unconfirmed",
+    "confidence": 0.324,
+    "seen_in_frames": 1,
+    "chainage_m": 262095.2,
+    "frame": 2957,
+    "t_sec": 591.4,
+    "range_ahead_m": 3.1,
+    "box_px": [
+     699,
+     2173,
+     772,
+     2272
+    ],
+    "position": "vehicle position from telemetry band, +/-0.6 m",
+    "caveat": "range_ahead_m assumes camera height and FOV; treat as +/-50%"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     76.2596993,
+     26.0497036
+    ]
+   },
+   "properties": {
+    "defect_id": 107,
+    "label": "pothole",
+    "class_raw": "D40",
+    "status": "unconfirmed",
+    "confidence": 0.323,
+    "seen_in_frames": 1,
+    "chainage_m": 282105.1,
+    "frame": 6959,
+    "t_sec": 1391.8,
+    "range_ahead_m": 4.2,
+    "box_px": [
+     1061,
+     1912,
+     1207,
+     2109
+    ],
+    "position": "vehicle position from telemetry band, +/-0.6 m",
+    "caveat": "range_ahead_m assumes camera height and FOV; treat as +/-50%"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     76.242147,
+     26.1863561
+    ]
+   },
+   "properties": {
+    "defect_id": 46,
+    "label": "pothole",
+    "class_raw": "D40",
+    "status": "unconfirmed",
+    "confidence": 0.321,
+    "seen_in_frames": 1,
+    "chainage_m": 266855.0,
+    "frame": 3909,
+    "t_sec": 781.8,
+    "range_ahead_m": 3.1,
+    "box_px": [
+     835,
+     2196,
+     946,
+     2270
+    ],
+    "position": "vehicle position from telemetry band, +/-0.6 m",
+    "caveat": "range_ahead_m assumes camera height and FOV; treat as +/-50%"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     76.2612245,
+     26.0006695
+    ]
+   },
+   "properties": {
+    "defect_id": 130,
+    "label": "pothole",
+    "class_raw": "potholes",
+    "status": "unconfirmed",
+    "confidence": 0.321,
+    "seen_in_frames": 1,
+    "chainage_m": 287575.3,
+    "frame": 8053,
+    "t_sec": 1610.6,
+    "range_ahead_m": 5.9,
+    "box_px": [
+     916,
+     1531,
+     1148,
+     1866
+    ],
+    "position": "vehicle position from telemetry band, +/-0.6 m",
+    "caveat": "range_ahead_m assumes camera height and FOV; treat as +/-50%"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     76.2564654,
+     26.0749299
+    ]
+   },
+   "properties": {
+    "defect_id": 101,
+    "label": "pothole",
+    "class_raw": "potholes",
+    "status": "unconfirmed",
+    "confidence": 0.317,
+    "seen_in_frames": 1,
+    "chainage_m": 279290.2,
+    "frame": 6396,
+    "t_sec": 1279.2,
+    "range_ahead_m": 6.0,
+    "box_px": [
+     893,
+     1733,
+     1034,
+     1865
+    ],
+    "position": "vehicle position from telemetry band, +/-0.6 m",
+    "caveat": "range_ahead_m assumes camera height and FOV; treat as +/-50%"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     76.2487567,
+     26.3514109
+    ]
+   },
+   "properties": {
+    "defect_id": 4,
+    "label": "longitudinal_crack",
+    "class_raw": "D00",
+    "status": "unconfirmed",
+    "confidence": 0.316,
+    "seen_in_frames": 1,
+    "chainage_m": 248400.1,
+    "frame": 218,
+    "t_sec": 43.6,
+    "range_ahead_m": 2.9,
+    "box_px": [
+     812,
+     2191,
+     898,
+     2309
+    ],
+    "position": "vehicle position from telemetry band, +/-0.6 m",
+    "caveat": "range_ahead_m assumes camera height and FOV; treat as +/-50%"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     76.240267,
+     26.3048071
+    ]
+   },
+   "properties": {
+    "defect_id": 7,
+    "label": "longitudinal_crack",
+    "class_raw": "D00",
+    "status": "unconfirmed",
+    "confidence": 0.316,
+    "seen_in_frames": 1,
+    "chainage_m": 253635.0,
+    "frame": 1265,
+    "t_sec": 253.0,
+    "range_ahead_m": 3.2,
+    "box_px": [
+     110,
+     2146,
+     224,
+     2236
+    ],
+    "position": "vehicle position from telemetry band, +/-0.6 m",
+    "caveat": "range_ahead_m assumes camera height and FOV; treat as +/-50%"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     76.2575128,
+     25.9900799
+    ]
+   },
+   "properties": {
+    "defect_id": 138,
+    "label": "pothole",
+    "class_raw": "potholes",
+    "status": "unconfirmed",
+    "confidence": 0.315,
+    "seen_in_frames": 2,
+    "chainage_m": 288807.8,
+    "frame": 8299,
+    "t_sec": 1659.8,
+    "range_ahead_m": 6.9,
+    "box_px": [
+     930,
+     1550,
+     1142,
+     1807
+    ],
+    "position": "vehicle position from telemetry band, +/-0.6 m",
+    "caveat": "range_ahead_m assumes camera height and FOV; treat as +/-50%"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     76.2625887,
+     26.0272065
+    ]
+   },
+   "properties": {
+    "defect_id": 119,
+    "label": "pothole",
+    "class_raw": "potholes",
+    "status": "unconfirmed",
+    "confidence": 0.313,
+    "seen_in_frames": 1,
+    "chainage_m": 284615.1,
+    "frame": 7461,
+    "t_sec": 1492.2,
+    "range_ahead_m": 6.0,
+    "box_px": [
+     898,
+     1762,
+     1026,
+     1859
+    ],
+    "position": "vehicle position from telemetry band, +/-0.6 m",
+    "caveat": "range_ahead_m assumes camera height and FOV; treat as +/-50%"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     76.2520217,
+     26.1095185
+    ]
+   },
+   "properties": {
+    "defect_id": 82,
+    "label": "pothole",
+    "class_raw": "potholes",
+    "status": "unconfirmed",
+    "confidence": 0.312,
+    "seen_in_frames": 1,
+    "chainage_m": 275430.0,
+    "frame": 5624,
+    "t_sec": 1124.8,
+    "range_ahead_m": 6.0,
+    "box_px": [
+     893,
+     1749,
+     1007,
+     1862
+    ],
+    "position": "vehicle position from telemetry band, +/-0.6 m",
+    "caveat": "range_ahead_m assumes camera height and FOV; treat as +/-50%"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     76.2565985,
+     25.9880072
+    ]
+   },
+   "properties": {
+    "defect_id": 139,
+    "label": "pothole",
+    "class_raw": "potholes",
+    "status": "unconfirmed",
+    "confidence": 0.312,
+    "seen_in_frames": 1,
+    "chainage_m": 289055.2,
+    "frame": 8349,
+    "t_sec": 1669.8,
+    "range_ahead_m": 5.0,
+    "box_px": [
+     1035,
+     1773,
+     1113,
+     1948
+    ],
+    "position": "vehicle position from telemetry band, +/-0.6 m",
+    "caveat": "range_ahead_m assumes camera height and FOV; treat as +/-50%"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     76.2484605,
+     26.137251
+    ]
+   },
+   "properties": {
+    "defect_id": 65,
+    "label": "pothole",
+    "class_raw": "potholes",
+    "status": "unconfirmed",
+    "confidence": 0.309,
+    "seen_in_frames": 1,
+    "chainage_m": 272335.0,
+    "frame": 5005,
+    "t_sec": 1001.0,
+    "range_ahead_m": 5.9,
+    "box_px": [
+     907,
+     1764,
+     1023,
+     1866
+    ],
+    "position": "vehicle position from telemetry band, +/-0.6 m",
+    "caveat": "range_ahead_m assumes camera height and FOV; treat as +/-50%"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     76.2600905,
+     26.0466545
+    ]
+   },
+   "properties": {
+    "defect_id": 164,
+    "label": "repair_patch",
+    "class_raw": "Repair",
+    "status": "unconfirmed",
+    "confidence": 0.309,
+    "seen_in_frames": 1,
+    "chainage_m": 282445.1,
+    "frame": 7027,
+    "t_sec": 1405.4,
+    "range_ahead_m": 2.9,
+    "box_px": [
+     330,
+     1520,
+     2024,
+     2317
+    ],
+    "position": "vehicle position from telemetry band, +/-0.6 m",
+    "caveat": "range_ahead_m assumes camera height and FOV; treat as +/-50%"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     76.2420738,
+     26.3147297
+    ]
+   },
+   "properties": {
+    "defect_id": 32,
+    "label": "pothole",
+    "class_raw": "potholes",
+    "status": "unconfirmed",
+    "confidence": 0.305,
+    "seen_in_frames": 2,
+    "chainage_m": 252520.2,
+    "frame": 1041,
+    "t_sec": 208.2,
+    "range_ahead_m": 6.6,
+    "box_px": [
+     913,
+     1538,
+     1145,
+     1829
+    ],
+    "position": "vehicle position from telemetry band, +/-0.6 m",
+    "caveat": "range_ahead_m assumes camera height and FOV; treat as +/-50%"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     76.245035,
+     26.1638657
+    ]
+   },
+   "properties": {
+    "defect_id": 158,
+    "label": "repair_patch",
+    "class_raw": "Repair",
+    "status": "unconfirmed",
+    "confidence": 0.305,
+    "seen_in_frames": 1,
+    "chainage_m": 269365.1,
+    "frame": 4411,
+    "t_sec": 882.2,
+    "range_ahead_m": 3.0,
+    "box_px": [
+     1586,
+     1919,
+     2022,
+     2308
+    ],
+    "position": "vehicle position from telemetry band, +/-0.6 m",
+    "caveat": "range_ahead_m assumes camera height and FOV; treat as +/-50%"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     76.24717,
+     26.1472883
+    ]
+   },
+   "properties": {
+    "defect_id": 61,
+    "label": "pothole",
+    "class_raw": "potholes",
+    "status": "unconfirmed",
+    "confidence": 0.304,
+    "seen_in_frames": 1,
+    "chainage_m": 271215.3,
+    "frame": 4781,
+    "t_sec": 956.2,
+    "range_ahead_m": 3.8,
+    "box_px": [
+     1561,
+     1962,
+     1913,
+     2117
+    ],
+    "position": "vehicle position from telemetry band, +/-0.6 m",
+    "caveat": "range_ahead_m assumes camera height and FOV; treat as +/-50%"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     76.2494249,
+     26.1297207
+    ]
+   },
+   "properties": {
+    "defect_id": 69,
+    "label": "pothole",
+    "class_raw": "potholes",
+    "status": "unconfirmed",
+    "confidence": 0.304,
+    "seen_in_frames": 1,
+    "chainage_m": 273175.3,
+    "frame": 5173,
+    "t_sec": 1034.6,
+    "range_ahead_m": 6.0,
+    "box_px": [
+     907,
+     1759,
+     1012,
+     1859
+    ],
+    "position": "vehicle position from telemetry band, +/-0.6 m",
+    "caveat": "range_ahead_m assumes camera height and FOV; treat as +/-50%"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     76.25053,
+     26.1211188
+    ]
+   },
+   "properties": {
+    "defect_id": 160,
+    "label": "repair_patch",
+    "class_raw": "Repair",
+    "status": "unconfirmed",
+    "confidence": 0.302,
+    "seen_in_frames": 1,
+    "chainage_m": 274135.0,
+    "frame": 5365,
+    "t_sec": 1073.0,
+    "range_ahead_m": 4.4,
+    "box_px": [
+     533,
+     1520,
+     2014,
+     2021
+    ],
+    "position": "vehicle position from telemetry band, +/-0.6 m",
+    "caveat": "range_ahead_m assumes camera height and FOV; treat as +/-50%"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     76.2550706,
+     26.0857698
+    ]
+   },
+   "properties": {
+    "defect_id": 94,
+    "label": "pothole",
+    "class_raw": "potholes",
+    "status": "unconfirmed",
+    "confidence": 0.294,
+    "seen_in_frames": 1,
+    "chainage_m": 278080.2,
+    "frame": 6154,
+    "t_sec": 1230.8,
+    "range_ahead_m": 5.0,
+    "box_px": [
+     1514,
+     1819,
+     1673,
+     1950
+    ],
+    "position": "vehicle position from telemetry band, +/-0.6 m",
+    "caveat": "range_ahead_m assumes camera height and FOV; treat as +/-50%"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     76.2506731,
+     26.1199977
+    ]
+   },
+   "properties": {
+    "defect_id": 20,
+    "label": "longitudinal_crack",
+    "class_raw": "D00",
+    "status": "unconfirmed",
+    "confidence": 0.293,
+    "seen_in_frames": 1,
+    "chainage_m": 274260.0,
+    "frame": 5390,
+    "t_sec": 1078.0,
+    "range_ahead_m": 2.9,
+    "box_px": [
+     30,
+     1681,
+     776,
+     2309
+    ],
+    "position": "vehicle position from telemetry band, +/-0.6 m",
+    "caveat": "range_ahead_m assumes camera height and FOV; treat as +/-50%"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     76.2485794,
+     26.3504323
+    ]
+   },
+   "properties": {
+    "defect_id": 5,
+    "label": "longitudinal_crack",
+    "class_raw": "D00",
+    "status": "unconfirmed",
+    "confidence": 0.291,
+    "seen_in_frames": 1,
+    "chainage_m": 248510.0,
+    "frame": 240,
+    "t_sec": 48.0,
+    "range_ahead_m": 3.2,
+    "box_px": [
+     494,
+     2173,
+     592,
+     2252
+    ],
+    "position": "vehicle position from telemetry band, +/-0.6 m",
+    "caveat": "range_ahead_m assumes camera height and FOV; treat as +/-50%"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     76.2506395,
+     26.1202658
+    ]
+   },
+   "properties": {
+    "defect_id": 74,
+    "label": "pothole",
+    "class_raw": "potholes",
+    "status": "unconfirmed",
+    "confidence": 0.291,
+    "seen_in_frames": 1,
+    "chainage_m": 274230.1,
+    "frame": 5384,
+    "t_sec": 1076.8,
+    "range_ahead_m": 5.9,
+    "box_px": [
+     901,
+     1747,
+     1019,
+     1866
+    ],
+    "position": "vehicle position from telemetry band, +/-0.6 m",
+    "caveat": "range_ahead_m assumes camera height and FOV; treat as +/-50%"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     76.2608664,
+     26.0406054
+    ]
+   },
+   "properties": {
+    "defect_id": 111,
+    "label": "pothole",
+    "class_raw": "potholes",
+    "status": "unconfirmed",
+    "confidence": 0.289,
+    "seen_in_frames": 1,
+    "chainage_m": 283120.2,
+    "frame": 7162,
+    "t_sec": 1432.4,
+    "range_ahead_m": 5.9,
+    "box_px": [
+     894,
+     1777,
+     1015,
+     1869
+    ],
+    "position": "vehicle position from telemetry band, +/-0.6 m",
+    "caveat": "range_ahead_m assumes camera height and FOV; treat as +/-50%"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     76.2367298,
+     26.2284839
+    ]
+   },
+   "properties": {
+    "defect_id": 41,
+    "label": "pothole",
+    "class_raw": "potholes",
+    "status": "unconfirmed",
+    "confidence": 0.285,
+    "seen_in_frames": 1,
+    "chainage_m": 262155.0,
+    "frame": 2969,
+    "t_sec": 593.8,
+    "range_ahead_m": 4.8,
+    "box_px": [
+     1572,
+     1903,
+     1700,
+     1968
+    ],
+    "position": "vehicle position from telemetry band, +/-0.6 m",
+    "caveat": "range_ahead_m assumes camera height and FOV; treat as +/-50%"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     76.2612695,
+     26.0008463
+    ]
+   },
+   "properties": {
+    "defect_id": 129,
+    "label": "pothole",
+    "class_raw": "potholes",
+    "status": "unconfirmed",
+    "confidence": 0.285,
+    "seen_in_frames": 1,
+    "chainage_m": 287555.2,
+    "frame": 8049,
+    "t_sec": 1609.8,
+    "range_ahead_m": 6.0,
+    "box_px": [
+     913,
+     1530,
+     1151,
+     1861
+    ],
+    "position": "vehicle position from telemetry band, +/-0.6 m",
+    "caveat": "range_ahead_m assumes camera height and FOV; treat as +/-50%"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     76.2551454,
+     26.0851884
+    ]
+   },
+   "properties": {
+    "defect_id": 22,
+    "label": "longitudinal_crack",
+    "class_raw": "D00",
+    "status": "unconfirmed",
+    "confidence": 0.284,
+    "seen_in_frames": 1,
+    "chainage_m": 278145.1,
+    "frame": 6167,
+    "t_sec": 1233.4,
+    "range_ahead_m": 3.2,
+    "box_px": [
+     716,
+     2019,
+     1021,
+     2234
+    ],
+    "position": "vehicle position from telemetry band, +/-0.6 m",
+    "caveat": "range_ahead_m assumes camera height and FOV; treat as +/-50%"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     76.2461211,
+     26.3369398
+    ]
+   },
+   "properties": {
+    "defect_id": 145,
+    "label": "repair_patch",
+    "class_raw": "Repair",
+    "status": "unconfirmed",
+    "confidence": 0.283,
+    "seen_in_frames": 1,
+    "chainage_m": 250025.1,
+    "frame": 543,
+    "t_sec": 108.6,
+    "range_ahead_m": 2.9,
+    "box_px": [
+     422,
+     1861,
+     2024,
+     2319
+    ],
+    "position": "vehicle position from telemetry band, +/-0.6 m",
+    "caveat": "range_ahead_m assumes camera height and FOV; treat as +/-50%"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     76.2400484,
+     26.2026684
+    ]
+   },
+   "properties": {
+    "defect_id": 14,
+    "label": "longitudinal_crack",
+    "class_raw": "D00",
+    "status": "unconfirmed",
+    "confidence": 0.279,
+    "seen_in_frames": 1,
+    "chainage_m": 265035.0,
+    "frame": 3545,
+    "t_sec": 709.0,
+    "range_ahead_m": 3.1,
+    "box_px": [
+     1102,
+     2190,
+     1175,
+     2267
+    ],
+    "position": "vehicle position from telemetry band, +/-0.6 m",
+    "caveat": "range_ahead_m assumes camera height and FOV; treat as +/-50%"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     76.2633268,
+     26.0184326
+    ]
+   },
+   "properties": {
+    "defect_id": 124,
+    "label": "pothole",
+    "class_raw": "potholes",
+    "status": "unconfirmed",
+    "confidence": 0.278,
+    "seen_in_frames": 1,
+    "chainage_m": 285590.1,
+    "frame": 7656,
+    "t_sec": 1531.2,
+    "range_ahead_m": 5.5,
+    "box_px": [
+     898,
+     1535,
+     1132,
+     1897
+    ],
+    "position": "vehicle position from telemetry band, +/-0.6 m",
+    "caveat": "range_ahead_m assumes camera height and FOV; treat as +/-50%"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     76.2453646,
+     26.161311
+    ]
+   },
+   "properties": {
+    "defect_id": 17,
+    "label": "longitudinal_crack",
+    "class_raw": "D00",
+    "status": "unconfirmed",
+    "confidence": 0.277,
+    "seen_in_frames": 1,
+    "chainage_m": 269650.3,
+    "frame": 4468,
+    "t_sec": 893.6,
+    "range_ahead_m": 3.2,
+    "box_px": [
+     71,
+     2076,
+     268,
+     2238
+    ],
+    "position": "vehicle position from telemetry band, +/-0.6 m",
+    "caveat": "range_ahead_m assumes camera height and FOV; treat as +/-50%"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     76.250691,
+     26.1198615
+    ]
+   },
+   "properties": {
+    "defect_id": 75,
+    "label": "pothole",
+    "class_raw": "potholes",
+    "status": "unconfirmed",
+    "confidence": 0.277,
+    "seen_in_frames": 1,
+    "chainage_m": 274275.2,
+    "frame": 5393,
+    "t_sec": 1078.6,
+    "range_ahead_m": 5.9,
+    "box_px": [
+     894,
+     1741,
+     1016,
+     1866
+    ],
+    "position": "vehicle position from telemetry band, +/-0.6 m",
+    "caveat": "range_ahead_m assumes camera height and FOV; treat as +/-50%"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     76.2532012,
+     26.1003294
+    ]
+   },
+   "properties": {
+    "defect_id": 84,
+    "label": "pothole",
+    "class_raw": "potholes",
+    "status": "unconfirmed",
+    "confidence": 0.277,
+    "seen_in_frames": 1,
+    "chainage_m": 276455.1,
+    "frame": 5829,
+    "t_sec": 1165.8,
+    "range_ahead_m": 5.9,
+    "box_px": [
+     900,
+     1760,
+     1010,
+     1868
+    ],
+    "position": "vehicle position from telemetry band, +/-0.6 m",
+    "caveat": "range_ahead_m assumes camera height and FOV; treat as +/-50%"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     76.25429,
+     26.0918626
+    ]
+   },
+   "properties": {
+    "defect_id": 89,
+    "label": "pothole",
+    "class_raw": "potholes",
+    "status": "unconfirmed",
+    "confidence": 0.277,
+    "seen_in_frames": 1,
+    "chainage_m": 277400.3,
+    "frame": 6018,
+    "t_sec": 1203.6,
+    "range_ahead_m": 6.0,
+    "box_px": [
+     896,
+     1742,
+     1025,
+     1864
+    ],
+    "position": "vehicle position from telemetry band, +/-0.6 m",
+    "caveat": "range_ahead_m assumes camera height and FOV; treat as +/-50%"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     76.2627617,
+     26.0085282
+    ]
+   },
+   "properties": {
+    "defect_id": 127,
+    "label": "pothole",
+    "class_raw": "potholes",
+    "status": "unconfirmed",
+    "confidence": 0.277,
+    "seen_in_frames": 1,
+    "chainage_m": 286690.2,
+    "frame": 7876,
+    "t_sec": 1575.2,
+    "range_ahead_m": 6.7,
+    "box_px": [
+     924,
+     1549,
+     1111,
+     1817
+    ],
+    "position": "vehicle position from telemetry band, +/-0.6 m",
+    "caveat": "range_ahead_m assumes camera height and FOV; treat as +/-50%"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     76.2379193,
+     26.2918953
+    ]
+   },
+   "properties": {
+    "defect_id": 153,
+    "label": "repair_patch",
+    "class_raw": "Repair",
+    "status": "unconfirmed",
+    "confidence": 0.271,
+    "seen_in_frames": 1,
+    "chainage_m": 255085.3,
+    "frame": 1555,
+    "t_sec": 311.0,
+    "range_ahead_m": 2.9,
+    "box_px": [
+     992,
+     1938,
+     1668,
+     2312
+    ],
+    "position": "vehicle position from telemetry band, +/-0.6 m",
+    "caveat": "range_ahead_m assumes camera height and FOV; treat as +/-50%"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     76.2602181,
+     26.045669
+    ]
+   },
+   "properties": {
+    "defect_id": 110,
+    "label": "pothole",
+    "class_raw": "potholes",
+    "status": "unconfirmed",
+    "confidence": 0.269,
+    "seen_in_frames": 1,
+    "chainage_m": 282555.1,
+    "frame": 7049,
+    "t_sec": 1409.8,
+    "range_ahead_m": 4.4,
+    "box_px": [
+     1032,
+     1864,
+     1183,
+     2018
+    ],
+    "position": "vehicle position from telemetry band, +/-0.6 m",
+    "caveat": "range_ahead_m assumes camera height and FOV; treat as +/-50%"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     76.2593683,
+     26.0522584
+    ]
+   },
+   "properties": {
+    "defect_id": 105,
+    "label": "pothole",
+    "class_raw": "potholes",
+    "status": "unconfirmed",
+    "confidence": 0.268,
+    "seen_in_frames": 1,
+    "chainage_m": 281820.1,
+    "frame": 6902,
+    "t_sec": 1380.4,
+    "range_ahead_m": 5.9,
+    "box_px": [
+     894,
+     1741,
+     1019,
+     1872
+    ],
+    "position": "vehicle position from telemetry band, +/-0.6 m",
+    "caveat": "range_ahead_m assumes camera height and FOV; treat as +/-50%"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     76.2537191,
+     26.0962979
+    ]
+   },
+   "properties": {
+    "defect_id": 87,
+    "label": "pothole",
+    "class_raw": "potholes",
+    "status": "unconfirmed",
+    "confidence": 0.266,
+    "seen_in_frames": 1,
+    "chainage_m": 276905.1,
+    "frame": 5919,
+    "t_sec": 1183.8,
+    "range_ahead_m": 5.9,
+    "box_px": [
+     896,
+     1755,
+     1013,
+     1868
+    ],
+    "position": "vehicle position from telemetry band, +/-0.6 m",
+    "caveat": "range_ahead_m assumes camera height and FOV; treat as +/-50%"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     76.262514,
+     26.0277893
+    ]
+   },
+   "properties": {
+    "defect_id": 26,
+    "label": "longitudinal_crack",
+    "class_raw": "D00",
+    "status": "unconfirmed",
+    "confidence": 0.265,
+    "seen_in_frames": 1,
+    "chainage_m": 284550.1,
+    "frame": 7448,
+    "t_sec": 1489.6,
+    "range_ahead_m": 3.1,
+    "box_px": [
+     1112,
+     2207,
+     1175,
+     2261
+    ],
+    "position": "vehicle position from telemetry band, +/-0.6 m",
+    "caveat": "range_ahead_m assumes camera height and FOV; treat as +/-50%"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     76.2387894,
+     26.2124848
+    ]
+   },
+   "properties": {
+    "defect_id": 45,
+    "label": "pothole",
+    "class_raw": "potholes",
+    "status": "unconfirmed",
+    "confidence": 0.265,
+    "seen_in_frames": 1,
+    "chainage_m": 263940.1,
+    "frame": 3326,
+    "t_sec": 665.2,
+    "range_ahead_m": 3.6,
+    "box_px": [
+     1667,
+     2074,
+     1858,
+     2152
+    ],
+    "position": "vehicle position from telemetry band, +/-0.6 m",
+    "caveat": "range_ahead_m assumes camera height and FOV; treat as +/-50%"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     76.2439141,
+     26.1726036
+    ]
+   },
+   "properties": {
+    "defect_id": 168,
+    "label": "transverse_crack",
+    "class_raw": "D10",
+    "status": "unconfirmed",
+    "confidence": 0.263,
+    "seen_in_frames": 1,
+    "chainage_m": 268390.2,
+    "frame": 4216,
+    "t_sec": 843.2,
+    "range_ahead_m": 3.6,
+    "box_px": [
+     24,
+     1797,
+     1447,
+     2153
+    ],
+    "position": "vehicle position from telemetry band, +/-0.6 m",
+    "caveat": "range_ahead_m assumes camera height and FOV; treat as +/-50%"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     76.2505042,
+     26.3610211
+    ]
+   },
+   "properties": {
+    "defect_id": 3,
+    "label": "longitudinal_crack",
+    "class_raw": "D00",
+    "status": "unconfirmed",
+    "confidence": 0.262,
+    "seen_in_frames": 1,
+    "chainage_m": 247320.0,
+    "frame": 2,
+    "t_sec": 0.4,
+    "range_ahead_m": 3.0,
+    "box_px": [
+     674,
+     2168,
+     761,
+     2295
+    ],
+    "position": "vehicle position from telemetry band, +/-0.6 m",
+    "caveat": "range_ahead_m assumes camera height and FOV; treat as +/-50%"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     76.2370911,
+     26.2256599
+    ]
+   },
+   "properties": {
+    "defect_id": 42,
+    "label": "pothole",
+    "class_raw": "potholes",
+    "status": "unconfirmed",
+    "confidence": 0.26,
+    "seen_in_frames": 1,
+    "chainage_m": 262470.1,
+    "frame": 3032,
+    "t_sec": 606.4,
+    "range_ahead_m": 5.1,
+    "box_px": [
+     1062,
+     1901,
+     1130,
+     1941
+    ],
+    "position": "vehicle position from telemetry band, +/-0.6 m",
+    "caveat": "range_ahead_m assumes camera height and FOV; treat as +/-50%"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     76.2526195,
+     26.104853
+    ]
+   },
+   "properties": {
+    "defect_id": 83,
+    "label": "pothole",
+    "class_raw": "potholes",
+    "status": "unconfirmed",
+    "confidence": 0.26,
+    "seen_in_frames": 1,
+    "chainage_m": 275950.3,
+    "frame": 5728,
+    "t_sec": 1145.6,
+    "range_ahead_m": 6.0,
+    "box_px": [
+     1410,
+     1798,
+     1614,
+     1861
+    ],
+    "position": "vehicle position from telemetry band, +/-0.6 m",
+    "caveat": "range_ahead_m assumes camera height and FOV; treat as +/-50%"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     76.2603477,
+     26.0446365
+    ]
+   },
+   "properties": {
+    "defect_id": 166,
+    "label": "repair_patch",
+    "class_raw": "Repair",
+    "status": "unconfirmed",
+    "confidence": 0.259,
+    "seen_in_frames": 1,
+    "chainage_m": 282670.3,
+    "frame": 7072,
+    "t_sec": 1414.4,
+    "range_ahead_m": 2.9,
+    "box_px": [
+     348,
+     1525,
+     2024,
+     2314
+    ],
+    "position": "vehicle position from telemetry band, +/-0.6 m",
+    "caveat": "range_ahead_m assumes camera height and FOV; treat as +/-50%"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     76.2448079,
+     26.1656567
+    ]
+   },
+   "properties": {
+    "defect_id": 52,
+    "label": "pothole",
+    "class_raw": "potholes",
+    "status": "unconfirmed",
+    "confidence": 0.257,
+    "seen_in_frames": 1,
+    "chainage_m": 269165.3,
+    "frame": 4371,
+    "t_sec": 874.2,
+    "range_ahead_m": 5.9,
+    "box_px": [
+     891,
+     1742,
+     1013,
+     1869
+    ],
+    "position": "vehicle position from telemetry band, +/-0.6 m",
+    "caveat": "range_ahead_m assumes camera height and FOV; treat as +/-50%"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     76.2551694,
+     26.0850082
+    ]
+   },
+   "properties": {
+    "defect_id": 95,
+    "label": "pothole",
+    "class_raw": "potholes",
+    "status": "unconfirmed",
+    "confidence": 0.257,
+    "seen_in_frames": 1,
+    "chainage_m": 278165.2,
+    "frame": 6171,
+    "t_sec": 1234.2,
+    "range_ahead_m": 5.9,
+    "box_px": [
+     899,
+     1753,
+     1023,
+     1868
+    ],
+    "position": "vehicle position from telemetry band, +/-0.6 m",
+    "caveat": "range_ahead_m assumes camera height and FOV; treat as +/-50%"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     76.258317,
+     25.9919523
+    ]
+   },
+   "properties": {
+    "defect_id": 136,
+    "label": "pothole",
+    "class_raw": "potholes",
+    "status": "unconfirmed",
+    "confidence": 0.257,
+    "seen_in_frames": 1,
+    "chainage_m": 288585.3,
+    "frame": 8255,
+    "t_sec": 1651.0,
+    "range_ahead_m": 6.5,
+    "box_px": [
+     929,
+     1537,
+     1142,
+     1826
+    ],
+    "position": "vehicle position from telemetry band, +/-0.6 m",
+    "caveat": "range_ahead_m assumes camera height and FOV; treat as +/-50%"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     76.2338982,
+     26.2614619
+    ]
+   },
+   "properties": {
+    "defect_id": 9,
+    "label": "longitudinal_crack",
+    "class_raw": "D00",
+    "status": "unconfirmed",
+    "confidence": 0.256,
+    "seen_in_frames": 1,
+    "chainage_m": 258485.3,
+    "frame": 2235,
+    "t_sec": 447.0,
+    "range_ahead_m": 3.4,
+    "box_px": [
+     305,
+     2128,
+     369,
+     2190
+    ],
+    "position": "vehicle position from telemetry band, +/-0.6 m",
+    "caveat": "range_ahead_m assumes camera height and FOV; treat as +/-50%"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     76.2342897,
+     26.248391
+    ]
+   },
+   "properties": {
+    "defect_id": 10,
+    "label": "longitudinal_crack",
+    "class_raw": "D00",
+    "status": "unconfirmed",
+    "confidence": 0.256,
+    "seen_in_frames": 1,
+    "chainage_m": 259935.3,
+    "frame": 2525,
+    "t_sec": 505.0,
+    "range_ahead_m": 3.1,
+    "box_px": [
+     831,
+     2197,
+     880,
+     2263
+    ],
+    "position": "vehicle position from telemetry band, +/-0.6 m",
+    "caveat": "range_ahead_m assumes camera height and FOV; treat as +/-50%"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     76.2626339,
+     26.0268476
+    ]
+   },
+   "properties": {
+    "defect_id": 171,
+    "label": "transverse_crack",
+    "class_raw": "D10",
+    "status": "unconfirmed",
+    "confidence": 0.255,
+    "seen_in_frames": 1,
+    "chainage_m": 284655.1,
+    "frame": 7469,
+    "t_sec": 1493.8,
+    "range_ahead_m": 4.0,
+    "box_px": [
+     431,
+     2017,
+     534,
+     2079
+    ],
+    "position": "vehicle position from telemetry band, +/-0.6 m",
+    "caveat": "range_ahead_m assumes camera height and FOV; treat as +/-50%"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     76.2422702,
+     26.1854144
+    ]
+   },
+   "properties": {
+    "defect_id": 48,
+    "label": "pothole",
+    "class_raw": "potholes",
+    "status": "unconfirmed",
+    "confidence": 0.253,
+    "seen_in_frames": 1,
+    "chainage_m": 266960.1,
+    "frame": 3930,
+    "t_sec": 786.0,
+    "range_ahead_m": 5.6,
+    "box_px": [
+     901,
+     1782,
+     1027,
+     1889
+    ],
+    "position": "vehicle position from telemetry band, +/-0.6 m",
+    "caveat": "range_ahead_m assumes camera height and FOV; treat as +/-50%"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     76.2555128,
+     26.0823199
+    ]
+   },
+   "properties": {
+    "defect_id": 97,
+    "label": "pothole",
+    "class_raw": "potholes",
+    "status": "unconfirmed",
+    "confidence": 0.253,
+    "seen_in_frames": 1,
+    "chainage_m": 278465.2,
+    "frame": 6231,
+    "t_sec": 1246.2,
+    "range_ahead_m": 5.9,
+    "box_px": [
+     897,
+     1758,
+     1008,
+     1867
+    ],
+    "position": "vehicle position from telemetry band, +/-0.6 m",
+    "caveat": "range_ahead_m assumes camera height and FOV; treat as +/-50%"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     76.2584722,
+     26.0592524
+    ]
+   },
+   "properties": {
+    "defect_id": 104,
+    "label": "pothole",
+    "class_raw": "potholes",
+    "status": "unconfirmed",
+    "confidence": 0.253,
+    "seen_in_frames": 1,
+    "chainage_m": 281040.2,
+    "frame": 6746,
+    "t_sec": 1349.2,
+    "range_ahead_m": 6.0,
+    "box_px": [
+     894,
+     1779,
+     1006,
+     1862
+    ],
+    "position": "vehicle position from telemetry band, +/-0.6 m",
+    "caveat": "range_ahead_m assumes camera height and FOV; treat as +/-50%"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     76.2546208,
+     26.0892651
+    ]
+   },
+   "properties": {
+    "defect_id": 92,
+    "label": "pothole",
+    "class_raw": "potholes",
+    "status": "unconfirmed",
+    "confidence": 0.252,
+    "seen_in_frames": 1,
+    "chainage_m": 277690.2,
+    "frame": 6076,
+    "t_sec": 1215.2,
+    "range_ahead_m": 3.8,
+    "box_px": [
+     1617,
+     1954,
+     1909,
+     2117
+    ],
+    "position": "vehicle position from telemetry band, +/-0.6 m",
+    "caveat": "range_ahead_m assumes camera height and FOV; treat as +/-50%"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     76.2348967,
+     26.2744232
+    ]
+   },
+   "properties": {
+    "defect_id": 2,
+    "label": "alligator_crack",
+    "class_raw": "D20",
+    "status": "unconfirmed",
+    "confidence": 0.251,
+    "seen_in_frames": 1,
+    "chainage_m": 257045.1,
+    "frame": 1947,
+    "t_sec": 389.4,
+    "range_ahead_m": 2.9,
+    "box_px": [
+     1572,
+     2128,
+     2023,
+     2315
+    ],
+    "position": "vehicle position from telemetry band, +/-0.6 m",
+    "caveat": "range_ahead_m assumes camera height and FOV; treat as +/-50%"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     76.2495569,
+     26.1286938
+    ]
+   },
+   "properties": {
+    "defect_id": 71,
+    "label": "pothole",
+    "class_raw": "potholes",
+    "status": "unconfirmed",
+    "confidence": 0.251,
+    "seen_in_frames": 1,
+    "chainage_m": 273290.0,
+    "frame": 5196,
+    "t_sec": 1039.2,
+    "range_ahead_m": 4.9,
+    "box_px": [
+     1498,
+     1892,
+     1654,
+     1957
+    ],
+    "position": "vehicle position from telemetry band, +/-0.6 m",
+    "caveat": "range_ahead_m assumes camera height and FOV; treat as +/-50%"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     76.2559784,
+     26.0786935
+    ]
+   },
+   "properties": {
+    "defect_id": 99,
+    "label": "pothole",
+    "class_raw": "potholes",
+    "status": "unconfirmed",
+    "confidence": 0.251,
+    "seen_in_frames": 1,
+    "chainage_m": 278870.2,
+    "frame": 6312,
+    "t_sec": 1262.4,
+    "range_ahead_m": 6.0,
+    "box_px": [
+     894,
+     1737,
+     1017,
+     1863
+    ],
+    "position": "vehicle position from telemetry band, +/-0.6 m",
+    "caveat": "range_ahead_m assumes camera height and FOV; treat as +/-50%"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     76.2513508,
+     25.9759158
+    ]
+   },
+   "properties": {
+    "defect_id": 143,
+    "label": "pothole",
+    "class_raw": "potholes",
+    "status": "unconfirmed",
+    "confidence": 0.251,
+    "seen_in_frames": 1,
+    "chainage_m": 290495.0,
+    "frame": 8637,
+    "t_sec": 1727.4,
+    "range_ahead_m": 3.5,
+    "box_px": [
+     689,
+     2027,
+     981,
+     2181
+    ],
+    "position": "vehicle position from telemetry band, +/-0.6 m",
+    "caveat": "range_ahead_m assumes camera height and FOV; treat as +/-50%"
+   }
+  }
+ ]
+}

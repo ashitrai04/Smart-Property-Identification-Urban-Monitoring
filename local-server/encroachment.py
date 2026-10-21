@@ -38,6 +38,7 @@ ROADS = "D:/GEO_SERVE/ongole_roads_district.gpkg"
 SURFACE = "D:/GEO_SERVE/ongole_road_surface_city.gpkg"
 BUILDINGS = "D:/GEO_SERVE/ongole_2026_segformer.gpkg"
 ORTHO = "D:/GEO_SERVE/Ongole_ORI_V3_jpeg92.tif"
+GREEN_T = "D:/GEO_SERVE/_kb/greenness_{clip}.tif"   # pre-baked by make_greenness.py
 CLIPS = "C:/Users/asash/Downloads/clip_index.gpkg"
 M = 32644
 
@@ -79,24 +80,40 @@ def main(clip="clip_06"):
         carr = row & (np.nan_to_num(ndsm, nan=9e9) < 0.25)
     near = distance_transform_edt(~carr) * RES <= NEAR_ROAD
 
-    # greenness from the ortho, so canopy can be told from built things
-    od = rasterio.open(ORTHO)
-    W = int((b[2]-b[0])/RES); H = int((b[3]-b[1])/RES)
-    rgbs = []
-    for bi in (1, 2, 3):
-        a = np.zeros((H, W), np.float32)
-        for y0 in range(0, H, 1024):
-            for x0 in range(0, W, 1024):
-                hh = min(1024, H-y0); ww = min(1024, W-x0)
-                gb = (b[0]+x0*RES, b[3]-(y0+hh)*RES, b[0]+(x0+ww)*RES, b[3]-y0*RES)
-                a[y0:y0+hh, x0:x0+ww] = od.read(bi,
-                    window=rasterio.windows.from_bounds(*gb, od.transform),
-                    out_shape=(hh, ww), resampling=rasterio.enums.Resampling.average,
-                    boundless=True, fill_value=0)
-        rgbs.append(a)
-    R, G, B = rgbs
-    exg = 2*G - R - B
-    veg = exg >= GREEN_VEG
+    # greenness, so canopy can be told from built things. Reading it out of the
+    # 42 GB ortho takes minutes and means carrying the ortho around, so
+    # make_greenness.py bakes a 0.5 m excess-green raster per clip (~3 MB) and
+    # that is used when present.
+    gp = GREEN_T.format(clip=clip)
+    if os.path.exists(gp):
+        exg, _ = read_on(gp, b, RES)
+        veg = np.nan_to_num(exg, nan=-99) >= GREEN_VEG
+        print(f"  greenness: {os.path.basename(gp)}", flush=True)
+    elif os.path.exists(ORTHO):
+        od = rasterio.open(ORTHO)
+        W = int((b[2]-b[0])/RES); H = int((b[3]-b[1])/RES)
+        rgbs = []
+        for bi in (1, 2, 3):
+            a = np.zeros((H, W), np.float32)
+            for y0 in range(0, H, 1024):
+                for x0 in range(0, W, 1024):
+                    hh = min(1024, H-y0); ww = min(1024, W-x0)
+                    gb = (b[0]+x0*RES, b[3]-(y0+hh)*RES, b[0]+(x0+ww)*RES, b[3]-y0*RES)
+                    a[y0:y0+hh, x0:x0+ww] = od.read(bi,
+                        window=rasterio.windows.from_bounds(*gb, od.transform),
+                        out_shape=(hh, ww), resampling=rasterio.enums.Resampling.average,
+                        boundless=True, fill_value=0)
+            rgbs.append(a)
+        R, G, B = rgbs
+        exg = 2*G - R - B
+        veg = exg >= GREEN_VEG
+        print("  greenness: read from the ortho", flush=True)
+    else:
+        # no imagery at all: every raised object is kept, so tree canopy over
+        # the carriageway is counted as encroachment. The numbers come out
+        # roughly 3x too high - run make_greenness.py on the imagery laptop.
+        veg = np.zeros(shp, bool)
+        print("  !! no greenness source - vegetation NOT filtered", flush=True)
 
     raised = np.nan_to_num(ndsm, nan=0) >= MIN_H
     enc = (raised & row & ~carr & near).astype(np.uint8)

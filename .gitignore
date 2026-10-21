@@ -38,3 +38,17 @@ gpu-update-v11.zip
 gpu-update-v12.zip
 gpu-update-v13.zip
 gpu-update-v14.zip
+gpu-update-v15.zip
+gpu-update-v16.zip
+gpu-update-v17.zip
+gpu-update-v18.zip
+gpu-update-v19.zip
+gpu-update-v20.zip
+
+# Survey video. The drone clip is 607 MB (the lossless remux of the original)
+# and GitHub rejects anything over 100 MB, so the videos are served from
+# local-server / object storage rather than committed. The detection JSON and
+# route GeoJSON beside them are small and ARE committed, so the map, chart and
+# defect list work on a deploy even when the video itself is absent.
+public/nsv/*.mp4
+public/live_demo_samples/*.mp4

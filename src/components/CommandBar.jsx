@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { motion } from "framer-motion";
-import { BarChart2, ChevronDown, Compass, Database, Globe, Layers, LayoutDashboard, Map as MapIcon, Moon, Mountain, Satellite, Sun, Upload } from "lucide-react";
+import { BarChart2, Video, ChevronDown, Compass, Database, Globe, Layers, LayoutDashboard, Map as MapIcon, Moon, Mountain, Satellite, Sun, Upload } from "lucide-react";
 import { API_BASE } from "../utils/mapLayers";
 import { Button, Pill } from "./ui";
 import { useBreakpoint } from "../lib/useBreakpoint";
@@ -65,6 +65,7 @@ const NAV_ITEMS = [
     { path: "/upload", label: "Analysis", icon: Upload },
     { path: "/datalogs", label: "Data logs", icon: Database },
     { path: "/dss", label: "Reports", icon: BarChart2 },
+    { path: "/nsv", label: "Highway NSV", icon: Video },
 ];
 
 /* The inference backend sleeps when idle (Hugging Face Space), so the bar says

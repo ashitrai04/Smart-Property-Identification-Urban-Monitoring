@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { motion } from "framer-motion";
-import { Home, Globe, Upload, Database, BarChart2, Clock } from "lucide-react";
+import { Home, Globe, Upload, Database, BarChart2, Clock, Video } from "lucide-react";
 
 const NAV_ITEMS = [
     { path: "/", label: "Home", icon: Home },
@@ -9,6 +9,7 @@ const NAV_ITEMS = [
     { path: "/upload", label: "Upload & Analysis", icon: Upload },
     { path: "/datalogs", label: "Data Logs", icon: Database },
     { path: "/dss", label: "DSS", icon: BarChart2 },
+    { path: "/nsv", label: "Highway NSV", icon: Video },
 ];
 
 export default function Navbar() {

@@ -9,6 +9,7 @@ import Mapping from "./pages/Mapping";
 import Upload from "./pages/Upload";
 import DataLogs from "./pages/DataLogs";
 import DSS from "./pages/DSS";
+import NSV from "./pages/NSV";
 
 // The boot check plays once a session; reloads go straight to work.
 const BOOT_KEY = "sp-boot-played";
@@ -18,7 +19,7 @@ function bootSeen() {
 
 function App() {
     const location = useLocation();
-    const isFullWidth = location.pathname.startsWith("/mapping") || location.pathname.startsWith("/dss");
+    const isFullWidth = location.pathname.startsWith("/mapping") || location.pathname.startsWith("/dss") || location.pathname.startsWith("/nsv");
     const [booted, setBooted] = useState(bootSeen);
     const handleBootComplete = useCallback(() => {
         try { sessionStorage.setItem(BOOT_KEY, "1"); } catch { /* ignore */ }
@@ -40,6 +41,7 @@ function App() {
                         <Routes>
                             <Route path="/mapping" element={<Mapping />} />
                             <Route path="/dss" element={<DSS />} />
+                            <Route path="/nsv" element={<NSV />} />
                         </Routes>
                     </main>
                 ) : (
