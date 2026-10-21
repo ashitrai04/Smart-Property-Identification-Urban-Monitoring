@@ -1,5 +1,5 @@
 import { useSyncExternalStore } from "react";
-import { API_BASE } from "../utils/mapLayers";
+import { API_BASE } from "../utils/apiBase";
 
 /*
  * Where the AI models run.

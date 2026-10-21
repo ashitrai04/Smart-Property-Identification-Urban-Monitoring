@@ -180,3 +180,11 @@ export async function end(map) {
     map.setPadding({ top: 0, left: 0, right: 0, bottom: 0 });
     setPoi(map, true);
 }
+
+
+// Shared with the Ongole story (ongoleStory.js) so both halves of the
+// walkthrough animate the same way instead of each inventing its own.
+export const _fx = { fly, wait, badge, marker, setPoi, stopSpin,
+    clearMarkers: () => { markers.forEach((m) => m.remove()); markers = []; },
+    pushMarker: (m) => { markers.push(m); } };
+export { ongoleStart, ongoleStop, ongoleWide, ongoleEnd } from "./ongoleStory";

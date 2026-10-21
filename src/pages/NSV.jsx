@@ -4,6 +4,7 @@ import {
     LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip,
     ReferenceLine, ResponsiveContainer,
 } from "recharts";
+import { registerTour, unregisterTour } from "../tour/tourBus";
 import {
     Play, Pause, SkipBack, SkipForward, Crosshair, AlertTriangle,
     Upload as UploadIcon, Gauge, Activity, Ruler, Layers, Maximize2, Minimize2,
@@ -89,6 +90,22 @@ export default function NSV() {
         return { frame: fr, t, chn, lat, lon, spd };
     }, [frames]);
     const cur = at(frame);
+
+    /* The guided walkthrough drives this page like a user would: switch source,
+       jump to a detection, change the measure the corridor is coloured by. */
+    useEffect(() => {
+        registerTour("nsv", {
+            setSource: (s) => setSource(s),
+            setMeasure: (m) => setMeasure(m),
+            showUnconfirmed: (v) => setShowUnconfirmed(!!v),
+            nextDetection: () => stepDetection(1),
+            seekFrame: (f) => seekFrame(f),
+            play: () => videoRef.current?.play(),
+            pause: () => videoRef.current?.pause(),
+            ready: () => !!(route && dets && track),
+        });
+        return () => unregisterTour("nsv");
+    }, [stepDetection, seekFrame, route, dets, track]);
 
     /* ---------- map ---------- */
     useEffect(() => {

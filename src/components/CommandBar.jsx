@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { motion } from "framer-motion";
 import { BarChart2, Video, ChevronDown, Compass, Database, Globe, Layers, LayoutDashboard, Map as MapIcon, Moon, Mountain, Satellite, Sun, Upload } from "lucide-react";
-import { API_BASE } from "../utils/mapLayers";
+import { API_BASE } from "../utils/apiBase";
 import { Button, Pill } from "./ui";
 import { useBreakpoint } from "../lib/useBreakpoint";
 import { probeGpu, useGpuStatus } from "../lib/modelApi";

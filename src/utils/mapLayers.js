@@ -2,7 +2,7 @@
 import mapboxgl from 'mapbox-gl';
 
 // ── Backend API base URL ──
-export const API_BASE = (import.meta.env.VITE_API_BASE || "http://127.0.0.1:8000").replace(/\/+$/, "");
+export { API_BASE } from "./apiBase";
 
 // ══════════════════════════════════════════════════════════════════
 // LOCAL BACKEND — Fetch GeoJSON from FastAPI server
