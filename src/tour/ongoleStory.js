@@ -36,16 +36,25 @@ const ONGOLE = {
     },
     encroachment: {
         task: "segment", label: "Encroachment",
-        // Ranking on raw area put a 2,474 m², 15.3 m tall object at the top —
-        // a building or a stand of trees, not something anyone would call an
-        // encroachment. Score only objects that are plausibly one: a stall,
-        // wall or dumped load, with a mapped structure preferred since that
-        // class is cross-checked against the building layer.
+        // Choosing the showcase took three passes, each fixing what the last
+        // one surfaced:
+        //   raw area        -> a 2,474 m², 15.3 m object: a stand of trees
+        //   size + height   -> the central median of a dual carriageway
+        //   + irregularity  -> a parked truck and a shadow on open highway
+        // What a real encroachment has, and those do not, is a property it
+        // belongs to: the good examples sit 0.5 m and 24 m from a building,
+        // the truck 260 m and the shadow 141 m. So proximity to a building
+        // carries the decision, with rectangular shapes rejected because a
+        // vehicle is a neat rectangle and a stall or dumped load is not.
         metric: (p) => {
             const a = Number(p.area_m2) || 0;
             const h = Number(p.height_max_m) || 0;
-            if (a < 3 || a > 250 || h < 0.6 || h > 7) return 0;
-            return a * (p.kind === "structure" ? 1.6 : 1);
+            const fill = Number(p.rect_fill);
+            const bld = Number(p.bld_m);
+            if (a < 6 || a > 250 || h < 0.8 || h > 7) return 0;
+            if (p.likely_vehicle === 1 || (fill >= 0.62)) return 0;
+            if (Number.isFinite(bld) && bld > 40) return 0;   // out in open road
+            return a * (p.kind === "structure" ? 1.6 : 1) * (1 - (Number.isFinite(fill) ? fill : 0.5));
         },
         say: (p) => `${p.kind === "structure" ? "Structure" : "Obstruction"} · ${Number(p.area_m2).toFixed(0)} m² · ${Number(p.height_max_m).toFixed(1)} m tall`,
         colour: ["case", ["==", ["get", "kind"], "structure"], "#DC2626", "#F97316"],
