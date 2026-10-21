@@ -91,22 +91,6 @@ export default function NSV() {
     }, [frames]);
     const cur = at(frame);
 
-    /* The guided walkthrough drives this page like a user would: switch source,
-       jump to a detection, change the measure the corridor is coloured by. */
-    useEffect(() => {
-        registerTour("nsv", {
-            setSource: (s) => setSource(s),
-            setMeasure: (m) => setMeasure(m),
-            showUnconfirmed: (v) => setShowUnconfirmed(!!v),
-            nextDetection: () => stepDetection(1),
-            seekFrame: (f) => seekFrame(f),
-            play: () => videoRef.current?.play(),
-            pause: () => videoRef.current?.pause(),
-            ready: () => !!(route && dets && track),
-        });
-        return () => unregisterTour("nsv");
-    }, [stepDetection, seekFrame, route, dets, track]);
-
     /* ---------- map ---------- */
     useEffect(() => {
         if (!mapEl.current || map.current || !route) return;
@@ -308,6 +292,25 @@ export default function NSV() {
             map.current?.easeTo({ center: f.geometry.coordinates, zoom: 15, duration: 600 });
         }
     }, [jumps, frame, seekFrame, dets]);
+
+    /* The guided walkthrough drives this page like a user would: switch source,
+       jump to a detection, change the measure the corridor is coloured by.
+       This has to sit below stepDetection and seekFrame — as a dependency of
+       an effect declared above them, they are still in the temporal dead zone
+       and the whole page throws on first render. */
+    useEffect(() => {
+        registerTour("nsv", {
+            setSource: (v) => setSource(v),
+            setMeasure: (m) => setMeasure(m),
+            showUnconfirmed: (v) => setShowUnconfirmed(!!v),
+            nextDetection: () => stepDetection(1),
+            seekFrame: (f) => seekFrame(f),
+            play: () => videoRef.current?.play(),
+            pause: () => videoRef.current?.pause(),
+            ready: () => !!(route && dets && track),
+        });
+        return () => unregisterTour("nsv");
+    }, [stepDetection, seekFrame, route, dets, track]);
 
     const stats = summary;
     const counts = stats?.status_counts;
@@ -1068,7 +1071,8 @@ const S = {
     mBtn: {
         display: "inline-flex", alignItems: "center", gap: 5, padding: "5px 10px",
         fontSize: 11.5, background: "var(--surface)", color: "var(--text-dim)",
-        border: "1px solid var(--line)", borderRadius: 999, cursor: "pointer",
+        borderWidth: 1, borderStyle: "solid", borderColor: "var(--line)",
+        borderRadius: 999, cursor: "pointer",
     },
     mBtnOn: { background: "var(--signal-dim)", color: "var(--signal)", borderColor: "var(--signal)" },
     chk: { display: "flex", alignItems: "center", gap: 5, fontSize: 11, color: "var(--text-dim)", cursor: "pointer" },
@@ -1175,14 +1179,16 @@ const S = {
         display: "inline-flex", alignItems: "center", justifyContent: "center",
         width: 30, height: 28, flexShrink: 0, cursor: "pointer",
         background: "var(--surface)", color: "var(--text-dim)",
-        border: "1px solid var(--line)", borderRadius: "var(--r-md)",
+        borderWidth: 1, borderStyle: "solid", borderColor: "var(--line)",
+        borderRadius: "var(--r-md)",
     },
     iconBtnOn: { color: "var(--signal)", borderColor: "var(--signal)", background: "var(--signal-dim)" },
     vsep: { width: 1, height: 18, background: "var(--line)", margin: "0 3px" },
     srcBtn: {
         padding: "6px 14px", fontSize: 11.5, cursor: "pointer",
         background: "var(--surface)", color: "var(--text-dim)",
-        border: "1px solid var(--line)", borderRadius: "var(--r-md)",
+        borderWidth: 1, borderStyle: "solid", borderColor: "var(--line)",
+        borderRadius: "var(--r-md)",
     },
     srcOn: { background: "var(--signal-dim)", color: "var(--signal)", borderColor: "var(--signal)" },
     droneWrap: {
