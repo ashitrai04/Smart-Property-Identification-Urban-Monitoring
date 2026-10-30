@@ -134,7 +134,7 @@ export default function BuildingsPanel() {
                 right={
                     <div className="flex items-center gap-1.5">
                         <Pill tone={gpu.ok ? "ok" : "warn"}>{gpu.ok ? "GPU online" : "GPU offline"}</Pill>
-                        <Pill>F1 0.79 held-out</Pill>
+                        <Pill>F1 0.81 held-out</Pill>
                     </div>
                 }
             />

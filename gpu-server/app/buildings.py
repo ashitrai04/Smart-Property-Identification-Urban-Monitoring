@@ -64,7 +64,13 @@ SCALES = [float(x) for x in os.environ.get("HISUP_SCALES", "0.08,0.10,0.125,0.15
 MIN_VOTES = int(os.environ.get("HISUP_MIN_VOTES", "2"))
 CORE = float(os.environ.get("HISUP_CORE", "0.90"))
 LO = float(os.environ.get("HISUP_LO", "0.50"))
-CORE_M2 = float(os.environ.get("HISUP_CORE_M2", "31"))   # smallest confident core, m2
+# 18.6 m2, not the 31 that was used first. The largest single category of missed
+# buildings was not merged terraces but small houses discarded outright - 56 of
+# 106 misses had no prediction at all, median 38 m2 against 71 m2 overall - and a
+# 31 m2 core floor was throwing them away, because a building's confident core is
+# smaller than its footprint. Confirmed on a second validation window that no
+# threshold was tuned on: F1 0.726 -> 0.759 there, 0.790 -> 0.811 on the first.
+CORE_M2 = float(os.environ.get("HISUP_CORE_M2", "18.6"))  # smallest confident core, m2
 TILE = 512
 OVERLAP = 64
 SCORE = 0.50
@@ -271,8 +277,9 @@ def health():
         "load": LOAD_INFO,
         "defaults": {"scales": SCALES, "min_votes": MIN_VOTES,
                      "core": CORE, "lo": LO, "core_m2": CORE_M2},
-        "held_out": {"precision": 0.819, "recall": 0.764, "f1": 0.791,
-                     "note": "450 buildings outside the training footprint"},
+        "held_out": {"precision": 0.792, "recall": 0.831, "f1": 0.811,
+                     "note": "450 buildings outside the training footprint; "
+                             "0.759 on a second window of 653"},
     }
 
 

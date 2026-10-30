@@ -54,11 +54,13 @@ async function deleteTempKeys(keys) {
 
 const ANALYSIS_TYPES = [
     { id: "segment", label: "AI Segmentation", desc: "SegFormer-B5 + SAM2 fusion — buildings / roads / water on satellite or drone imagery" },
+    // Second, not last: it is the only model trained on our own survey, and at the
+    // bottom of the list it sat below the fold and went unnoticed.
+    { id: "buildings", label: "Building Delineation", desc: "HiSup trained on our Ongole survey — individual footprints, not a mask · needs the GPU server" },
     { id: "change", label: "Building Change", desc: "New & demolished buildings between two dates (instance-matched)" },
     { id: "vegetation", label: "Vegetation Change", desc: "Green-cover gain & loss between two dates" },
     { id: "water", label: "Water Change", desc: "Water-body change & encroachment between two dates" },
     { id: "pothole", label: "Pothole Detection", desc: "YOLO road-damage detector — potholes & cracks on drone imagery" },
-    { id: "buildings", label: "Building Delineation", desc: "HiSup trained on our Ongole survey — individual footprints, not a mask" },
 ];
 
 // change-detection analysis types share the two-image flow; each maps to a backend mode
@@ -653,6 +655,7 @@ export default function Upload() {
                 <div className="flex items-center gap-1.5">
                     <span className="mono rounded-[4px] border border-[var(--line)] bg-[var(--surface-2)] px-1.5 py-[2px] text-[10px] text-[var(--text-dim)]">SegFormer-B5</span>
                     <span className="mono rounded-[4px] border border-[var(--line)] bg-[var(--surface-2)] px-1.5 py-[2px] text-[10px] text-[var(--text-dim)]">SAM2</span>
+                    <span className="mono rounded-[4px] border border-[var(--line)] bg-[var(--surface-2)] px-1.5 py-[2px] text-[10px] text-[var(--text-dim)]">HiSup</span>
                     <span className="mono rounded-[4px] border border-[var(--line)] bg-[var(--surface-2)] px-1.5 py-[2px] text-[10px] text-[var(--text-dim)]">≤ 500 MB</span>
                 </div>
             </div>
