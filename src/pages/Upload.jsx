@@ -5,6 +5,7 @@ import proj4 from "proj4";
 import { logActivity } from "../lib/activityLog";
 import { HF_MODEL_BASE, modelFetch, probeGpu } from "../lib/modelApi";
 import PotholePanel from "../components/PotholePanel";
+import BuildingsPanel from "../components/BuildingsPanel";
 import { decodeClassMap, exportCSV, classMapToGeoJSON, exportGeoJSON, exportSHP, exportGeoTIFF } from "../utils/exporters";
 import { registerTour, unregisterTour, fetchFile as tourFetchFile } from "../tour/tourBus";
 
@@ -57,6 +58,7 @@ const ANALYSIS_TYPES = [
     { id: "vegetation", label: "Vegetation Change", desc: "Green-cover gain & loss between two dates" },
     { id: "water", label: "Water Change", desc: "Water-body change & encroachment between two dates" },
     { id: "pothole", label: "Pothole Detection", desc: "YOLO road-damage detector — potholes & cracks on drone imagery" },
+    { id: "buildings", label: "Building Delineation", desc: "HiSup trained on our Ongole survey — individual footprints, not a mask" },
 ];
 
 // change-detection analysis types share the two-image flow; each maps to a backend mode
@@ -634,7 +636,7 @@ export default function Upload() {
     const totalImages = files.filter(f => /\.(jpg|jpeg|png|tif|tiff)$/i.test(f.name)).length;
 
     // ── Check if submit button should be enabled ──
-    const canSubmit = analysisType === "pothole"
+    const canSubmit = (analysisType === "pothole" || analysisType === "buildings")
         ? false
         : isCdType(analysisType)
             ? (cdPastFile && cdPresentFile && !processing)
@@ -662,6 +664,8 @@ export default function Upload() {
                     {/* ── CHANGE DETECTION (building/vegetation/water): Dual Upload ── */}
                     {analysisType === "pothole" ? (
                         <PotholePanel />
+                    ) : analysisType === "buildings" ? (
+                        <BuildingsPanel />
                     ) : isCdType(analysisType) ? (
                         <div className="space-y-4" data-tour="cd-uploads">
                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -775,7 +779,7 @@ export default function Upload() {
                     )}
 
                     {/* File list (for non-change detection) */}
-                    {!isCdType(analysisType) && analysisType !== "pothole" && files.length > 0 && (
+                    {!isCdType(analysisType) && analysisType !== "pothole" && analysisType !== "buildings" && files.length > 0 && (
                         <div className="bg-[var(--surface)] rounded-[8px] border border-[var(--border-default)] p-4 shadow-sm">
                             <div className="flex items-center justify-between mb-3">
                                 <h3 className="text-sm font-semibold text-[var(--text-primary)]">Selected Files ({files.length})</h3>

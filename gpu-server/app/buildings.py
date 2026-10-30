@@ -1,0 +1,382 @@
+"""Building footprint delineation — HiSup, fine-tuned on Ongole drone imagery.
+
+Where SegFormer answers "which pixels are building", this answers "how many
+buildings are there and where does each one end". They are different jobs and
+this one is harder in dense Indian low-rise fabric, where houses share walls
+and a semantic mask merges a whole terrace into one blob.
+
+The pipeline is four stages, each chosen by measurement rather than by
+reasoning (see PIPELINE.md in the training repo for the numbers):
+
+  1. SCALE.  The network is trained at 512 px, so buildings land around 55 px
+     across - the range HiSup's attraction field can represent. Feeding the
+     native 3 cm imagery puts them at 400 px and the output collapses. The
+     imagery is resampled to a set of working resolutions instead.
+
+  2. SEPARATE.  HiSup takes one polygon per connected component of its mask,
+     which merges terraces. Seeding a watershed from the network's own
+     confidence and flooding -probability puts the boundary on the party wall,
+     where the model is genuinely least certain. Measured: F1 0.235 -> 0.506.
+
+  3. VOTE.  Each resolution is run independently and a building is kept only
+     if two or more passes agree on it. Without the vote, merging makes things
+     worse, because single-pass noise accumulates. Measured: 0.743 -> 0.791.
+
+  4. REGULARIZE.  Rectilinear footprints in a block-consistent frame, so
+     neighbours share walls instead of nearly-sharing them.
+
+Held out on 450 hand-drawn buildings the model never trained on:
+P 0.819 · R 0.764 · F1 0.791, against 0.531 for a Western-trained baseline.
+
+Named buildings.py rather than hisup.py on purpose: a module called
+hisup would shadow the vendored HiSup package and every internal
+`from hisup.utils import ...` would resolve back to this file.
+
+Swapping in a newer checkpoint is a file copy plus POST /hisup/reload - the
+weights path is read from HISUP_WEIGHTS and the model is loaded lazily, so
+nothing needs restarting.
+"""
+import io
+import os
+import sys
+import threading
+import time
+
+import cv2
+import numpy as np
+import torch
+from fastapi import APIRouter, File, Form, HTTPException, UploadFile
+from fastapi.responses import JSONResponse
+
+_VENDOR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "vendor")
+if _VENDOR not in sys.path:
+    sys.path.insert(0, _VENDOR)
+
+router = APIRouter(prefix="/hisup", tags=["hisup"])
+
+HERE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+WEIGHTS = os.environ.get("HISUP_WEIGHTS", os.path.join(HERE, "weights", "hisup_ongole.pth"))
+DEVICE = os.environ.get("SEG_DEVICE") or ("cuda" if torch.cuda.is_available() else "cpu")
+
+# The tuned operating point. These were swept per-checkpoint; a new checkpoint
+# shifts the probability calibration, so they are overridable per request.
+SCALES = [float(x) for x in os.environ.get("HISUP_SCALES", "0.08,0.10,0.125,0.15").split(",")]
+MIN_VOTES = int(os.environ.get("HISUP_MIN_VOTES", "2"))
+CORE = float(os.environ.get("HISUP_CORE", "0.90"))
+LO = float(os.environ.get("HISUP_LO", "0.50"))
+CORE_M2 = float(os.environ.get("HISUP_CORE_M2", "31"))   # smallest confident core, m2
+TILE = 512
+OVERLAP = 64
+SCORE = 0.50
+
+# ImageNet statistics: the checkpoint was fine-tuned with these, not with the
+# 128/50 its shipped config advertises. Swapping them measurably lowers F1.
+MEAN = torch.tensor([0.485, 0.456, 0.406]).view(3, 1, 1) * 255.0
+STD = torch.tensor([0.229, 0.224, 0.225]).view(3, 1, 1) * 255.0
+
+_model = None
+_lock = threading.Lock()
+LOAD_INFO = {"loaded": False, "weights": WEIGHTS, "device": DEVICE}
+
+
+def _load():
+    global _model
+    if _model is not None:
+        return _model
+    with _lock:
+        if _model is not None:
+            return _model
+        if not os.path.exists(WEIGHTS):
+            raise HTTPException(503, f"HiSup weights not found at {WEIGHTS}")
+        print(f"[hisup] loading {WEIGHTS} on {DEVICE}…", flush=True)
+        t0 = time.time()
+        from hisup.config import cfg
+        from hisup.detector import BuildingDetector
+        cfg.merge_from_file(os.path.join(HERE, "app", "hisup_config.yaml"))
+        cfg.MODEL.DEVICE = DEVICE
+        m = BuildingDetector(cfg, test=True)
+        sd = torch.load(WEIGHTS, map_location="cpu", weights_only=False)
+        sd = sd.get("model", sd.get("state_dict", sd))
+        sd = {k.replace("module.", "", 1): v for k, v in sd.items()}
+        miss, _ = m.load_state_dict(sd, strict=False)
+        tot = len(m.state_dict())
+        _model = m.to(DEVICE).eval()
+        LOAD_INFO.update(loaded=True, matched=f"{tot - len(miss)}/{tot}",
+                         seconds=round(time.time() - t0, 1),
+                         mtime=os.path.getmtime(WEIGHTS))
+        print(f"[hisup] ready — matched {tot - len(miss)}/{tot} in "
+              f"{LOAD_INFO['seconds']}s", flush=True)
+        return _model
+
+
+def _split(mask, lo, core, min_px):
+    """One label per building, not one per connected blob.
+
+    A party wall is 3 px of shared masonry; the silhouette barely notches
+    there, so a distance transform cannot find it. The mask probability does
+    dip, because the network is genuinely unsure which house those pixels
+    belong to - so the confident cores become watershed seeds and the flood
+    settles on the dip.
+    """
+    from scipy import ndimage as ndi
+    from skimage.measure import regionprops
+    from skimage.segmentation import watershed
+
+    fg = mask > lo
+    if not fg.any():
+        return np.zeros(fg.shape, np.int32)
+    fg = ndi.binary_fill_holes(fg)
+    seeds = ndi.binary_opening(mask > core, np.ones((3, 3)))
+    lbl, k = ndi.label(seeds)
+    if k:
+        sz = ndi.sum(np.ones(lbl.shape, np.uint8), lbl, range(1, k + 1))
+        drop = {i + 1 for i, v in enumerate(sz) if v < min_px}
+        if drop:
+            lbl, k = ndi.label(seeds & ~np.isin(lbl, list(drop)))
+    if k == 0:
+        lbl, k = ndi.label(fg)
+    lab = watershed(-mask, lbl, mask=fg)
+    out = np.zeros(lab.shape, np.int32)
+    j = 0
+    for r in regionprops(lab):
+        if r.area >= min_px:
+            j += 1
+            out[lab == r.label] = j
+    return out
+
+
+@torch.no_grad()
+def _detect_one(img_rgb, gsd, core, lo, core_m2):
+    """Run one resolution over a whole image, returning pixel-space polygons."""
+    from hisup.utils.polygon import generate_polygon
+    from skimage.measure import regionprops
+
+    model = _load()
+    H, W = img_rgb.shape[:2]
+    step = TILE - OVERLAP
+    min_px = max(16, int(core_m2 / (gsd * gsd)))
+    polys = []
+    for r in range(0, H, step):
+        for c in range(0, W, step):
+            h, w = min(TILE, H - r), min(TILE, W - c)
+            if h < 64 or w < 64:
+                continue
+            tile = img_rgb[r:r + h, c:c + w]
+            if (tile.max(axis=2) > 6).mean() < 0.05:
+                continue
+            if (h, w) != (TILE, TILE):
+                tile = cv2.copyMakeBorder(tile, 0, TILE - h, 0, TILE - w,
+                                          cv2.BORDER_CONSTANT, value=0)
+            t = torch.from_numpy(np.ascontiguousarray(tile.transpose(2, 0, 1))).float()
+            t = ((t - MEAN) / STD).unsqueeze(0).to(DEVICE)
+            try:
+                out, _ = model(t, [{"height": TILE, "width": TILE, "filename": "x.png"}])
+            except Exception:
+                continue
+            mask = out["mask_pred"][0]
+            juncs = out["juncs_pred"][0]
+            lab = _split(mask, lo, core, min_px)
+            if lab.max() == 0:
+                continue
+            for prop in regionprops(lab):
+                try:
+                    poly, js, _, sc, _ = generate_polygon(prop, mask, juncs, 0, False)
+                except Exception:
+                    continue
+                if js.shape[0] == 0 or float(sc) < SCORE:
+                    continue
+                p = np.asarray(poly, np.float64).reshape(-1, 2)
+                if len(p) < 3:
+                    continue
+                polys.append((p + [c, r], float(sc)))
+    return polys
+
+
+def _to_shapely(polys, scale):
+    """Pixel polygons at one working resolution -> shapes in a common frame."""
+    from shapely.geometry import Polygon
+    out = []
+    for p, s in polys:
+        g = Polygon(p * scale)
+        if not g.is_valid:
+            g = g.buffer(0)
+        if g.geom_type == "Polygon" and not g.is_empty and g.area > 4:
+            out.append((g, s))
+    return out
+
+
+def _dedup(items, thr=0.4):
+    from shapely.strtree import STRtree
+    items = sorted(items, key=lambda x: -x[1])
+    geoms = [g for g, _ in items]
+    if not geoms:
+        return []
+    tree = STRtree(geoms)
+    dead, keep = set(), []
+    for i, g in enumerate(geoms):
+        if i in dead:
+            continue
+        keep.append(g)
+        for j in tree.query(g):
+            j = int(j)
+            if j <= i or j in dead:
+                continue
+            m = min(g.area, geoms[j].area)
+            if m > 0 and g.intersection(geoms[j]).area / m > thr:
+                dead.add(j)
+    return keep
+
+
+def _vote(passes, iou_thr, min_votes):
+    """Keep only what two or more resolutions agree on.
+
+    A building seen at one scale alone is usually a shadow, a tarpaulin or a
+    water tank. One seen at two is almost always real. Without this filter
+    multi-scale merging is worse than a single pass.
+    """
+    from shapely.strtree import STRtree
+    order = sorted(range(len(passes)), key=lambda i: -len(passes[i]))
+    kept, votes = [], []
+    for pi in order:
+        for g in passes[pi]:
+            hit = -1
+            if kept:
+                tree = STRtree(kept)
+                for j in tree.query(g):
+                    j = int(j)
+                    u = kept[j].union(g).area
+                    if u > 0 and kept[j].intersection(g).area / u >= iou_thr:
+                        hit = j
+                        break
+            if hit >= 0:
+                votes[hit] += 1
+                if len(g.exterior.coords) > len(kept[hit].exterior.coords):
+                    kept[hit] = g
+            else:
+                kept.append(g)
+                votes.append(1)
+    return [g for g, v in zip(kept, votes) if v >= min_votes], votes
+
+
+# ── endpoints ────────────────────────────────────────────────────
+@router.get("/health")
+def health():
+    return {
+        "status": "ok",
+        "model": "HiSup HRNetV2-W48, fine-tuned on Ongole drone imagery",
+        "task": "building footprint delineation (instances, not semantics)",
+        "weights": os.path.basename(WEIGHTS),
+        "weights_present": os.path.exists(WEIGHTS),
+        "device": DEVICE,
+        "load": LOAD_INFO,
+        "defaults": {"scales": SCALES, "min_votes": MIN_VOTES,
+                     "core": CORE, "lo": LO, "core_m2": CORE_M2},
+        "held_out": {"precision": 0.819, "recall": 0.764, "f1": 0.791,
+                     "note": "450 buildings outside the training footprint"},
+    }
+
+
+@router.post("/reload")
+def reload_weights():
+    """Pick up a new checkpoint without restarting the server.
+
+    Training produces a better model every few days. Copying the file over
+    weights/hisup_ongole.pth and calling this is the whole update procedure.
+    """
+    global _model
+    with _lock:
+        _model = None
+        LOAD_INFO.update(loaded=False)
+    present = os.path.exists(WEIGHTS)
+    return {"reloaded": True, "weights": WEIGHTS, "present": present,
+            "mtime": os.path.getmtime(WEIGHTS) if present else None,
+            "note": "the next request loads it"}
+
+
+@router.post("/predict")
+async def predict(
+    file: UploadFile = File(...),
+    gsd: float = Form(0.0),
+    scales: str = Form(""),
+    min_votes: int = Form(0),
+    core: float = Form(0.0),
+    lo: float = Form(0.0),
+    regularize_out: bool = Form(True),
+):
+    """Delineate buildings in an uploaded image.
+
+    `gsd` is the ground sample distance of the upload in metres per pixel. It
+    is what makes the resampling meaningful; without it the image is treated
+    as already being at the first working scale, which is right for a crop
+    exported at that resolution and wrong for anything else.
+    """
+    raw = await file.read()
+    arr = cv2.imdecode(np.frombuffer(raw, np.uint8), cv2.IMREAD_COLOR)
+    if arr is None:
+        raise HTTPException(400, "could not decode the image")
+    img = cv2.cvtColor(arr, cv2.COLOR_BGR2RGB)
+
+    want = [float(x) for x in scales.split(",") if x.strip()] or SCALES
+    mv = min_votes or MIN_VOTES
+    co = core or CORE
+    l0 = lo or LO
+    src_gsd = gsd if gsd > 0 else want[0]
+
+    t0 = time.time()
+    passes = []
+    for target in want:
+        f = src_gsd / target            # >1 upsamples, <1 downsamples
+        if abs(f - 1.0) < 0.02:
+            im = img
+        else:
+            w = max(64, int(round(img.shape[1] * f)))
+            h = max(64, int(round(img.shape[0] * f)))
+            im = cv2.resize(img, (w, h), interpolation=(
+                cv2.INTER_AREA if f < 1 else cv2.INTER_CUBIC))
+        px = _detect_one(im, target, co, l0, CORE_M2)
+        # back to the source pixel grid so the passes are comparable
+        passes.append(_dedup(_to_shapely(px, 1.0 / f if f else 1.0)))
+
+    merged, votes = _vote(passes, 0.5, mv) if len(passes) > 1 else (passes[0], [])
+
+    if regularize_out and merged:
+        # The server already carries a block-consistent rectilinear
+        # regularizer; reuse it rather than shipping a second one. Its
+        # distances are metric, so they are converted from metres to the
+        # pixels these polygons are expressed in.
+        try:
+            from regularize import regularize_all
+            px = max(src_gsd, 1e-6)
+            reg, _methods = regularize_all(merged,
+                                           neighbour_m=25.0 / px,
+                                           simplify=0.30 / px,
+                                           min_edge=0.80 / px,
+                                           min_iou=0.65)
+            # regularize() returns None where it refuses to change a shape
+            merged = [r if r is not None and not r.is_empty else g
+                      for r, g in zip(reg, merged)]
+        except Exception as e:
+            print(f"[hisup] regularization skipped: {e}", flush=True)
+
+    feats = []
+    for i, g in enumerate(merged, 1):
+        feats.append({
+            "type": "Feature",
+            "properties": {"building_id": i,
+                           "area_px2": round(g.area, 1),
+                           "area_m2": round(g.area * src_gsd * src_gsd, 1),
+                           "n_vertices": len(g.exterior.coords) - 1},
+            "geometry": {"type": "Polygon",
+                         "coordinates": [[[round(x, 2), round(y, 2)]
+                                          for x, y in g.exterior.coords]]},
+        })
+
+    return JSONResponse({
+        "ok": True,
+        "model": "hisup",
+        "count": len(feats),
+        "seconds": round(time.time() - t0, 1),
+        "image": {"width": img.shape[1], "height": img.shape[0], "gsd": src_gsd},
+        "settings": {"scales": want, "min_votes": mv, "core": co, "lo": l0},
+        "geojson": {"type": "FeatureCollection", "features": feats},
+    })

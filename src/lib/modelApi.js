@@ -97,6 +97,32 @@ export async function modelFetch(path, init = {}) {
     return fetch(HF_MODEL_BASE + path, init);
 }
 
+/*
+ * Some models only exist on the GPU server. Building delineation (HiSup) is
+ * one: it is a 1.2 GB checkpoint doing multi-scale inference, which the CPU
+ * Hugging Face Space cannot carry. Falling back for it would silently hit a
+ * 404 on the Space and look like a bug, so these calls fail honestly instead.
+ */
+export async function gpuOnlyFetch(path, init = {}) {
+    if (!(await probeGpu())) {
+        throw new Error("GPU_OFFLINE");
+    }
+    try {
+        const r = await fetch(state.base + path, init);
+        if (r.status >= 502) markDown();
+        return r;
+    } catch (e) {
+        markDown();
+        throw e;
+    }
+}
+
+/** Does the GPU server advertise this capability right now? */
+export function hasCapability(name) {
+    const caps = state.info?.capabilities;
+    return Array.isArray(caps) && caps.includes(name);
+}
+
 /** Current GPU server base URL ("" if none known). */
 export function gpuBase() {
     return state.base;

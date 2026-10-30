@@ -1,0 +1,40 @@
+# Inference config for the Ongole building model.
+# Mirrors what the checkpoint was trained with: 512 px in, quarter-resolution
+# prediction. Changing HEIGHT/WIDTH here without retraining breaks the
+# attraction field's assumptions about building size in pixels.
+SOLVER:
+  IMS_PER_BATCH: 1
+  BASE_LR: 1e-4
+  MAX_EPOCH: 1
+  STEPS: (120,)
+  WEIGHT_DECAY: 0.0001
+  CHECKPOINT_PERIOD: 1
+  OPTIMIZER: "ADAM"
+  AMSGRAD: True
+DATALOADER:
+  NUM_WORKERS: 0
+DATASETS:
+  IMAGE:
+    PIXEL_MEAN: [128.0, 128.0, 128.0]
+    PIXEL_STD: [50.0, 50.0, 50.0]
+    TO_255: True
+    HEIGHT: 512
+    WIDTH: 512
+  TARGET:
+    HEIGHT: 128
+    WIDTH: 128
+  ORIGIN:
+    HEIGHT: 512
+    WIDTH: 512
+  TRAIN: ("ongole_train",)
+  TEST: ("ongole_val",)
+MODEL:
+  NAME: "HRNet48v2"
+  HEAD_SIZE: [[2]]
+  OUT_FEATURE_CHANNELS: 256
+  LOSS_WEIGHTS:
+    loss_joff: 0.25
+    loss_jloc: 8.0
+    loss_mask: 1.0
+    loss_afm: 0.1
+    loss_remask: 1.0

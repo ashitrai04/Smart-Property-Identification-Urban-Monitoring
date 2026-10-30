@@ -45,8 +45,10 @@ WEIGHTS = os.environ.get("WEIGHTS_PATH", str(config.WEIGHTS / "best_model.pth"))
 os.environ.setdefault("POTHOLE_WEIGHTS", str(config.WEIGHTS / "final_best.pt"))
 
 import pothole  # noqa: E402  (reads POTHOLE_WEIGHTS at import)
+import buildings  # noqa: E402  (HiSup delineation; loads weights lazily)
 
 pothole._lock = gpu.GPU_LOCK      # one GPU queue for every model
+buildings._lock = gpu.GPU_LOCK
 
 
 def _road_mask_for_pothole(rgb):
@@ -63,6 +65,7 @@ app.add_middleware(
     allow_credentials=False, allow_methods=["*"], allow_headers=["*"],
 )
 app.include_router(pothole.router)
+app.include_router(buildings.router)
 
 print(f"[startup] device={seg.DEVICE} batch={seg.SEG_BATCH} fp16={seg.SEG_FP16} max_dim={seg.MAX_DIM} "
       f"gpu={gpu.device_info()}", flush=True)
@@ -139,7 +142,11 @@ def health():
         "status": "ok", "server": "gpu", "device": seg.DEVICE, "gpu": gpu.device_info(),
         "classes": seg.CLASS_NAMES, "weights": seg.LOAD_INFO, "r2": bool(R2_ACCOUNT and R2_KEY),
         "max_dim": seg.MAX_DIM,
-        "capabilities": ["predict", "predict-fusion", "change-detection", "pothole", "imagery", "jobs"],
+        "capabilities": ["predict", "predict-fusion", "change-detection", "pothole",
+                         "hisup", "imagery", "jobs"],
+        "hisup": {"present": os.path.exists(buildings.WEIGHTS),
+                  "weights": os.path.basename(buildings.WEIGHTS),
+                  "loaded": buildings.LOAD_INFO.get("loaded", False)},
     }
 
 
