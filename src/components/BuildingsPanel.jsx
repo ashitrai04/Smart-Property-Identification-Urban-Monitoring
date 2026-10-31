@@ -46,23 +46,56 @@ async function delineate(file, signal) {
     return r.json();
 }
 
-function drawOverlay(canvas, img, geojson) {
+// A colour per building, not per class: the whole point of this model is that
+// these are separate buildings, and houses sharing a wall only read as
+// separate when they are different colours. The golden angle keeps
+// consecutive hues far apart so neighbours never come out alike.
+let hueCursor = Math.random() * 360;
+function nextColour() {
+    hueCursor = (hueCursor + 137.508) % 360;
+    return `hsl(${hueCursor.toFixed(0)}, 70%, 58%)`;
+}
+
+function strokeRing(ctx, ring, colour, width) {
+    ctx.beginPath();
+    ring.forEach(([x, y], i) => (i ? ctx.lineTo(x, y) : ctx.moveTo(x, y)));
+    ctx.closePath();
+    ctx.fillStyle = colour.replace("hsl(", "hsla(").replace(")", ", 0.22)");
+    ctx.strokeStyle = colour;
+    ctx.lineWidth = width;
+    ctx.fill();
+    ctx.stroke();
+}
+
+/*
+ * Reveal the footprints one at a time, each in its own colour, showing the
+ * detector's outline before the regularized one replaces it.
+ *
+ * This is a replay, not live progress: a single upload is one round trip, so
+ * the result is already complete when this starts. It is paced purely so the
+ * two stages are visible — on the map, where a job runs window by window, the
+ * same thing is genuinely live. `upTo` is how many buildings to draw, so the
+ * caller owns the clock and can redraw at any frame.
+ */
+function drawOverlay(canvas, img, geojson, opts = {}) {
     if (!canvas || !img?.naturalWidth) return;
+    const { raw = null, colours = null, upTo = Infinity, settleAt = null } = opts;
     const ctx = canvas.getContext("2d");
     canvas.width = img.naturalWidth;
     canvas.height = img.naturalHeight;
     ctx.drawImage(img, 0, 0);
-    ctx.lineWidth = Math.max(1.5, canvas.width / 900);
-    ctx.strokeStyle = "#22c55e";
-    ctx.fillStyle = "rgba(34,197,94,0.14)";
-    for (const f of geojson?.features || []) {
-        const ring = f.geometry?.coordinates?.[0];
-        if (!ring?.length) continue;
-        ctx.beginPath();
-        ring.forEach(([x, y], i) => (i ? ctx.lineTo(x, y) : ctx.moveTo(x, y)));
-        ctx.closePath();
-        ctx.fill();
-        ctx.stroke();
+    const base = Math.max(1.5, canvas.width / 900);
+    const feats = geojson?.features || [];
+    const raws = raw?.features || [];
+
+    for (let i = 0; i < Math.min(feats.length, upTo); i++) {
+        const colour = colours?.[i] || "hsl(142, 70%, 45%)";
+        // Before `settleAt` this building is still showing as detected, and is
+        // drawn thicker so the eye catches the moment it squares off.
+        const settled = settleAt == null || i < settleAt;
+        const ringOf = (f) => f?.geometry?.coordinates?.[0];
+        const r = settled ? ringOf(feats[i]) : (ringOf(raws[i]) || ringOf(feats[i]));
+        if (r?.length) strokeRing(ctx, r, colour, settled ? base : base * 2.2);
     }
 }
 
@@ -82,15 +115,61 @@ const SOURCE_NOTE = {
     declared: "as supplied",
 };
 
+// How fast buildings appear during the reveal, and how long each shows its
+// detected outline before squaring off. Capped in total so a thousand-building
+// image does not take a minute to finish drawing.
+const REVEAL_TOTAL_MS = 2600;
+const SETTLE_LAG = 6;        // buildings drawn before the oldest one settles
+
 function ResultCard({ item, onShowOnMap }) {
     const imgRef = useRef(null);
     const canvasRef = useRef(null);
     const url = useRef(URL.createObjectURL(item.file)).current;
+    const [shown, setShown] = useState(0);
+    const coloursRef = useRef([]);
+    const timerRef = useRef(null);
 
     useEffect(() => () => URL.revokeObjectURL(url), [url]);
+
+    // One colour per building, fixed once so a redraw does not reshuffle them.
     useEffect(() => {
-        if (item.res && imgRef.current?.complete) drawOverlay(canvasRef.current, imgRef.current, item.res.geojson);
+        const n = item.res?.geojson?.features?.length || 0;
+        coloursRef.current = Array.from({ length: n }, () => nextColour());
+        setShown(0);
     }, [item.res]);
+
+    // Walk the reveal forward on a timer; every tick redraws the whole canvas,
+    // which is cheap next to decoding the image and keeps the draw stateless.
+    useEffect(() => {
+        const n = item.res?.geojson?.features?.length || 0;
+        if (!n) return undefined;
+        const step = Math.max(16, Math.round(REVEAL_TOTAL_MS / n));
+        timerRef.current = setInterval(() => {
+            setShown((k) => {
+                if (k >= n + SETTLE_LAG) { clearInterval(timerRef.current); return k; }
+                return k + 1;
+            });
+        }, step);
+        return () => clearInterval(timerRef.current);
+    }, [item.res]);
+
+    useEffect(() => {
+        if (!item.res || !imgRef.current?.complete) return;
+        drawOverlay(canvasRef.current, imgRef.current, item.res.geojson, {
+            raw: item.res.geojson_raw,
+            colours: coloursRef.current,
+            upTo: shown,
+            settleAt: shown - SETTLE_LAG,
+        });
+    }, [item.res, shown]);
+
+    const redraw = () => {
+        if (!item.res) return;
+        drawOverlay(canvasRef.current, imgRef.current, item.res.geojson, {
+            raw: item.res.geojson_raw, colours: coloursRef.current,
+            upTo: shown, settleAt: shown - SETTLE_LAG,
+        });
+    };
 
     const { res, err, file } = item;
 
@@ -149,7 +228,7 @@ function ResultCard({ item, onShowOnMap }) {
             )}
 
             <img ref={imgRef} src={url} alt="" className="hidden"
-                 onLoad={() => item.res && drawOverlay(canvasRef.current, imgRef.current, item.res.geojson)} />
+                 onLoad={redraw} />
         </div>
     );
 }

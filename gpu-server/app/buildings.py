@@ -474,6 +474,10 @@ async def predict(
 
     merged, votes = _vote(passes, 0.5, mv) if len(passes) > 1 else (passes[0], [])
 
+    # Kept so the client can show what the detector drew before the
+    # regularizer squared it off - the two stages the pipeline actually has.
+    raw_polys = list(merged)
+
     if regularize_out and merged:
         # The server already carries a block-consistent rectilinear
         # regularizer; reuse it rather than shipping a second one. Its
@@ -492,6 +496,12 @@ async def predict(
                       for r, g in zip(reg, merged)]
         except Exception as e:
             print(f"[hisup] regularization skipped: {e}", flush=True)
+
+    raw_feats = [{"type": "Feature", "properties": {"building_id": i},
+                  "geometry": {"type": "Polygon",
+                               "coordinates": [[[round(x, 2), round(y, 2)]
+                                                for x, y in g.exterior.coords]]}}
+                 for i, g in enumerate(raw_polys, 1)]
 
     feats = []
     for i, g in enumerate(merged, 1):
@@ -516,6 +526,7 @@ async def predict(
         "settings": {"scales": want, "min_votes": mv, "core": co, "lo": l0},
         "auto": probe,
         "geojson": {"type": "FeatureCollection", "features": feats},
+        "geojson_raw": {"type": "FeatureCollection", "features": raw_feats},
         "geo": _world_geojson(merged, geo) if geo else None,
     })
 
@@ -646,6 +657,40 @@ def area_cancel(jid: str):
     if dict(row).get("status") in ("queued", "running"):
         db.update_job(jid, status="cancelled")
     return {"id": jid, "status": "cancelled"}
+
+
+@area_router.get("/{jid}/live")
+@router.get("/area/{jid}/live")
+def area_live(jid: str, since: int = 0):
+    """Buildings found so far, from `since` onwards.
+
+    The map calls this while the job runs and draws what comes back, so a
+    minutes-long job shows its work instead of a bar and a wait. Only whole
+    lines are returned: the writer appends one complete JSON object per
+    building, so a partial last line simply waits for the next call.
+    """
+    import db
+    from config import RESULTS
+    row = db.get_job(jid)
+    if not row:
+        raise HTTPException(404, "no such job")
+    j = dict(row)
+    path = os.path.join(str(RESULTS), jid, "live.jsonl")
+    items, n = [], 0
+    if os.path.exists(path):
+        with open(path, encoding="utf-8") as fh:
+            for line in fh:
+                if not line.endswith("\n"):
+                    break                      # still being written
+                n += 1
+                if n > since:
+                    try:
+                        items.append(json.loads(line))
+                    except ValueError:
+                        break
+    p = float(j.get("progress") or 0.0)
+    return {"id": jid, "status": j.get("status"), "percent": round(p * 100, 1),
+            "next": n, "count": n, "items": items}
 
 
 @area_router.get("/{jid}/result.geojson")

@@ -231,6 +231,33 @@ def _aoi_in_crs(aoi, crs):
     return s.iloc[0]
 
 
+def _emit_live(out_dir, geoms, raws, src_crs, window):
+    """Append this window's buildings to the job's live feed.
+
+    A line of JSON per building, appended and flushed as each window finishes,
+    so the map can draw results while the job is still running instead of
+    waiting minutes for a single GeoPackage. Append-only and line-delimited on
+    purpose: a reader can take the whole lines it finds and come back for the
+    rest, with no locking and no risk of reading a half-written GeoPackage.
+
+    Both outlines go out together - what the detector found and what the
+    regularizer made of it - because those are the two stages worth watching.
+    """
+    try:
+        gs = gpd.GeoSeries(list(geoms) + list(raws), crs=src_crs).to_crs(4326)
+        half = len(geoms)
+        with open(out_dir / "live.jsonl", "a", encoding="utf-8") as fh:
+            for i in range(half):
+                reg_ll = [[round(x, 7), round(y, 7)] for x, y in gs.iloc[i].exterior.coords]
+                raw_ll = [[round(x, 7), round(y, 7)] for x, y in gs.iloc[half + i].exterior.coords]
+                fh.write(json.dumps({"w": window, "reg": reg_ll, "raw": raw_ll,
+                                     "area_m2": round(geoms[i].area, 2)}) + "\n")
+            fh.flush()
+    except Exception as e:
+        # The live feed is a view of the job, never the job itself.
+        print(f"[hisup-job] live feed skipped: {e}", flush=True)
+
+
 def _clip_aoi(geoms, aoi, whole=False):
     """Trim results to the drawn polygon.
 
@@ -366,17 +393,21 @@ def _run_hisup(job, img, out_dir):
                     passes.append(B._dedup(B._to_shapely(px, 1.0 / f if f else 1.0)))
                 return B._vote(passes, 0.5, min_votes)[0] if len(passes) > 1 else passes[0]
 
-            polys = _on_gpu(job["id"], _one)
-            if not polys:
+            raw = _on_gpu(job["id"], _one)
+            if not raw:
                 _progress(job["id"], done / n)
                 continue
 
+            # Keep the detector's own outline as well as the regularized one.
+            # They are the two stages the map replays, so both have to survive
+            # to the end of the window rather than one overwriting the other.
+            polys = raw
             if want_reg:
                 try:
                     from regularize import regularize_all
-                    reg, _m = regularize_all(polys, neighbour_m=25.0 / gsd, simplify=0.30 / gsd,
+                    reg, _m = regularize_all(raw, neighbour_m=25.0 / gsd, simplify=0.30 / gsd,
                                              min_edge=0.80 / gsd, min_iou=0.65)
-                    polys = [r if r is not None and not r.is_empty else g for r, g in zip(reg, polys)]
+                    polys = [r if r is not None and not r.is_empty else g for r, g in zip(reg, raw)]
                 except Exception as e:
                     print(f"[hisup-job] regularization skipped: {e}", flush=True)
 
@@ -386,20 +417,28 @@ def _run_hisup(job, img, out_dir):
             cx1 = w if x + w >= W else w - OVERLAP
             cy1 = h if y + h >= H else h - OVERLAP
 
-            geoms = []
-            for g in polys:
+            geoms, raws = [], []
+            for g, r in zip(polys, raw):
                 ring = np.asarray(g.exterior.coords, float)
                 if len(ring) >= 4:
                     geoms.append(shapely.Polygon(_pix_to_map(ring, wt)))
+                    raws.append(shapely.Polygon(_pix_to_map(np.asarray(r.exterior.coords, float), wt)))
             if geoms:
                 k = _keep_centre(geoms, wt, (w, h), (cx0, cy0, cx1, cy1))
                 geoms = [g for g, kk in zip(geoms, k) if kk]
-            # The polygon the operator drew is the answer's boundary.
-            geoms = _clip_aoi(geoms, aoi, whole=True)
+                raws = [g for g, kk in zip(raws, k) if kk]
+            # The polygon the operator drew is the answer's boundary. Filter on
+            # the final shape and carry the raw one with it, so the pair stays
+            # aligned - _clip_aoi alone would not know about the partner list.
+            if aoi is not None:
+                keep = [i for i, g in enumerate(geoms) if aoi.contains(g.centroid)]
+                geoms = [geoms[i] for i in keep]
+                raws = [raws[i] for i in keep]
             if geoms:
                 sink.add("buildings", geoms,
                          [{"area_m2": round(g.area, 2), "n_vertices": len(g.exterior.coords) - 1}
                           for g in geoms])
+                _emit_live(out_dir, geoms, raws, src.crs, done)
                 total += len(geoms)
             _progress(job["id"], done / n)
 
