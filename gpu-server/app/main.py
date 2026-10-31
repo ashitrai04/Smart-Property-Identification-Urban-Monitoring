@@ -66,6 +66,7 @@ app.add_middleware(
 )
 app.include_router(pothole.router)
 app.include_router(buildings.router)
+app.include_router(buildings.area_router)
 
 print(f"[startup] device={seg.DEVICE} batch={seg.SEG_BATCH} fp16={seg.SEG_FP16} max_dim={seg.MAX_DIM} "
       f"gpu={gpu.device_info()}", flush=True)

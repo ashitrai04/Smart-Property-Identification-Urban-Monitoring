@@ -147,71 +147,265 @@ def _run_segmentation(job, img, out_dir, fusion=False):
         sink = _Sink(out_dir / "results.gpkg", src.crs)
         totals = {v: 0 for v in SEG_LAYERS.values()}
         px_area = abs(T.a * T.e) if src.crs.is_projected else None
-        ys, xs = _grid(H, win, step), _grid(W, win, step)
-        n, done = len(ys) * len(xs), 0
+        # An area job passes the drawn polygon; a whole-mosaic job passes none
+        # and gets every window, exactly as before.
+        aoi = _aoi_in_crs(params.get("aoi"), src.crs)
+        cells = _aoi_cells(aoi, T, W, H, win, step)
+        if not cells:
+            raise ValueError("the drawn area does not overlap this imagery")
+        n, done = len(cells), 0
 
         with rasterio.open(out_dir / "classes.tif", "w", **prof) as dst:
-            for y in ys:
-                for x in xs:
-                    if _cancelled(job["id"]):
-                        return None
-                    w, h = min(win, W - x), min(win, H - y)
-                    src_win = Window(x * scale, y * scale, w * scale, h * scale)
-                    rgb, valid = _read_rgb(src, src_win, w, h)
-                    done += 1
-                    if valid.mean() < 0.02:
-                        _progress(job["id"], done / n)
-                        continue
-                    def _seg():
-                        p = seg.segment(MODEL_(), rgb).astype(np.uint8)
-                        if fusion:
-                            import fusion as fu
-                            return p, fu.fuse(rgb, p)
-                        return p, None
-                    pred, fz = _on_gpu(job["id"], _seg)
-                    pred[~valid] = 0
-                    # centre region (overlap trimmed, except at raster edges)
-                    cx0 = 0 if x == 0 else OVERLAP
-                    cy0 = 0 if y == 0 else OVERLAP
-                    cx1 = w if x + w >= W else w - OVERLAP
-                    cy1 = h if y + h >= H else h - OVERLAP
-                    centre = pred[cy0:cy1, cx0:cx1]
-                    dst.write(centre, 1, window=Window(x + cx0, y + cy0, cx1 - cx0, cy1 - cy0))
-                    wt = T * Affine.translation(x, y)          # window-pixel -> CRS
-
-                    if fusion and fz is not None:
-                        # SAM instances: one polygon per building
-                        # fusion works on a copy capped at FUSE_MAX_DIM: rescale to window pixels
-                        fs = w / float(fz["working_size"]["width"])
-                        geoms = []
-                        for f in fz["buildings_geojson"]["features"]:
-                            ring = np.asarray(f["geometry"]["coordinates"][0], float) * fs
-                            if len(ring) >= 4:
-                                geoms.append(shapely.Polygon(_pix_to_map(ring, wt)))
-                        if geoms:
-                            k = _keep_centre(geoms, wt, (w, h), (cx0, cy0, cx1, cy1))
-                            geoms = [g for g, kk in zip(geoms, k) if kk]
-                            props = [{"area_m2": round(g.area, 2) if px_area else None} for g in geoms]
-                            sink.add("buildings", geoms, props)
-                            totals["buildings"] += len(geoms)
-                        layers = {2: "roads", 3: "waterbodies", 4: "openareas"}
-                    else:
-                        layers = SEG_LAYERS
-
-                    # polygonise the kept centre, class by class
-                    ct = wt * Affine.translation(cx0, cy0)
-                    for cls, name in layers.items():
-                        m = (centre == cls).astype(np.uint8)
-                        if m.sum() < 16:
-                            continue
-                        m = cv2.morphologyEx(m, cv2.MORPH_OPEN, np.ones((3, 3), np.uint8))
-                        geoms = [shapely.geometry.shape(g) for g, v in shapes(m, mask=m.astype(bool), transform=ct) if v == 1]
-                        geoms = [g.simplify(abs(T.a) * 0.75) for g in geoms if g.area > 16 * abs(T.a * T.e)]
-                        if geoms:
-                            sink.add(name, geoms, [{"area_m2": round(g.area, 2) if px_area else None} for g in geoms])
-                            totals[name] += len(geoms)
+            for (x, y, w, h) in cells:
+                if _cancelled(job["id"]):
+                    return None
+                src_win = Window(x * scale, y * scale, w * scale, h * scale)
+                rgb, valid = _read_rgb(src, src_win, w, h)
+                done += 1
+                if valid.mean() < 0.02:
                     _progress(job["id"], done / n)
+                    continue
+                def _seg():
+                    p = seg.segment(MODEL_(), rgb).astype(np.uint8)
+                    if fusion:
+                        import fusion as fu
+                        return p, fu.fuse(rgb, p)
+                    return p, None
+                pred, fz = _on_gpu(job["id"], _seg)
+                pred[~valid] = 0
+                # centre region (overlap trimmed, except at raster edges)
+                cx0 = 0 if x == 0 else OVERLAP
+                cy0 = 0 if y == 0 else OVERLAP
+                cx1 = w if x + w >= W else w - OVERLAP
+                cy1 = h if y + h >= H else h - OVERLAP
+                centre = pred[cy0:cy1, cx0:cx1]
+                dst.write(centre, 1, window=Window(x + cx0, y + cy0, cx1 - cx0, cy1 - cy0))
+                wt = T * Affine.translation(x, y)          # window-pixel -> CRS
+
+                if fusion and fz is not None:
+                    # SAM instances: one polygon per building
+                    # fusion works on a copy capped at FUSE_MAX_DIM: rescale to window pixels
+                    fs = w / float(fz["working_size"]["width"])
+                    geoms = []
+                    for f in fz["buildings_geojson"]["features"]:
+                        ring = np.asarray(f["geometry"]["coordinates"][0], float) * fs
+                        if len(ring) >= 4:
+                            geoms.append(shapely.Polygon(_pix_to_map(ring, wt)))
+                    if geoms:
+                        k = _keep_centre(geoms, wt, (w, h), (cx0, cy0, cx1, cy1))
+                        geoms = [g for g, kk in zip(geoms, k) if kk]
+                        geoms = _clip_aoi(geoms, aoi, whole=True)
+                        props = [{"area_m2": round(g.area, 2) if px_area else None} for g in geoms]
+                        sink.add("buildings", geoms, props)
+                        totals["buildings"] += len(geoms)
+                    layers = {2: "roads", 3: "waterbodies", 4: "openareas"}
+                else:
+                    layers = SEG_LAYERS
+
+                # polygonise the kept centre, class by class
+                ct = wt * Affine.translation(cx0, cy0)
+                for cls, name in layers.items():
+                    m = (centre == cls).astype(np.uint8)
+                    if m.sum() < 16:
+                        continue
+                    m = cv2.morphologyEx(m, cv2.MORPH_OPEN, np.ones((3, 3), np.uint8))
+                    geoms = [shapely.geometry.shape(g) for g, v in shapes(m, mask=m.astype(bool), transform=ct) if v == 1]
+                    geoms = [g.simplify(abs(T.a) * 0.75) for g in geoms if g.area > 16 * abs(T.a * T.e)]
+                    geoms = _clip_aoi(geoms, aoi)
+                    if geoms:
+                        sink.add(name, geoms, [{"area_m2": round(g.area, 2) if px_area else None} for g in geoms])
+                        totals[name] += len(geoms)
+                _progress(job["id"], done / n)
     return {"layers": sink.counts, "stats": {"features": totals, "grid": [W, H], "gsd": abs(T.a)}}
+
+
+# ── task: hisup (building footprints over an area) ───────────────
+def _aoi_in_crs(aoi, crs):
+    """The drawn polygon (EPSG:4326 GeoJSON) in the raster's own CRS."""
+    if not aoi:
+        return None
+    g = shapely.geometry.shape(aoi["geometry"] if "geometry" in aoi else aoi)
+    if not g.is_valid:
+        g = g.buffer(0)
+    s = gpd.GeoSeries([g], crs=4326).to_crs(crs)
+    return s.iloc[0]
+
+
+def _clip_aoi(geoms, aoi, whole=False):
+    """Trim results to the drawn polygon.
+
+    `whole` keeps a shape entire when its centre is inside, which is what a
+    building wants - half a house on the boundary is not a useful footprint.
+    Area classes like roads and water are cut at the boundary instead, since
+    the operator asked about the area, not about the features that touch it.
+    """
+    if aoi is None or not geoms:
+        return list(geoms)
+    if whole:
+        return [g for g in geoms if aoi.contains(g.centroid)]
+    out = []
+    for g in geoms:
+        if not aoi.intersects(g):
+            continue
+        c = g if aoi.contains(g) else g.intersection(aoi)
+        if c.is_empty:
+            continue
+        for part in (c.geoms if hasattr(c, "geoms") else [c]):
+            if getattr(part, "geom_type", "") == "Polygon" and not part.is_empty:
+                out.append(part)
+    return out
+
+
+def _aoi_cells(aoi, T, W, H, win, step):
+    """The windows of a target grid that actually touch the drawn polygon.
+
+    An AOI is usually a small part of a city-sized mosaic, so the grid is first
+    clipped to the polygon's pixel bounding box and only then tested window by
+    window. Walking the whole raster to discard almost all of it would dominate
+    the runtime of every area job.
+    """
+    inv = ~T
+    if aoi is None:
+        xs, ys = _grid(W, win, step), _grid(H, win, step)
+    else:
+        bx0, by0, bx1, by1 = aoi.bounds
+        cols, rows = [], []
+        for mx, my in ((bx0, by0), (bx1, by0), (bx0, by1), (bx1, by1)):
+            c, r = inv * (mx, my)
+            cols.append(c); rows.append(r)
+        x_lo = max(0, int(min(cols)) - win); x_hi = min(W, int(max(cols)) + win)
+        y_lo = max(0, int(min(rows)) - win); y_hi = min(H, int(max(rows)) + win)
+        if x_hi <= x_lo or y_hi <= y_lo:
+            return []
+        xs = [x for x in _grid(W, win, step) if x_lo - step <= x <= x_hi]
+        ys = [y for y in _grid(H, win, step) if y_lo - step <= y <= y_hi]
+
+    cells = []
+    for y in ys:
+        for x in xs:
+            w, h = min(win, W - x), min(win, H - y)
+            if w < 64 or h < 64:
+                continue
+            if aoi is not None:
+                x0, y0 = T * (x, y)
+                x1, y1 = T * (x + w, y + h)
+                if not aoi.intersects(shapely.box(min(x0, x1), min(y0, y1),
+                                                  max(x0, x1), max(y0, y1))):
+                    continue
+            cells.append((x, y, w, h))
+    return cells
+
+
+def _run_hisup(job, img, out_dir):
+    """Delineate buildings over an area of a registered orthomosaic.
+
+    The same four-resolution pipeline as /hisup/predict, but reading windows
+    from the COG rather than an upload, so the area can be any size. Windows
+    are taken on a 12.5 cm grid because that is where the model scores best;
+    the source is 3 cm, so this downsamples, which is also what makes a large
+    area affordable.
+
+    Only windows that actually touch the drawn polygon are read. An AOI is
+    usually a small part of a city-sized mosaic, and walking the whole raster
+    to throw almost all of it away would dominate the runtime.
+    """
+    import buildings as B
+
+    params = job.get("params") or {}
+    scales = [float(s) for s in (params.get("scales") or B.SCALES)]
+    min_votes = int(params.get("min_votes") or B.MIN_VOTES)
+    core = float(params.get("core") or B.CORE)
+    lo = float(params.get("lo") or B.LO)
+    want_reg = bool(params.get("regularize", True))
+    work = float(params.get("work_gsd_m") or 0.125)
+
+    with rasterio.open(img["cog_path"]) as src:
+        native = abs(src.transform.a)
+        if not src.crs or not src.crs.is_projected:
+            raise ValueError("this area tool needs a projected raster (metre CRS)")
+        scale = max(work / native, 1.0)                 # read 1 px of work grid per `scale` source px
+        W, H = int(src.width / scale), int(src.height / scale)
+        T = src.transform * Affine.scale(scale)
+        gsd = abs(T.a)
+
+        aoi = _aoi_in_crs(params.get("aoi"), src.crs)
+        if aoi is not None and aoi.is_empty:
+            raise ValueError("the drawn area is empty")
+
+        win = int(params.get("window") or 1024)
+        step = win - 2 * OVERLAP
+        cells = _aoi_cells(aoi, T, W, H, win, step)
+        if not cells:
+            raise ValueError("the drawn area does not overlap this imagery")
+
+        sink = _Sink(out_dir / "results.gpkg", src.crs)
+        total = 0
+        n, done = len(cells), 0
+        db.update_job(job["id"], stats={"windows": n, "gsd": gsd, "scales": scales})
+
+        for (x, y, w, h) in cells:
+            if _cancelled(job["id"]):
+                return None
+            src_win = Window(x * scale, y * scale, w * scale, h * scale)
+            rgb, valid = _read_rgb(src, src_win, w, h)
+            done += 1
+            if valid.mean() < 0.02:
+                _progress(job["id"], done / n)
+                continue
+
+            def _one():
+                passes = []
+                for target in scales:
+                    f = gsd / target
+                    if abs(f - 1.0) < 0.02:
+                        im = rgb
+                    else:
+                        im = cv2.resize(rgb, (max(64, int(w * f)), max(64, int(h * f))),
+                                        interpolation=(cv2.INTER_AREA if f < 1 else cv2.INTER_CUBIC))
+                    px = B._detect_one(im, target, core, lo, B.CORE_M2)
+                    passes.append(B._dedup(B._to_shapely(px, 1.0 / f if f else 1.0)))
+                return B._vote(passes, 0.5, min_votes)[0] if len(passes) > 1 else passes[0]
+
+            polys = _on_gpu(job["id"], _one)
+            if not polys:
+                _progress(job["id"], done / n)
+                continue
+
+            if want_reg:
+                try:
+                    from regularize import regularize_all
+                    reg, _m = regularize_all(polys, neighbour_m=25.0 / gsd, simplify=0.30 / gsd,
+                                             min_edge=0.80 / gsd, min_iou=0.65)
+                    polys = [r if r is not None and not r.is_empty else g for r, g in zip(reg, polys)]
+                except Exception as e:
+                    print(f"[hisup-job] regularization skipped: {e}", flush=True)
+
+            wt = T * Affine.translation(x, y)
+            cx0 = 0 if x == 0 else OVERLAP
+            cy0 = 0 if y == 0 else OVERLAP
+            cx1 = w if x + w >= W else w - OVERLAP
+            cy1 = h if y + h >= H else h - OVERLAP
+
+            geoms = []
+            for g in polys:
+                ring = np.asarray(g.exterior.coords, float)
+                if len(ring) >= 4:
+                    geoms.append(shapely.Polygon(_pix_to_map(ring, wt)))
+            if geoms:
+                k = _keep_centre(geoms, wt, (w, h), (cx0, cy0, cx1, cy1))
+                geoms = [g for g, kk in zip(geoms, k) if kk]
+            # The polygon the operator drew is the answer's boundary.
+            geoms = _clip_aoi(geoms, aoi, whole=True)
+            if geoms:
+                sink.add("buildings", geoms,
+                         [{"area_m2": round(g.area, 2), "n_vertices": len(g.exterior.coords) - 1}
+                          for g in geoms])
+                total += len(geoms)
+            _progress(job["id"], done / n)
+
+    return {"layers": sink.counts,
+            "stats": {"features": {"buildings": total}, "windows": n, "gsd": gsd,
+                      "scales": scales, "min_votes": min_votes, "regularized": want_reg}}
 
 
 # ── task: pothole ────────────────────────────────────────────────
@@ -354,6 +548,8 @@ def run_job(job):
     try:
         if job["task"] in ("segment", "fusion"):
             res = _run_segmentation(job, img, out_dir, fusion=job["task"] == "fusion")
+        elif job["task"] == "hisup":
+            res = _run_hisup(job, img, out_dir)
         elif job["task"] == "pothole":
             res = _run_pothole(job, img, out_dir)
         elif job["task"] == "refine":
@@ -386,7 +582,24 @@ def worker():
             _stop.wait(3)
 
 
+_worker = None
+
+
 def start_worker():
-    t = threading.Thread(target=worker, name="job-worker", daemon=True)
-    t.start()
-    return t
+    global _worker
+    _worker = threading.Thread(target=worker, name="job-worker", daemon=True)
+    _worker.start()
+    return _worker
+
+
+def ensure_worker():
+    """Start the worker only if one is not already running.
+
+    start_worker spawns unconditionally, which is right at boot and wrong from
+    a request handler: two workers would pull from the same queue and run two
+    jobs on one GPU.
+    """
+    global _worker
+    if _worker is None or not _worker.is_alive():
+        return start_worker()
+    return _worker

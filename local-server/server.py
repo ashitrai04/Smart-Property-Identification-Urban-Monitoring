@@ -46,7 +46,7 @@ GPU_SERVER = os.environ.get("GPU_SERVER_URL", "http://127.0.0.1:8800").rstrip("/
 # Prefixes the model server owns outright. Deliberately not /imagery or /jobs:
 # both servers answer those from their own stores, and this one's answer is the
 # correct one for the map.
-GPU_PREFIXES = ("/hisup/", "/pothole/", "/predict", "/change-detection", "/r2/")
+GPU_PREFIXES = ("/hisup/", "/area", "/pothole/", "/predict", "/change-detection", "/r2/")
 # A four-resolution pass over a large image is minutes, not seconds.
 GPU_TIMEOUT = float(os.environ.get("GPU_PROXY_TIMEOUT", "900"))
 
@@ -510,6 +510,11 @@ async def _proxy(request, path):
     # forwarded; content-length is recomputed by httpx for a streamed body.
     skip = {"host", "content-length", "connection", "keep-alive", "transfer-encoding"}
     headers = {k: v for k, v in request.headers.items() if k.lower() not in skip}
+    # The body is passed through still encoded, so the upstream must not be
+    # allowed to choose an encoding the caller never asked for: httpx adds its
+    # own accept-encoding when the header is absent, and the reply then comes
+    # back gzipped to a client that cannot read it.
+    headers.setdefault("accept-encoding", "identity")
 
     client = httpx.AsyncClient(timeout=httpx.Timeout(GPU_TIMEOUT, connect=5.0))
     try:
@@ -544,10 +549,12 @@ async def _proxy(request, path):
                              media_type=resp.headers.get("content-type"))
 
 
+@app.api_route("/area", methods=["POST", "OPTIONS"])
+@app.api_route("/area/{rest:path}", methods=["GET", "POST", "OPTIONS"])
 @app.api_route("/hisup/{rest:path}", methods=["GET", "POST", "OPTIONS"])
 @app.api_route("/pothole/{rest:path}", methods=["GET", "POST", "OPTIONS"])
 @app.api_route("/r2/{rest:path}", methods=["GET", "POST", "OPTIONS"])
-async def _proxy_prefixed(rest: str, request: Request):
+async def _proxy_prefixed(request: Request, rest: str = ""):
     return await _proxy(request, request.url.path)
 
 

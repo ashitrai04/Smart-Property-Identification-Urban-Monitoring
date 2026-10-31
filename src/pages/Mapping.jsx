@@ -14,6 +14,7 @@ import ServerImagery from "../components/ServerImagery";
 import DroneGrid from "../components/DroneGrid";
 import DroneLayers from "../components/DroneLayers";
 import AskPanel from "../components/AskPanel";
+import AreaModelPanel from "../components/AreaModelPanel";
 import { useGpuStatus } from "../lib/modelApi";
 import { addArcGISFeatureLayer, addLocalGeoJSONLayer, reloadVisibleLayers, removeLayerGroup } from "../utils/mapLayers";
 import { parseAOIFile, getFeaturesBounds, computeTotalAreaKm2, unionGeometry, polygonCentroid } from "../utils/aoiUtils";
@@ -2065,6 +2066,8 @@ export default function Mapping() {
                                         </div>
                                     </div>
                                 )}
+                                <Divider />
+                                <AreaModelPanel map={mapRef.current} aoiFeatures={aoiFeatures} />
                             </div>
                         )}
                     </div>

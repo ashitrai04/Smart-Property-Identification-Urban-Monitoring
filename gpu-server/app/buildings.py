@@ -37,6 +37,7 @@ weights path is read from HISUP_WEIGHTS and the model is loaded lazily, so
 nothing needs restarting.
 """
 import io
+import json
 import os
 import sys
 import threading
@@ -45,7 +46,7 @@ import time
 import cv2
 import numpy as np
 import torch
-from fastapi import APIRouter, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, Body, File, Form, HTTPException, UploadFile
 from fastapi.responses import JSONResponse
 
 _VENDOR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "vendor")
@@ -326,19 +327,22 @@ def _decode(raw, filename=""):
             with os.fdopen(fd, "wb") as fh:
                 fh.write(raw)
             with rasterio.open(tmp) as src:
-                gsd = None
+                gsd, geo = None, None
                 if src.crs:
                     a = abs(src.transform.a)
                     if src.crs.is_geographic:          # degrees -> metres at this latitude
                         lat = (src.bounds.top + src.bounds.bottom) / 2
                         a = a * 111320 * float(np.cos(np.radians(lat)))
                     gsd = float(a)
+                    # Kept so the result can be put on the map at the place it
+                    # came from, instead of only in the upload's own pixels.
+                    geo = {"transform": list(src.transform)[:6], "crs": src.crs.to_string()}
                 n = min(3, src.count)
                 arr = src.read(list(range(1, n + 1)), out_dtype="uint8",
                                resampling=Resampling.average)
                 if n == 1:
                     arr = np.repeat(arr, 3, axis=0)
-                return np.ascontiguousarray(np.transpose(arr[:3], (1, 2, 0))), gsd
+                return np.ascontiguousarray(np.transpose(arr[:3], (1, 2, 0))), gsd, geo
         except Exception as e:
             print(f"[hisup] rasterio could not read {filename}: {e}", flush=True)
         finally:
@@ -350,7 +354,7 @@ def _decode(raw, filename=""):
     arr = cv2.imdecode(np.frombuffer(raw, np.uint8), cv2.IMREAD_COLOR)
     if arr is None:
         raise HTTPException(400, f"could not decode {filename or 'the image'}")
-    return cv2.cvtColor(arr, cv2.COLOR_BGR2RGB), None
+    return cv2.cvtColor(arr, cv2.COLOR_BGR2RGB), None, None
 
 
 def _auto_factor(img, core, lo):
@@ -394,6 +398,31 @@ def _auto_factor(img, core, lo):
     return best, tried
 
 
+def _world_geojson(polys, geo):
+    """The same footprints in EPSG:4326, for dropping straight on the map.
+
+    Only possible when the upload was georeferenced; a plain PNG has no place
+    in the world and gets pixel coordinates alone.
+    """
+    if not polys or not geo:
+        return None
+    try:
+        import geopandas as gpd
+        from affine import Affine as _A
+        import shapely
+        T = _A(*geo["transform"])
+        out = []
+        for g in polys:
+            xy = list(g.exterior.coords)
+            out.append(shapely.Polygon([T * (x, y) for x, y in xy]))
+        s = gpd.GeoSeries(out, crs=geo["crs"]).to_crs(4326)
+        return json.loads(gpd.GeoDataFrame(
+            {"area_m2": [round(p.area, 1) for p in out]}, geometry=list(s), crs=4326).to_json())
+    except Exception as e:
+        print(f"[hisup] could not georeference the result: {e}", flush=True)
+        return None
+
+
 @router.post("/predict")
 async def predict(
     file: UploadFile = File(...),
@@ -412,7 +441,7 @@ async def predict(
     Passing it explicitly still wins, since a known value beats a measured one.
     """
     raw = await file.read()
-    img, geo_gsd = _decode(raw, file.filename or "")
+    img, geo_gsd, geo = _decode(raw, file.filename or "")
 
     want = [float(x) for x in scales.split(",") if x.strip()] or SCALES
     mv = min_votes or MIN_VOTES
@@ -487,4 +516,163 @@ async def predict(
         "settings": {"scales": want, "min_votes": mv, "core": co, "lo": l0},
         "auto": probe,
         "geojson": {"type": "FeatureCollection", "features": feats},
+        "geo": _world_geojson(merged, geo) if geo else None,
     })
+
+
+# ── running over an area of a registered orthomosaic ─────────────
+#
+# These sit on the /hisup router rather than the generic /jobs API on purpose.
+# /jobs requires SP_API_KEY, which a browser cannot hold without publishing it,
+# and /hisup/* is already the unauthenticated model surface that the data
+# server proxies - so an area job reaches the same place a single upload does.
+
+def _pick_imagery(aoi_geojson, imagery_id=None):
+    """Which registered raster covers the drawn area."""
+    import db
+    if imagery_id:
+        img = db.get_imagery(imagery_id)
+        if not img:
+            raise HTTPException(404, f"no imagery {imagery_id}")
+        return img
+
+    import shapely
+    g = shapely.geometry.shape(aoi_geojson.get("geometry", aoi_geojson))
+    best, best_gsd = None, None
+    for row in db.list_imagery():
+        r = dict(row)
+        if r.get("status") != "ready" or not r.get("bounds"):
+            continue
+        b = r["bounds"] if isinstance(r["bounds"], (list, tuple)) else json.loads(r["bounds"])
+        if not shapely.box(*b).intersects(g):
+            continue
+        # Finest ground resolution wins: it is the one with the detail the
+        # model was tuned on, and the job downsamples to 12.5 cm anyway.
+        if best is None or (r.get("gsd_m") or 9e9) < best_gsd:
+            best, best_gsd = r, (r.get("gsd_m") or 9e9)
+    if not best:
+        raise HTTPException(404, "no ingested imagery covers that area")
+    return best
+
+
+# Models that can run over a drawn area, and what the map should call them.
+AREA_TASKS = {
+    "hisup":   {"label": "Building delineation", "kind": "vector",
+                "note": "individual footprints - our Ongole model"},
+    "segment": {"label": "Land-use segmentation", "kind": "vector",
+                "note": "buildings / roads / water / open ground"},
+    "fusion":  {"label": "Segmentation + SAM", "kind": "vector",
+                "note": "crisper per-building outlines, slower"},
+}
+
+area_router = APIRouter(prefix="/area", tags=["area"])
+
+
+@area_router.get("/tasks")
+def area_tasks():
+    """What the map may offer, so the list cannot drift from what runs."""
+    return {"tasks": [dict(id=k, **v) for k, v in AREA_TASKS.items()]}
+
+
+@area_router.post("")
+@router.post("/area")
+async def area_start(payload: dict = Body(...)):
+    """Queue a model run over a drawn polygon (EPSG:4326)."""
+    import db
+    import jobs
+
+    aoi = payload.get("aoi")
+    if not aoi:
+        raise HTTPException(400, "send an 'aoi' polygon as GeoJSON (EPSG:4326)")
+    img = _pick_imagery(aoi, payload.get("imagery_id"))
+
+    params = {"aoi": aoi, "regularize": bool(payload.get("regularize", True))}
+    for k in ("scales", "min_votes", "core", "lo", "work_gsd_m", "window"):
+        if payload.get(k) not in (None, "", []):
+            params[k] = payload[k]
+
+    task = payload.get("task") or "hisup"
+    if task not in AREA_TASKS:
+        raise HTTPException(400, f"task must be one of {', '.join(AREA_TASKS)}")
+
+    jid = db.add_job(img["id"], task, params)
+    jobs.ensure_worker()
+    return {"id": jid, "task": task, "status": "queued",
+            "imagery": {"id": img["id"], "name": img["name"],
+                        "gsd_m": img["gsd_m"]}}
+
+
+@area_router.get("/{jid}")
+@router.get("/area/{jid}")
+def area_status(jid: str):
+    """Progress for the map's progress bar, with an estimate of what is left.
+
+    The estimate is elapsed/progress, which is honest here because every
+    window costs about the same - same pixel count, same four passes.
+    """
+    import db
+    row = db.get_job(jid)
+    if not row:
+        raise HTTPException(404, "no such job")
+    j = dict(row)
+    p = float(j.get("progress") or 0.0)
+    started = j.get("started") or 0
+    elapsed = (time.time() - started) if started else 0
+    eta = None
+    if j.get("status") == "running" and 0.02 < p < 1:
+        eta = max(0, round(elapsed / p - elapsed))
+    stats = j.get("stats")
+    if isinstance(stats, str):
+        try:
+            stats = json.loads(stats)
+        except ValueError:
+            stats = None
+    return {"id": jid, "status": j.get("status"), "progress": round(p, 4),
+            "percent": round(p * 100, 1), "elapsed_s": round(elapsed),
+            "eta_s": eta, "message": j.get("message"),
+            "buildings": ((stats or {}).get("features") or {}).get("buildings"),
+            "windows": (stats or {}).get("windows"), "stats": stats}
+
+
+@area_router.post("/{jid}/cancel")
+@router.post("/area/{jid}/cancel")
+def area_cancel(jid: str):
+    import db
+    row = db.get_job(jid)
+    if not row:
+        raise HTTPException(404, "no such job")
+    # The runner checks this between windows; there is no way to
+    # interrupt one mid-window and no reason to.
+    if dict(row).get("status") in ("queued", "running"):
+        db.update_job(jid, status="cancelled")
+    return {"id": jid, "status": "cancelled"}
+
+
+@area_router.get("/{jid}/result.geojson")
+@router.get("/area/{jid}/result.geojson")
+def area_result(jid: str):
+    """The finished footprints in EPSG:4326, ready to drop on the map."""
+    import db
+    from config import RESULTS
+    row = db.get_job(jid)
+    if not row:
+        raise HTTPException(404, "no such job")
+    j = dict(row)
+    if j.get("status") != "done":
+        raise HTTPException(409, f"job is {j.get('status')}, not done")
+    path = os.path.join(str(RESULTS), jid, "results.gpkg")
+    if not os.path.exists(path):
+        return JSONResponse({"type": "FeatureCollection", "features": []})
+
+    # Segmentation writes one layer per class, HiSup only "buildings". Return
+    # them together, each feature tagged, so the map can colour by layer
+    # without having to know which model produced the file.
+    import geopandas as gpd
+    import pyogrio
+    feats = []
+    for layer in pyogrio.list_layers(path)[:, 0]:
+        g = gpd.read_file(path, layer=layer).to_crs(4326)
+        for f in json.loads(g.to_json())["features"]:
+            f["properties"] = {**(f.get("properties") or {}), "layer": str(layer)}
+            feats.append(f)
+    return JSONResponse({"type": "FeatureCollection", "features": feats})

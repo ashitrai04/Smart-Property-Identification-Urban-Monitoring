@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from "react";
-import { Download, ImagePlus, Play, RotateCcw, X } from "lucide-react";
+import { Download, ImagePlus, Map as MapIcon, Play, RotateCcw, X } from "lucide-react";
+import { useNavigate } from "react-router-dom";
 import { logActivity } from "../lib/activityLog";
+import { sendToMap } from "../lib/mapHandoff";
 import { gpuOnlyFetch, probeGpu, useGpuStatus } from "../lib/modelApi";
 import { Button, Card, Pill, SectionHeader, Spinner } from "./ui";
 
@@ -80,7 +82,7 @@ const SOURCE_NOTE = {
     declared: "as supplied",
 };
 
-function ResultCard({ item }) {
+function ResultCard({ item, onShowOnMap }) {
     const imgRef = useRef(null);
     const canvasRef = useRef(null);
     const url = useRef(URL.createObjectURL(item.file)).current;
@@ -97,9 +99,18 @@ function ResultCard({ item }) {
             <div className="mb-2 flex items-center justify-between gap-2">
                 <span className="mono truncate text-[11px] text-[var(--text-primary)]">{file.name}</span>
                 {res && (
-                    <Button variant="ghost" onClick={() => saveGeoJSON(res.geojson, file.name)}>
-                        <Download className="h-3.5 w-3.5" /> GeoJSON
-                    </Button>
+                    <div className="flex items-center gap-1">
+                        {/* Only a georeferenced upload knows where it is; a PNG
+                            has pixel coordinates and nothing to plot against. */}
+                        {res.geo?.features?.length > 0 && (
+                            <Button variant="ghost" onClick={() => onShowOnMap(item)}>
+                                <MapIcon className="h-3.5 w-3.5" /> Show on map
+                            </Button>
+                        )}
+                        <Button variant="ghost" onClick={() => saveGeoJSON(res.geo || res.geojson, file.name)}>
+                            <Download className="h-3.5 w-3.5" /> GeoJSON
+                        </Button>
+                    </div>
                 )}
             </div>
 
@@ -128,7 +139,8 @@ function ResultCard({ item }) {
                         ))}
                     </div>
                     <p className="mb-2 text-[10px] text-[var(--text-muted)]">
-                        Ground resolution {SOURCE_NOTE[res.image.gsd_source] || "as supplied"}.
+                        Ground resolution {SOURCE_NOTE[res.image.gsd_source] || "as supplied"}
+                        {res.geo?.features?.length > 0 ? " · georeferenced, can go straight on the map" : ""}.
                     </p>
                     <div className="overflow-hidden rounded-md border border-[var(--line)]">
                         <canvas ref={canvasRef} className="block w-full" />
@@ -148,6 +160,7 @@ export default function BuildingsPanel() {
     const [err, setErr] = useState("");
     const abortRef = useRef(null);
     const gpu = useGpuStatus();
+    const navigate = useNavigate();
 
     useEffect(() => { probeGpu(true); }, []);
 
@@ -204,6 +217,14 @@ export default function BuildingsPanel() {
             }
         }
         saveGeoJSON({ type: "FeatureCollection", features: feats }, "all_images");
+    };
+
+    const showOnMap = (it) => {
+        if (!sendToMap({ geojson: it.res.geo, name: it.file.name })) {
+            setErr("Could not hand that over to the map — the result may be too large for session storage.");
+            return;
+        }
+        navigate("/mapping");
     };
 
     const total = items.reduce((n, it) => n + (it.res?.count || 0), 0);
@@ -281,7 +302,9 @@ export default function BuildingsPanel() {
 
             {items.length > 0 && (
                 <div className="mt-3 space-y-3">
-                    {items.map((it, i) => <ResultCard key={`${it.file.name}-${i}`} item={it} />)}
+                    {items.map((it, i) => (
+                        <ResultCard key={`${it.file.name}-${i}`} item={it} onShowOnMap={showOnMap} />
+                    ))}
                 </div>
             )}
         </Card>
