@@ -26,14 +26,30 @@ import numpy as np
 import pyogrio
 import rasterio
 import shapely
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse, Response
+from fastapi.responses import FileResponse, JSONResponse, Response, StreamingResponse
 from rasterio.warp import transform_bounds
 from rio_tiler.io import Reader
 from rio_tiler.models import ImageData
 
 DATA_DIR = Path(os.environ.get("GEO_DATA_DIR", r"D:\GEO_SERVE"))
+
+# The model server, reverse-proxied under this one (see _proxy below).
+#
+# Both servers used to publish their tunnel address to the same R2 key, so
+# whichever started last won and the webapp sent model requests to whoever
+# answered - usually this one, which has no /hisup route, so delineation came
+# back "Not Found". One public address that serves both removes the race
+# instead of ordering around it.
+GPU_SERVER = os.environ.get("GPU_SERVER_URL", "http://127.0.0.1:8800").rstrip("/")
+# Prefixes the model server owns outright. Deliberately not /imagery or /jobs:
+# both servers answer those from their own stores, and this one's answer is the
+# correct one for the map.
+GPU_PREFIXES = ("/hisup/", "/pothole/", "/predict", "/change-detection", "/r2/")
+# A four-resolution pass over a large image is minutes, not seconds.
+GPU_TIMEOUT = float(os.environ.get("GPU_PROXY_TIMEOUT", "900"))
+
 RASTER_EXT = {".tif", ".tiff", ".vrt"}
 VECTOR_EXT = {".gpkg", ".geojson", ".json", ".shp"}
 RESCAN_SEC = 5.0
@@ -443,19 +459,106 @@ def _public(d):
     return {k: v for k, v in d.items() if not k.startswith("_")}
 
 
+def _gpu_health(timeout=3.0):
+    """What the model server reports, or None when it is not up."""
+    import httpx
+    try:
+        r = httpx.get(f"{GPU_SERVER}/api/health", timeout=timeout)
+        return r.json() if r.status_code == 200 else None
+    except Exception:
+        return None
+
+
 @app.get("/")
 @app.get("/health")
 @app.get("/api/health")
 def health():
     c = refresh()
+    g = _gpu_health()
+    # The webapp decides what to offer from this list, so it has to describe
+    # the pair as the caller sees it: everything reachable through this address.
+    caps = ["imagery", "jobs"]
+    for cap in (g or {}).get("capabilities", []):
+        if cap not in caps:
+            caps.append(cap)
     return {
-        "status": "ok", "server": "local", "device": "cpu",
+        "status": "ok", "server": "local",
+        "device": (g or {}).get("device", "cpu"),
         "data_dir": str(DATA_DIR),
         "imagery": len(c["imagery"]),
         "layers": sum(len(j["layers"]) for j in c["jobs"]),
         "unmapped": c["unmapped"],
-        "capabilities": ["imagery", "jobs"],
+        "capabilities": caps,
+        "gpu": (g or {}).get("gpu"),
+        "models": {"url": GPU_SERVER, "online": g is not None,
+                   "hisup": (g or {}).get("hisup")},
     }
+
+
+async def _proxy(request, path):
+    """Forward a model request to the GPU server and stream the reply back.
+
+    Streamed rather than buffered in both directions: an upload can be 200 MB
+    and a reply can be a large GeoJSON, and holding either whole costs memory
+    on a machine that is already running a 1.2 GB model.
+    """
+    import httpx
+    url = f"{GPU_SERVER}{path}"
+    if request.url.query:
+        url += f"?{request.url.query}"
+    # Host would point at this server, and hop-by-hop headers must not be
+    # forwarded; content-length is recomputed by httpx for a streamed body.
+    skip = {"host", "content-length", "connection", "keep-alive", "transfer-encoding"}
+    headers = {k: v for k, v in request.headers.items() if k.lower() not in skip}
+
+    client = httpx.AsyncClient(timeout=httpx.Timeout(GPU_TIMEOUT, connect=5.0))
+    try:
+        req = client.build_request(request.method, url, headers=headers,
+                                   content=request.stream())
+        resp = await client.send(req, stream=True)
+    except Exception as e:
+        await client.aclose()
+        # 503, not 502: the webapp treats >=502 as "this server is down for
+        # now" and falls back to Hugging Face, which is the right behaviour
+        # when only the model half is missing.
+        return JSONResponse(
+            {"detail": f"The model server is not reachable at {GPU_SERVER}. "
+                       f"Start it with start_everything.bat. ({type(e).__name__})"},
+            status_code=503)
+
+    async def body():
+        try:
+            async for chunk in resp.aiter_raw():
+                yield chunk
+        finally:
+            await resp.aclose()
+            await client.aclose()
+
+    # aiter_raw yields the body exactly as it arrived, still gzipped if the
+    # upstream compressed it - so content-encoding and content-length describe
+    # it correctly and must survive. Dropping content-encoding here handed the
+    # browser gzip bytes labelled as JSON. Only the hop-by-hop headers go.
+    drop = {"transfer-encoding", "connection", "keep-alive"}
+    out = {k: v for k, v in resp.headers.items() if k.lower() not in drop}
+    return StreamingResponse(body(), status_code=resp.status_code, headers=out,
+                             media_type=resp.headers.get("content-type"))
+
+
+@app.api_route("/hisup/{rest:path}", methods=["GET", "POST", "OPTIONS"])
+@app.api_route("/pothole/{rest:path}", methods=["GET", "POST", "OPTIONS"])
+@app.api_route("/r2/{rest:path}", methods=["GET", "POST", "OPTIONS"])
+async def _proxy_prefixed(rest: str, request: Request):
+    return await _proxy(request, request.url.path)
+
+
+@app.api_route("/predict", methods=["POST", "OPTIONS"])
+@app.api_route("/predict-url", methods=["POST", "OPTIONS"])
+@app.api_route("/predict-fusion", methods=["POST", "OPTIONS"])
+@app.api_route("/predict-fusion-url", methods=["POST", "OPTIONS"])
+@app.api_route("/change-detection", methods=["POST", "OPTIONS"])
+@app.api_route("/change-detection-url", methods=["POST", "OPTIONS"])
+async def _proxy_exact(request: Request):
+    return await _proxy(request, request.url.path)
 
 
 @app.get("/catalog")
