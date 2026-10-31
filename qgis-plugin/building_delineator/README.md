@@ -8,6 +8,19 @@ rectilinear outlines. QGIS needs no PyTorch, no CUDA and no GPU — which is
 also why it installs in seconds rather than asking you to pip install into
 the QGIS Python.
 
+## The panel
+
+The toolbar's first button opens the **Building Delineator** dock, which is
+the same shape as the webapp: draw an area on the map (or use a selected
+polygon layer), choose the model and the post-processing, run, and watch the
+buildings appear as the server finds them — each in its own colour, as the
+detector drew it, settling into its regularized outline a moment later. An
+opacity slider and an export button finish the job.
+
+Buildings are drawn live because an area job takes minutes, and a panel that
+shows nothing until it finishes is indistinguishable from one that has hung.
+QGIS stays responsive throughout: the polling runs on a background task.
+
 ## Two algorithms, in Processing ▸ Urbanly ▸ Buildings
 
 **Building footprints from a raster layer** — for imagery on your own

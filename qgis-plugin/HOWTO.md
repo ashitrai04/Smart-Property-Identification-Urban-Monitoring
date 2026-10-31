@@ -60,6 +60,33 @@ curl https://asashit-smart-property-backend.hf.space/api/gpu-server
 The server must be running — `start_everything.bat`. The plugin checks on
 start and says so plainly rather than failing at the first upload.
 
+## The panel — start here
+
+The first toolbar button opens the **Building Delineator** dock. It is the
+same shape as the webapp's map panel on purpose, because it is the same job:
+
+1. **Model server** — the URL, with a Check button that reports the device and
+   GPU and fills the model list from the server, so the list cannot offer
+   something the server will not run.
+2. **Area of interest** — *Draw on map* (click corners, right-click or Enter
+   to finish, Backspace to undo, Esc to cancel), or *Use selected layer* to
+   take a boundary you already have. It reports the area in km², which is what
+   predicts how long the run will take.
+3. **Model and post-processing** — model, quality preset (four resolutions
+   with an agreement filter, or a single fast pass), rectilinear squaring on or
+   off, seed confidence, and working resolution. The defaults are the measured
+   ones from PIPELINE.md; the tooltips say what each costs.
+4. **Run** — buildings appear as the server finds them, each in its own
+   colour, drawn as the detector saw them and settling into the regularized
+   outline a moment later. Progress is the server's real progress, and Stop
+   cancels the job on the server, not just locally.
+5. **Results** — an opacity slider on the overlay, and Export to GeoPackage,
+   GeoJSON or Shapefile.
+
+QGIS stays responsive while a job runs: the polling is on a background
+QgsTask, and results reach the layer by signal, so the layer is only touched
+from the GUI thread.
+
 ## The two algorithms
 
 **Building footprints from a raster layer** — for imagery on your own disk.

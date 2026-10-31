@@ -14,7 +14,15 @@ import sys
 import types
 
 # ── stub qgis ────────────────────────────────────────────────────
-class _Any:
+class _AnyMeta(type):
+    """Lets class-level lookups resolve too, e.g. QTimer.singleShot."""
+    def __getattr__(cls, name):
+        if name.startswith("__"):
+            raise AttributeError(name)
+        return _Any()
+
+
+class _Any(metaclass=_AnyMeta):
     """Stands in for any QGIS class: constructs, allows anything, returns self."""
     def __init__(self, *a, **k):
         self._a, self._k = a, k
@@ -141,7 +149,7 @@ class _ToolBar:
 class _Iface:
     """Just enough QgisInterface to see whether initGui/unload are balanced."""
     def __init__(self):
-        self.toolbars, self.menu, self.icons = [], [], []
+        self.toolbars, self.menu, self.icons, self.docks = [], [], [], []
 
     def addToolBar(self, name):
         tb = _ToolBar()
@@ -150,6 +158,18 @@ class _Iface:
 
     def mainWindow(self):
         return None
+
+    def mapCanvas(self):
+        return _Any()
+
+    def activeLayer(self):
+        return None
+
+    def addDockWidget(self, area, dock):
+        self.docks.append(dock)
+
+    def removeDockWidget(self, dock):
+        self.docks.remove(dock)
 
     def addPluginToMenu(self, menu, action):
         self.menu.append((menu, action))
@@ -162,16 +182,19 @@ class _Iface:
 
 
 def _install_stubs():
+    """Install stub qgis / osgeo modules.
+
+    Any attribute not defined explicitly resolves to _Any, so the stubs do not
+    have to be extended every time the plugin imports another Qt widget. The
+    few classes that are spelled out are the ones whose behaviour the tests
+    actually depend on.
+    """
+    def catch_all(mod):
+        mod.__getattr__ = lambda name: _Any
+        return mod
+
     qgis = types.ModuleType("qgis")
-    core = types.ModuleType("qgis.core")
-    for n in ("QgsProcessing", "QgsProcessingAlgorithm",
-              "QgsProcessingParameterExtent", "QgsProcessingParameterFeatureSink",
-              "QgsProcessingParameterFeatureSource", "QgsProcessingParameterNumber",
-              "QgsProcessingParameterRasterLayer", "QgsProcessingParameterString",
-              "QgsProcessingParameterEnum", "QgsProcessingProvider", "QgsWkbTypes",
-              "QgsCoordinateReferenceSystem", "QgsCoordinateTransform", "QgsProject",
-              "QgsApplication"):
-        setattr(core, n, _Any)
+    core = catch_all(types.ModuleType("qgis.core"))
     core.QgsProcessingException = type("QgsProcessingException", (RuntimeError,), {})
     core.QgsPointXY = _Point
     core.QgsGeometry = _Geometry
@@ -179,27 +202,26 @@ def _install_stubs():
     core.QgsField = _Field
     core.QgsFeature = _Feature
     qgis.core = core
+    gui = catch_all(types.ModuleType("qgis.gui"))
+    qgis.gui = gui
 
     pyqt = types.ModuleType("qgis.PyQt")
-    qtcore = types.ModuleType("qgis.PyQt.QtCore")
+    qtcore = catch_all(types.ModuleType("qgis.PyQt.QtCore"))
     qtcore.QVariant = _Any()
-    qtcore.QCoreApplication = _Any
-    qtgui = types.ModuleType("qgis.PyQt.QtGui")
-    qtgui.QIcon = _Any
-    qtwidgets = types.ModuleType("qgis.PyQt.QtWidgets")
+    qtcore.Qt = _Any()
+    qtcore.pyqtSignal = lambda *a, **k: _Signal()
+    qtgui = catch_all(types.ModuleType("qgis.PyQt.QtGui"))
+    qtwidgets = catch_all(types.ModuleType("qgis.PyQt.QtWidgets"))
     qtwidgets.QAction = _Action
-    qtwidgets.QMessageBox = _Any
     pyqt.QtCore, pyqt.QtGui, pyqt.QtWidgets = qtcore, qtgui, qtwidgets
     qgis.PyQt = pyqt
 
-    for name, mod in (("qgis", qgis), ("qgis.core", core), ("qgis.PyQt", pyqt),
-                      ("qgis.PyQt.QtCore", qtcore), ("qgis.PyQt.QtGui", qtgui),
-                      ("qgis.PyQt.QtWidgets", qtwidgets)):
+    for name, mod in (("qgis", qgis), ("qgis.core", core), ("qgis.gui", gui),
+                      ("qgis.PyQt", pyqt), ("qgis.PyQt.QtCore", qtcore),
+                      ("qgis.PyQt.QtGui", qtgui), ("qgis.PyQt.QtWidgets", qtwidgets)):
         sys.modules[name] = mod
 
-    osgeo = types.ModuleType("osgeo")
-    osgeo.gdal = _Any()
-    sys.modules["osgeo"] = osgeo
+    sys.modules["osgeo"] = catch_all(types.ModuleType("osgeo"))
 
 
 _install_stubs()
@@ -255,9 +277,18 @@ def main():
     plug = plugin_mod.BuildingDelineatorPlugin(iface)
     plug.initGui()
     check("initGui registers the provider", lambda: _eq(len(registry), 1))
-    check("initGui adds two toolbar buttons",
-          lambda: _eq(len(iface.toolbars[0].actions), 2))
-    check("initGui adds two menu entries", lambda: _eq(len(iface.menu), 2))
+    check("initGui adds three toolbar buttons (panel + two algorithms)",
+          lambda: _eq(len(iface.toolbars[0].actions), 3))
+    check("initGui adds three menu entries", lambda: _eq(len(iface.menu), 3))
+
+    # The panel is the first button and is built lazily, so this is also the
+    # only check here that the panel module imports and constructs at all.
+    iface.toolbars[0].actions[0].triggered.emit()
+    check("the panel button builds and docks the panel",
+          lambda: (_eq(len(iface.docks), 1), _eq(plug.panel is not None, True)))
+    check("asking twice reuses the same dock",
+          lambda: (iface.toolbars[0].actions[0].triggered.emit(),
+                   _eq(len(iface.docks), 1)))
 
     shown = []
     plugin_mod.QMessageBox = type("MB", (), {
@@ -269,7 +300,7 @@ def main():
         # ImportError into the QGIS log where nobody will look.
         sys.modules["processing"] = None
         try:
-            iface.toolbars[0].actions[0].triggered.emit()
+            iface.toolbars[0].actions[1].triggered.emit()
         finally:
             del sys.modules["processing"]
         assert shown, "no message shown when Processing is off"
@@ -281,15 +312,16 @@ def main():
     fake = types.ModuleType("processing")
     fake.execAlgorithmDialog = lambda alg, params: ran.append(alg)
     sys.modules["processing"] = fake
-    iface.toolbars[0].actions[0].triggered.emit()
     iface.toolbars[0].actions[1].triggered.emit()
+    iface.toolbars[0].actions[2].triggered.emit()
     del sys.modules["processing"]
     check("the two buttons open the two algorithms",
           lambda: _eq(ran, ["urbanly:detectinarea", "urbanly:detectinraster"]))
 
     plug.unload()
-    check("unload removes the provider and the menu entries",
-          lambda: (_eq(len(registry), 0), _eq(len(iface.menu), 0)))
+    check("unload removes the provider, menu entries and the dock",
+          lambda: (_eq(len(registry), 0), _eq(len(iface.menu), 0),
+                   _eq(len(iface.docks), 0)))
 
     print("\nGeoJSON to features")
     fc = {"features": [

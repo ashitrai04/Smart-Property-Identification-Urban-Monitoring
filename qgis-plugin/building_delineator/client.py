@@ -106,6 +106,16 @@ def area_status(jid, server=DEFAULT_SERVER):
     return _request(server, f"/area/{jid}", timeout=30)
 
 
+def area_live(jid, since=0, server=DEFAULT_SERVER):
+    """Buildings found so far, from `since` onwards.
+
+    The server appends each window's results as it finishes, so this is what
+    lets the panel draw the work as it happens rather than at the end. Pass
+    back the `next` it returns to get only what is new.
+    """
+    return _request(server, f"/area/{jid}/live?since={int(since)}", timeout=60)
+
+
 def area_cancel(jid, server=DEFAULT_SERVER):
     return _request(server, f"/area/{jid}/cancel", data=b"", method="POST", timeout=30)
 
