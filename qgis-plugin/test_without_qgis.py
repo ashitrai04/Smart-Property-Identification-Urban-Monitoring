@@ -1,0 +1,269 @@
+"""Exercise the plugin's logic with QGIS stubbed out.
+
+QGIS cannot be launched from this environment, and "it parses" is not the same
+as "it runs". This stubs the qgis and osgeo imports with just enough behaviour
+to import the algorithms, build them, and run the pure-Python parts - GeoJSON
+to features, and the area/extent handling - then checks the rest against a
+real server. It catches the mistakes that actually happen: a name imported
+from the wrong module, a typo in a method, a geometry branch never taken, a
+field written that was never declared.
+
+Run:  python test_without_qgis.py [server-url]
+"""
+import sys
+import types
+
+# ── stub qgis ────────────────────────────────────────────────────
+class _Any:
+    """Stands in for any QGIS class: constructs, allows anything, returns self."""
+    def __init__(self, *a, **k):
+        self._a, self._k = a, k
+
+    def __getattr__(self, n):
+        if n.startswith("__"):
+            raise AttributeError(n)
+        return _Any()
+
+    def __call__(self, *a, **k):
+        return _Any()
+
+    def __or__(self, other):
+        return self
+
+
+class _Point:
+    def __init__(self, x, y):
+        self.x, self.y = float(x), float(y)
+
+
+class _Geometry:
+    def __init__(self, rings=None, kind="Polygon"):
+        self.rings, self.kind = rings or [], kind
+
+    @staticmethod
+    def fromPolygonXY(rings):
+        return _Geometry(rings, "Polygon")
+
+    @staticmethod
+    def fromMultiPolygonXY(polys):
+        return _Geometry([r for p in polys for r in p], "MultiPolygon")
+
+    def isEmpty(self):
+        return not self.rings
+
+
+class _Fields:
+    def __init__(self):
+        self.names = []
+
+    def append(self, f):
+        self.names.append(f.name)
+
+    def __len__(self):
+        return len(self.names)
+
+
+class _Field:
+    def __init__(self, name, typ=None):
+        self.name = name
+
+
+class _Feature:
+    def __init__(self, fields=None):
+        self.fields, self.attrs, self.geom = fields, {}, None
+
+    def setGeometry(self, g):
+        self.geom = g
+
+    def __setitem__(self, k, v):
+        # The real QgsFeature silently ignores an unknown field; that would
+        # hide a typo until someone opened the attribute table.
+        if self.fields is not None and k not in self.fields.names:
+            raise KeyError(f"field {k!r} was never declared in out_fields()")
+        self.attrs[k] = v
+
+    def __getitem__(self, k):
+        return self.attrs[k]
+
+
+class _Rect:
+    def __init__(self, empty=False, b=(0, 0, 1, 1)):
+        self._empty, self._b = empty, b
+
+    def isEmpty(self):
+        return self._empty
+
+    def xMinimum(self):
+        return self._b[0]
+
+    def yMinimum(self):
+        return self._b[1]
+
+    def xMaximum(self):
+        return self._b[2]
+
+    def yMaximum(self):
+        return self._b[3]
+
+
+def _install_stubs():
+    qgis = types.ModuleType("qgis")
+    core = types.ModuleType("qgis.core")
+    for n in ("QgsProcessing", "QgsProcessingAlgorithm",
+              "QgsProcessingParameterExtent", "QgsProcessingParameterFeatureSink",
+              "QgsProcessingParameterFeatureSource", "QgsProcessingParameterNumber",
+              "QgsProcessingParameterRasterLayer", "QgsProcessingParameterString",
+              "QgsProcessingParameterEnum", "QgsProcessingProvider", "QgsWkbTypes",
+              "QgsCoordinateReferenceSystem", "QgsCoordinateTransform", "QgsProject",
+              "QgsApplication"):
+        setattr(core, n, _Any)
+    core.QgsProcessingException = type("QgsProcessingException", (RuntimeError,), {})
+    core.QgsPointXY = _Point
+    core.QgsGeometry = _Geometry
+    core.QgsFields = _Fields
+    core.QgsField = _Field
+    core.QgsFeature = _Feature
+    qgis.core = core
+
+    pyqt = types.ModuleType("qgis.PyQt")
+    qtcore = types.ModuleType("qgis.PyQt.QtCore")
+    qtcore.QVariant = _Any()
+    qtcore.QCoreApplication = _Any
+    qtgui = types.ModuleType("qgis.PyQt.QtGui")
+    qtgui.QIcon = _Any
+    pyqt.QtCore, pyqt.QtGui = qtcore, qtgui
+    qgis.PyQt = pyqt
+
+    for name, mod in (("qgis", qgis), ("qgis.core", core), ("qgis.PyQt", pyqt),
+                      ("qgis.PyQt.QtCore", qtcore), ("qgis.PyQt.QtGui", qtgui)):
+        sys.modules[name] = mod
+
+    osgeo = types.ModuleType("osgeo")
+    osgeo.gdal = _Any()
+    sys.modules["osgeo"] = osgeo
+
+
+_install_stubs()
+
+# ── harness ──────────────────────────────────────────────────────
+FAILS = []
+
+
+def check(label, fn):
+    try:
+        fn()
+        print(f"  PASS  {label}")
+    except Exception as e:
+        FAILS.append(label)
+        print(f"  FAIL  {label}: {type(e).__name__}: {e}")
+
+
+def main():
+    server = sys.argv[1] if len(sys.argv) > 1 else "http://127.0.0.1:8777"
+    sys.path.insert(0, ".")
+
+    print("importing the plugin with QGIS stubbed")
+    from building_delineator import client
+    from building_delineator.algorithms import common
+    from building_delineator.algorithms.detect_area import DetectInAreaAlgorithm
+    from building_delineator.algorithms.detect_raster import DetectInRasterAlgorithm
+    from building_delineator.provider import BuildingDelineatorProvider
+    print("  imports OK\n")
+
+    print("algorithm metadata")
+    for cls in (DetectInRasterAlgorithm, DetectInAreaAlgorithm):
+        a = cls()
+
+        def meta(a=a):
+            assert a.name() and a.name().islower(), "name must be a lowercase id"
+            assert a.displayName() and a.group() and a.groupId()
+            assert "<p>" in a.shortHelpString(), "help should be rich text"
+            assert isinstance(a.createInstance(), cls)
+        check(f"{cls.__name__} metadata", meta)
+    check("provider ids", lambda: (lambda p: (
+        p.id() and p.name() and p.longName()))(BuildingDelineatorProvider()))
+
+    print("\nGeoJSON to features")
+    fc = {"features": [
+        {"geometry": {"type": "Polygon",
+                      "coordinates": [[[0, 0], [1, 0], [1, 1], [0, 1], [0, 0]]]},
+         "properties": {"building_id": 7, "area_m2": 42.5, "n_vertices": 4,
+                        "layer": "buildings"}},
+        {"geometry": {"type": "Polygon",
+                      "coordinates": [[[0, 0], [1, 0], [0, 1], [0, 0]],
+                                      [[0.2, 0.2], [0.4, 0.2], [0.3, 0.4], [0.2, 0.2]]]},
+         "properties": {}},
+        {"geometry": {"type": "LineString", "coordinates": [[0, 0], [1, 1]]},
+         "properties": {}},
+        {"geometry": {"type": "Polygon", "coordinates": [[[0, 0], [1, 1]]]},
+         "properties": {}},
+    ]}
+    feats = common.features_from_geojson(fc, common.out_fields())
+    check("keeps 2 real polygons, drops the line and the 2-point ring",
+          lambda: _eq(len(feats), 2))
+    check("properties carried across",
+          lambda: (_eq(feats[0]["building_id"], 7), _eq(feats[0]["area_m2"], 42.5)))
+    check("missing properties default instead of crashing",
+          lambda: (_eq(feats[1]["building_id"], 2), _eq(feats[1]["area_m2"], None)))
+    check("interior ring kept (a courtyard is not building)",
+          lambda: _eq(len(feats[1].geom.rings), 2))
+    check("empty collection is not an error",
+          lambda: _eq(len(common.features_from_geojson({"features": []},
+                                                       common.out_fields())), 0))
+
+    print("\narea-of-interest handling")
+    alg = DetectInAreaAlgorithm()
+    alg.parameterAsSource = lambda *a, **k: None
+    alg.parameterAsExtent = lambda *a, **k: _Rect(b=(80.0, 15.0, 80.1, 15.1))
+    aoi = alg._aoi({}, None, _Any())
+
+    def ring_ok():
+        ring = aoi["geometry"]["coordinates"][0]
+        _eq(aoi["geometry"]["type"], "Polygon")
+        _eq(len(ring), 5)
+        assert ring[0] == ring[-1], "ring must close"
+    check("an extent becomes a closed 5-point ring", ring_ok)
+
+    alg.parameterAsExtent = lambda *a, **k: _Rect(empty=True)
+    check("no boundary and no extent gives None, so the caller can explain",
+          lambda: _eq(alg._aoi({}, None, _Any()), None))
+
+    print(f"\nagainst the real server at {server}")
+    try:
+        h = client.health(server, timeout=8)
+    except client.ServerError as e:
+        print(f"  SKIP  server not reachable ({e})")
+    else:
+        check("health reports a building model",
+              lambda: _in("hisup", h.get("capabilities") or []))
+        check("check_server accepts it",
+              lambda: common.check_server(client, server, _Any()))
+
+        def dead_url():
+            try:
+                common.check_server(client, "http://127.0.0.1:9", _Any())
+            except Exception as e:
+                assert "cannot reach" in str(e) or "start_everything" in str(e).lower(), str(e)
+                return
+            raise AssertionError("a dead server should have been reported")
+        check("a dead URL is reported in plain words", dead_url)
+
+        live = [t["id"] for t in client.tasks(server)]
+        check("the plugin's model list matches the server's",
+              lambda: _eq(live, [t[0] for t in alg._tasks]))
+
+    print()
+    print(("FAILED: " + ", ".join(FAILS)) if FAILS else "all checks passed")
+    return 1 if FAILS else 0
+
+
+def _eq(got, want):
+    assert got == want, f"expected {want!r}, got {got!r}"
+
+
+def _in(needle, hay):
+    assert needle in hay, f"{needle!r} not in {hay!r}"
+
+
+if __name__ == "__main__":
+    sys.exit(main())

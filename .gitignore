@@ -52,3 +52,6 @@ gpu-update-v20.zip
 # defect list work on a deploy even when the video itself is absent.
 public/nsv/*.mp4
 public/live_demo_samples/*.mp4
+
+# built QGIS plugin package — rebuild with qgis-plugin/package.py
+qgis-plugin/*.zip

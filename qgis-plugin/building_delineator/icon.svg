@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" width="48" height="48">
+  <rect width="48" height="48" rx="8" fill="#0f172a"/>
+  <!-- three footprints sharing walls: the case this model exists for -->
+  <g fill="none" stroke-width="2.4" stroke-linejoin="round">
+    <path d="M7 31 L7 17 L19 17 L19 31 Z" stroke="#22c55e"/>
+    <path d="M19 31 L19 13 L30 13 L30 31 Z" stroke="#38bdf8"/>
+    <path d="M30 31 L30 20 L41 20 L41 31 Z" stroke="#f59e0b"/>
+  </g>
+  <path d="M5 35 H43" stroke="#475569" stroke-width="2" stroke-linecap="round"/>
+</svg>

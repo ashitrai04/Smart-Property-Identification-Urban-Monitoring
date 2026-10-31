@@ -1,0 +1,142 @@
+"""Talk to the Urbanly model server.
+
+Deliberately free of any QGIS import so it can be exercised from a plain
+Python prompt - the networking is the part most likely to break in the field,
+and debugging it through the QGIS Python console is miserable.
+
+urllib only, no requests: QGIS ships its own Python and the set of third-party
+packages present varies by install and platform. The one thing a plugin cannot
+do is ask the user to pip install into it.
+"""
+import json
+import mimetypes
+import os
+import time
+import urllib.error
+import urllib.parse
+import urllib.request
+
+DEFAULT_SERVER = os.environ.get("URBANLY_SERVER", "http://127.0.0.1:8777")
+TIMEOUT = 900
+
+
+class ServerError(RuntimeError):
+    pass
+
+
+def _url(server, path):
+    return server.rstrip("/") + path
+
+
+def _read(resp):
+    body = resp.read()
+    if resp.headers.get("content-encoding") == "gzip":
+        import gzip
+        body = gzip.decompress(body)
+    return json.loads(body.decode("utf-8"))
+
+
+def _request(server, path, data=None, method=None, timeout=TIMEOUT, headers=None):
+    req = urllib.request.Request(_url(server, path), data=data, method=method)
+    # Ask for no compression: urllib does not transparently decode gzip, and a
+    # plugin has no business re-implementing content negotiation.
+    req.add_header("Accept-Encoding", "identity")
+    for k, v in (headers or {}).items():
+        req.add_header(k, v)
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            return _read(resp)
+    except urllib.error.HTTPError as e:
+        detail = e.read().decode("utf-8", "replace")[:400]
+        try:
+            detail = json.loads(detail).get("detail", detail)
+        except Exception:
+            pass
+        raise ServerError(f"{e.code} from {path}: {detail}") from None
+    except urllib.error.URLError as e:
+        raise ServerError(f"cannot reach {server}: {e.reason}") from None
+
+
+def _multipart(fields, files):
+    """Encode a form the way the server's /hisup/predict expects."""
+    boundary = "----urbanly" + os.urandom(8).hex()
+    out = []
+    for k, v in fields.items():
+        out.append(f"--{boundary}\r\nContent-Disposition: form-data; name=\"{k}\"\r\n\r\n{v}\r\n".encode())
+    for k, path in files.items():
+        name = os.path.basename(path)
+        ctype = mimetypes.guess_type(name)[0] or "application/octet-stream"
+        with open(path, "rb") as fh:
+            blob = fh.read()
+        out.append(
+            f"--{boundary}\r\nContent-Disposition: form-data; name=\"{k}\"; filename=\"{name}\"\r\n"
+            f"Content-Type: {ctype}\r\n\r\n".encode() + blob + b"\r\n")
+    out.append(f"--{boundary}--\r\n".encode())
+    return b"".join(out), f"multipart/form-data; boundary={boundary}"
+
+
+# ── the two ways to run a model ──────────────────────────────────
+def health(server=DEFAULT_SERVER, timeout=10):
+    return _request(server, "/api/health", timeout=timeout)
+
+
+def tasks(server=DEFAULT_SERVER, timeout=15):
+    return _request(server, "/area/tasks", timeout=timeout).get("tasks", [])
+
+
+def predict_file(path, server=DEFAULT_SERVER, gsd=None, timeout=TIMEOUT):
+    """Delineate one image. A GeoTIFF carries its own resolution and location,
+    so the result comes back in EPSG:4326 under `geo` and needs no help."""
+    fields = {}
+    if gsd:
+        fields["gsd"] = str(gsd)
+    body, ctype = _multipart(fields, {"file": path})
+    return _request(server, "/hisup/predict", data=body, method="POST",
+                    timeout=timeout, headers={"Content-Type": ctype})
+
+
+def start_area(aoi_geojson, task="hisup", server=DEFAULT_SERVER, **params):
+    payload = {"task": task, "aoi": aoi_geojson}
+    payload.update({k: v for k, v in params.items() if v not in (None, "", [])})
+    return _request(server, "/area", data=json.dumps(payload).encode(), method="POST",
+                    timeout=60, headers={"Content-Type": "application/json"})
+
+
+def area_status(jid, server=DEFAULT_SERVER):
+    return _request(server, f"/area/{jid}", timeout=30)
+
+
+def area_cancel(jid, server=DEFAULT_SERVER):
+    return _request(server, f"/area/{jid}/cancel", data=b"", method="POST", timeout=30)
+
+
+def area_result(jid, server=DEFAULT_SERVER):
+    return _request(server, f"/area/{jid}/result.geojson", timeout=TIMEOUT)
+
+
+def run_area(aoi_geojson, task="hisup", server=DEFAULT_SERVER,
+             on_progress=None, is_cancelled=None, poll=2.0, **params):
+    """Start an area job and wait, reporting progress.
+
+    `on_progress(percent, message)` and `is_cancelled()` map onto QGIS's
+    QgsProcessingFeedback without this module needing to know it exists.
+    """
+    job = start_area(aoi_geojson, task=task, server=server, **params)
+    jid = job["id"]
+    last = -1
+    while True:
+        if is_cancelled and is_cancelled():
+            area_cancel(jid, server=server)
+            raise ServerError("cancelled")
+        st = area_status(jid, server=server)
+        pct = st.get("percent") or 0
+        if on_progress and pct != last:
+            eta = st.get("eta_s")
+            on_progress(pct, f"{pct:.0f}%" + (f", about {int(eta)}s left" if eta else ""))
+            last = pct
+        status = st.get("status")
+        if status == "done":
+            return area_result(jid, server=server), st
+        if status in ("failed", "cancelled"):
+            raise ServerError(st.get("message") or f"job {status}")
+        time.sleep(poll)
