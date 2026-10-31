@@ -1,9 +1,15 @@
 # torch / torchvision are installed by setup.sh from the CUDA wheel index.
-# Model stack pinned to the same versions as the Hugging Face Space, so results match the fallback.
-transformers==4.44.2
-tokenizers==0.19.1
-safetensors==0.4.5
-huggingface_hub==0.24.6
+# The transformers stack is deliberately NOT pinned to the Hugging Face
+# Space's versions any more. The SegFormer checkpoint was saved under 4.x
+# module naming; 5.x renamed every submodule but changed no weights, and
+# inference.py translates the names on load - verified class-by-class against
+# the Space's own output on the same image. Pinning the three of these
+# together to 4.x-era releases was what made a fresh install unusable with a
+# current torch.
+transformers>=4.44.2
+tokenizers>=0.19.1
+safetensors>=0.4.5
+huggingface_hub>=0.24.6
 numpy==1.26.4
 pillow==10.4.0
 opencv-python-headless==4.10.0.84

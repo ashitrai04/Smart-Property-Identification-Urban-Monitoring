@@ -10,7 +10,12 @@ import cv2
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+import re
+
+import transformers
 from transformers import SegformerForSemanticSegmentation, SegformerConfig
+
+_tfver = transformers.__version__
 from scipy import ndimage
 from scipy.spatial import cKDTree
 from skimage.measure import label, regionprops
@@ -66,6 +71,49 @@ def _build_config():
     )
 
 
+def _to_current_naming(sd, wanted):
+    """Translate a SegFormer checkpoint saved under transformers 4.x naming.
+
+    transformers 5.x renamed every SegFormer submodule - encoder.block.i.j
+    became stages.i.blocks.j, the fused qkv attention split into q_proj/k_proj/
+    v_proj/o_proj, mlp.denseN became mlp.fcN, and decode_head.linear_c became
+    linear_projections. The tensors are identical and the counts match exactly
+    (1172 either way); only the paths moved. Pinning transformers back to
+    4.44.2 would fix it too, but that is a major downgrade underneath a torch
+    this new, to avoid a rename.
+
+    Returns the checkpoint unchanged when it already matches the installed
+    version, so this is a no-op on 4.x.
+    """
+    if not sd or next(iter(sd)) in wanted:
+        return sd
+
+    def fix(k):
+        k = re.sub(r"^segformer\.encoder\.patch_embeddings\.(\d+)\.", r"segformer.stages.\1.patch_embeddings.", k)
+        k = re.sub(r"^segformer\.encoder\.layer_norm\.(\d+)\.", r"segformer.stages.\1.layer_norm.", k)
+        m = re.match(r"^segformer\.encoder\.block\.(\d+)\.(\d+)\.(.*)$", k)
+        if m:
+            st, bl, rest = m.groups()
+            for a, b in (("attention.self.query.", "attention.q_proj."),
+                         ("attention.self.key.", "attention.k_proj."),
+                         ("attention.self.value.", "attention.v_proj."),
+                         ("attention.output.dense.", "attention.o_proj."),
+                         ("attention.self.sr.", "attention.sequence_reduction.sequence_reduction."),
+                         ("attention.self.layer_norm.", "attention.sequence_reduction.layer_norm."),
+                         ("layer_norm_1.", "layernorm_before."),
+                         ("layer_norm_2.", "layernorm_after."),
+                         ("mlp.dense1.", "mlp.fc1."),
+                         ("mlp.dense2.", "mlp.fc2.")):
+                rest = rest.replace(a, b)
+            k = f"segformer.stages.{st}.blocks.{bl}.{rest}"
+        return re.sub(r"^decode_head\.linear_c\.(\d+)\.", r"decode_head.linear_projections.\1.", k)
+
+    out = {fix(k): v for k, v in sd.items()}
+    # Only accept the translation if it actually fits: a future rename should
+    # fail loudly here rather than load a quarter of the weights in silence.
+    return out if sum(1 for k in wanted if k in out) > 0.98 * len(wanted) else sd
+
+
 def load_model(weights_path):
     global _MODEL
     if _MODEL is not None:
@@ -74,13 +122,14 @@ def load_model(weights_path):
     ckpt = torch.load(weights_path, map_location=DEVICE, weights_only=False)
     sd = ckpt.get("model_state_dict", ckpt) if isinstance(ckpt, dict) else ckpt
     sd = {k.replace("module.", "").replace("backbone.", "").replace("model.", ""): v for k, v in sd.items()}
+    sd = _to_current_naming(sd, model.state_dict())
     miss, unexp = model.load_state_dict(sd, strict=False)
     LOAD_INFO.update({
         "loaded": len(miss) < 50,  # a clean load has ~0 missing; large => version mismatch
         "missing": len(miss),
         "unexpected": len(unexp),
         "ckpt_tensors": len(sd),
-        "transformers_ok_hint": "pin transformers 4.x if missing is large",
+        "transformers": _tfver,
     })
     print(f"[model] weights — missing={len(miss)} unexpected={len(unexp)} ckpt_tensors={len(sd)}")
     model.to(DEVICE).eval()

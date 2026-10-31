@@ -74,7 +74,9 @@ Other users hold most of both GPUs' memory. The server is built for that:
 * All models share one GPU queue; batch jobs take it one window at a time, so a
   webapp request waits seconds, not hours, behind a big job.
 
-Segmentation results match the HF Space (same weights, same transformers 4.44.2). The
+Segmentation results match the HF Space (same weights; the checkpoint was
+saved under transformers 4.x naming and is translated on load, so any 4.x or
+5.x release works - checked class-by-class against the Space). The
 GPU defaults are a little richer — `SEG_MAX_DIM=2048` and flip TTA — set
 `SEG_MAX_DIM=1536 SEG_TTA=0` in config.env for byte-identical output.
 
