@@ -18,8 +18,10 @@ import random
 from qgis.core import (QgsApplication, QgsCoordinateReferenceSystem, QgsCoordinateTransform,
                        QgsFeature, QgsField, QgsFillSymbol, QgsGeometry, QgsPointXY,
                        QgsProject, QgsVectorLayer)
+from qgis.core import QgsWkbTypes
+from qgis.gui import QgsRubberBand
 from qgis.PyQt.QtCore import Qt, QTimer
-from qgis.PyQt.QtGui import QIcon
+from qgis.PyQt.QtGui import QColor, QIcon
 from qgis.PyQt.QtWidgets import (QCheckBox, QComboBox, QDoubleSpinBox, QFileDialog,
                                  QFormLayout, QGroupBox, QHBoxLayout, QLabel, QMessageBox,
                                  QProgressBar, QPushButton, QSlider, QSpinBox, QTextEdit,
@@ -58,6 +60,13 @@ class DelineatorPanel(QWidget):
         self.pending = []             # [(fid, reg_ring, due_ms)]
         self.tool = None
         self.prev_tool = None
+        # The panel owns the AOI outline, not the map tool. A tool is created
+        # fresh on every draw, so a band owned by one could never be cleared
+        # by the next - which is why the old outline stayed on the canvas.
+        self.aoi_band = QgsRubberBand(self.canvas, QgsWkbTypes.PolygonGeometry)
+        self.aoi_band.setFillColor(QColor(0, 0, 0, 0))     # outline only
+        self.aoi_band.setStrokeColor(QColor(34, 197, 94))
+        self.aoi_band.setWidth(2)
         self._build()
         QTimer.singleShot(0, self.refresh_models)
 
@@ -231,6 +240,7 @@ class DelineatorPanel(QWidget):
     def _drawn(self, geom):
         if geom is not None:
             self.aoi_geom = geom
+            self._show_aoi()
             self._describe_aoi()
         if self.prev_tool is not None:
             self.canvas.setMapTool(self.prev_tool)
@@ -251,6 +261,7 @@ class DelineatorPanel(QWidget):
                                     QgsProject.instance())
         g.transform(tr)
         self.aoi_geom = g
+        self._show_aoi()
         self._describe_aoi(f"from {layer.name()}")
 
     def _describe_aoi(self, extra=""):
@@ -268,10 +279,21 @@ class DelineatorPanel(QWidget):
         self.area_note.setText(f"Area ready{' ' + extra if extra else ''} — {km2:.3f} km²")
         self.area_note.setStyleSheet("color: #15803d;")
 
+    def _show_aoi(self):
+        self.aoi_band.reset(QgsWkbTypes.PolygonGeometry)
+        if self.aoi_geom is not None:
+            self.aoi_band.setToGeometry(self.aoi_geom, None)
+
     def clear_aoi(self):
         self.aoi_geom = None
         if self.tool:
             self.tool.reset()
+            # Drop the drawing tool too, or the next click keeps adding
+            # vertices to an area the operator just cleared.
+            if self.canvas.mapTool() is self.tool:
+                self.canvas.unsetMapTool(self.tool)
+            self.tool = None
+        self.aoi_band.reset(QgsWkbTypes.PolygonGeometry)
         self.area_note.setText("No area yet — draw one, or select a polygon layer.")
         self.area_note.setStyleSheet("color: grey;")
 
@@ -434,6 +456,7 @@ class DelineatorPanel(QWidget):
     def unload(self):
         if self.task:
             self.task.cancel()
+        self.aoi_band.reset(QgsWkbTypes.PolygonGeometry)
         if self.tool and self.canvas.mapTool() is self.tool:
             self.canvas.unsetMapTool(self.tool)
 

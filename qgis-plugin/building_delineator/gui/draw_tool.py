@@ -19,7 +19,10 @@ class DrawAOITool(QgsMapTool):
         self.canvas = canvas
         self.points = []
         self.band = QgsRubberBand(canvas, QgsWkbTypes.PolygonGeometry)
-        self.band.setColor(QColor(34, 197, 94, 60))
+        # Outline only. A filled band hides the imagery underneath, which is
+        # exactly what the operator is trying to look at while choosing where
+        # to run - and it reads as a result rather than as a boundary.
+        self.band.setFillColor(QColor(0, 0, 0, 0))
         self.band.setStrokeColor(QColor(34, 197, 94))
         self.band.setWidth(2)
         # A second band follows the cursor so the edge being drawn is visible
@@ -76,5 +79,8 @@ class DrawAOITool(QgsMapTool):
             return
         geom = QgsGeometry.fromPolygonXY([[QgsPointXY(p) for p in self.points]
                                           + [QgsPointXY(self.points[0])]])
-        self.ghost.reset(QgsWkbTypes.LineGeometry)
+        # Hand the shape over and clear our own bands: from here the panel
+        # owns the outline, so there is exactly one of it on the canvas no
+        # matter how many times the tool is used.
+        self.reset()
         self.finished.emit(geom)
