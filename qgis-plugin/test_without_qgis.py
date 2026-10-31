@@ -106,6 +106,61 @@ class _Rect:
         return self._b[3]
 
 
+class _Signal:
+    def __init__(self):
+        self.slots = []
+
+    def connect(self, fn):
+        self.slots.append(fn)
+
+    def emit(self, *a):
+        for fn in self.slots:
+            fn(*a)
+
+
+class _Action:
+    def __init__(self, icon=None, text="", parent=None):
+        self.text, self.tip = text, ""
+        self.triggered = _Signal()
+
+    def setStatusTip(self, t):
+        self.tip = t
+
+
+class _ToolBar:
+    def __init__(self):
+        self.actions = []
+
+    def setObjectName(self, n):
+        self.name = n
+
+    def addAction(self, a):
+        self.actions.append(a)
+
+
+class _Iface:
+    """Just enough QgisInterface to see whether initGui/unload are balanced."""
+    def __init__(self):
+        self.toolbars, self.menu, self.icons = [], [], []
+
+    def addToolBar(self, name):
+        tb = _ToolBar()
+        self.toolbars.append(tb)
+        return tb
+
+    def mainWindow(self):
+        return None
+
+    def addPluginToMenu(self, menu, action):
+        self.menu.append((menu, action))
+
+    def removePluginMenu(self, menu, action):
+        self.menu.remove((menu, action))
+
+    def removeToolBarIcon(self, action):
+        self.icons.append(action)
+
+
 def _install_stubs():
     qgis = types.ModuleType("qgis")
     core = types.ModuleType("qgis.core")
@@ -131,11 +186,15 @@ def _install_stubs():
     qtcore.QCoreApplication = _Any
     qtgui = types.ModuleType("qgis.PyQt.QtGui")
     qtgui.QIcon = _Any
-    pyqt.QtCore, pyqt.QtGui = qtcore, qtgui
+    qtwidgets = types.ModuleType("qgis.PyQt.QtWidgets")
+    qtwidgets.QAction = _Action
+    qtwidgets.QMessageBox = _Any
+    pyqt.QtCore, pyqt.QtGui, pyqt.QtWidgets = qtcore, qtgui, qtwidgets
     qgis.PyQt = pyqt
 
     for name, mod in (("qgis", qgis), ("qgis.core", core), ("qgis.PyQt", pyqt),
-                      ("qgis.PyQt.QtCore", qtcore), ("qgis.PyQt.QtGui", qtgui)):
+                      ("qgis.PyQt.QtCore", qtcore), ("qgis.PyQt.QtGui", qtgui),
+                      ("qgis.PyQt.QtWidgets", qtwidgets)):
         sys.modules[name] = mod
 
     osgeo = types.ModuleType("osgeo")
@@ -182,6 +241,55 @@ def main():
         check(f"{cls.__name__} metadata", meta)
     check("provider ids", lambda: (lambda p: (
         p.id() and p.name() and p.longName()))(BuildingDelineatorProvider()))
+
+    print("\nplugin GUI wiring")
+    import building_delineator.plugin as plugin_mod
+    registry = []
+    plugin_mod.QgsApplication = type("A", (), {
+        "processingRegistry": staticmethod(lambda: type("R", (), {
+            "addProvider": staticmethod(lambda p: registry.append(p)),
+            "removeProvider": staticmethod(lambda p: registry.remove(p)),
+        })())})
+
+    iface = _Iface()
+    plug = plugin_mod.BuildingDelineatorPlugin(iface)
+    plug.initGui()
+    check("initGui registers the provider", lambda: _eq(len(registry), 1))
+    check("initGui adds two toolbar buttons",
+          lambda: _eq(len(iface.toolbars[0].actions), 2))
+    check("initGui adds two menu entries", lambda: _eq(len(iface.menu), 2))
+
+    shown = []
+    plugin_mod.QMessageBox = type("MB", (), {
+        "warning": staticmethod(lambda *a, **k: shown.append(a[1]))})
+
+    def button_without_processing():
+        # Processing disabled is exactly the state this plugin was first
+        # opened in, so the button must explain it rather than raise an
+        # ImportError into the QGIS log where nobody will look.
+        sys.modules["processing"] = None
+        try:
+            iface.toolbars[0].actions[0].triggered.emit()
+        finally:
+            del sys.modules["processing"]
+        assert shown, "no message shown when Processing is off"
+
+    check("a button with Processing off explains what to turn on",
+          button_without_processing)
+
+    ran = []
+    fake = types.ModuleType("processing")
+    fake.execAlgorithmDialog = lambda alg, params: ran.append(alg)
+    sys.modules["processing"] = fake
+    iface.toolbars[0].actions[0].triggered.emit()
+    iface.toolbars[0].actions[1].triggered.emit()
+    del sys.modules["processing"]
+    check("the two buttons open the two algorithms",
+          lambda: _eq(ran, ["urbanly:detectinarea", "urbanly:detectinraster"]))
+
+    plug.unload()
+    check("unload removes the provider and the menu entries",
+          lambda: (_eq(len(registry), 0), _eq(len(iface.menu), 0)))
 
     print("\nGeoJSON to features")
     fc = {"features": [

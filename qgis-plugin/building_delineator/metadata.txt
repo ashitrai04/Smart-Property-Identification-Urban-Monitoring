@@ -3,13 +3,16 @@ name=Building Delineator
 qgisMinimumVersion=3.22
 description=Individual building footprints from drone or satellite imagery, delineated by a model trained on Indian low-rise urban fabric.
 about=Sends imagery or a drawn area to an Urbanly model server and returns one polygon per building - not a semantic mask. Built for dense terraced housing, where neighbours share walls and a mask merges a whole block into one shape. Footprints are returned already regularized to rectilinear outlines. The plugin itself contains no model: inference runs on the server you point it at, so QGIS needs no PyTorch and no GPU.
-version=0.1.0
+version=0.2.0
 author=Urbanly
 email=tarunsurya890@gmail.com
 tracker=https://github.com/ashitrai04/Smart-Property-Identification-Urban-Monitoring/issues
 repository=https://github.com/ashitrai04/Smart-Property-Identification-Urban-Monitoring
 homepage=https://github.com/ashitrai04/Smart-Property-Identification-Urban-Monitoring
 category=Analysis
+changelog=
+    0.2.0 Toolbar button and menu entry that open the algorithms directly.
+    0.1.0 First release: two Processing algorithms.
 icon=icon.svg
 experimental=True
 deprecated=False

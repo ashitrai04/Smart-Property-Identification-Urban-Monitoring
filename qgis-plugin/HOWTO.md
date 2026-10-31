@@ -30,8 +30,19 @@ qgis-plugin/
 
 1. QGIS ▸ **Plugins ▸ Manage and Install Plugins ▸ Install from ZIP**
 2. Pick `qgis-plugin/building_delineator.zip`
-3. Open the **Processing Toolbox** (Ctrl+Alt+T). Under **Urbanly ▸ Buildings**
-   there are two algorithms.
+3. **Make sure QGIS's own `Processing` plugin is enabled** — Plugins ▸ Manage
+   and Install Plugins ▸ Installed, tick *Processing*. These are Processing
+   algorithms, so with it off they have nowhere to appear. It ships with QGIS
+   and is on by default, but it can be switched off by accident.
+
+Then either:
+
+- the **Building Delineator toolbar** (two buttons), or
+  **Plugins ▸ Building Delineator**, or
+- the **Processing Toolbox** (Ctrl+Alt+T) under **Urbanly ▸ Buildings**.
+
+The toolbar and the Toolbox open the same algorithm. The Toolbox is also
+where batch mode and the modeller live, so it is worth knowing about.
 
 Set **Model server URL** on first run:
 
