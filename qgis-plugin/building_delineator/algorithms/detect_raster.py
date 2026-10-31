@@ -74,8 +74,8 @@ class DetectInRasterAlgorithm(QgsProcessingAlgorithm):
             raise QgsProcessingException(
                 "That layer has no CRS. The server needs georeferencing to place the "
                 "footprints on the ground.")
-        url = self.parameterAsString(parameters, SERVER, context)
-        check_server(client, url, feedback)
+        url = check_server(client, self.parameterAsString(parameters, SERVER, context),
+                           feedback)
 
         gsd = self.parameterAsDouble(parameters, self.GSD, context) or WORK_GSD
         extent = self.parameterAsExtent(parameters, self.EXTENT, context, layer.crs())

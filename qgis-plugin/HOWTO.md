@@ -44,21 +44,19 @@ Then either:
 The toolbar and the Toolbox open the same algorithm. The Toolbox is also
 where batch mode and the modeller live, so it is worth knowing about.
 
-Set **Model server URL** on first run:
+**Leave Model server URL on `auto`.** The plugin looks the address up the
+same way the webapp does: the server publishes its own current address, and
+`auto` reads it. That is why it works from a second laptop without being
+told anything — and why you should not paste a tunnel URL in, because the
+free tunnel gets a new hostname every restart and a pasted one goes stale.
 
-| where QGIS is | URL |
-|---|---|
-| same machine as the server | `http://127.0.0.1:8777` |
-| anywhere else | the public address the webapp uses |
+`auto` tries the published address first and falls back to
+`http://127.0.0.1:8777` for when QGIS is on the same machine as the server.
+Paste an explicit address only for a fixed hostname of your own.
 
-Get the public one with:
-
-```
-curl https://asashit-smart-property-backend.hf.space/api/gpu-server
-```
-
-The server must be running — `start_everything.bat`. The plugin checks on
-start and says so plainly rather than failing at the first upload.
+Either way the server has to be running somewhere — `start_everything.bat` on
+the machine with the GPU. The plugin checks before it does any work and says
+what to start, rather than failing at the first upload.
 
 ## The panel — start here
 

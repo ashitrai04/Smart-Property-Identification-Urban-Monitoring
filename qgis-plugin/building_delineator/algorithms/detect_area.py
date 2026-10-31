@@ -69,8 +69,8 @@ class DetectInAreaAlgorithm(QgsProcessingAlgorithm):
             self.OUTPUT, "Detected features", type=QgsProcessing.TypeVectorPolygon))
 
     def processAlgorithm(self, parameters, context, feedback):
-        url = self.parameterAsString(parameters, SERVER, context)
-        check_server(client, url, feedback)
+        url = check_server(client, self.parameterAsString(parameters, SERVER, context),
+                           feedback)
         task = self._tasks[self.parameterAsEnum(parameters, self.TASK, context)][0]
 
         aoi = self._aoi(parameters, context, feedback)

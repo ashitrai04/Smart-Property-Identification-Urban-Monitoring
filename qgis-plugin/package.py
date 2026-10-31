@@ -27,6 +27,36 @@ REQUIRED_META = ["name", "qgisMinimumVersion", "description", "version", "author
                  "email", "about", "tracker", "repository", "license"]
 
 
+def check_compiles():
+    """Every .py must compile before it can be packaged.
+
+    QGIS imports a plugin at runtime, so a syntax error does not surface until
+    someone clicks the button - and then it surfaces as a dialog full of
+    traceback. A zip shipped with one is worse than no zip. This is cheap and
+    catches the whole class.
+    """
+    bad = []
+    for root, dirs, names in os.walk(SRC):
+        dirs[:] = [d for d in dirs if d not in SKIP_DIRS]
+        for n in sorted(names):
+            if not n.endswith(".py"):
+                continue
+            full = os.path.join(root, n)
+            rel = os.path.relpath(full, SRC)
+            try:
+                # compile() rather than py_compile: nothing is written, so
+                # there is no cfile to find a home for, and on Windows
+                # os.devnull is not a usable one.
+                with open(full, encoding="utf-8") as fh:
+                    compile(fh.read(), full, "exec")
+            except SyntaxError as e:
+                bad.append(f"  {rel}:{e.lineno}: {e.msg}")
+            except UnicodeDecodeError as e:
+                bad.append(f"  {rel}: not valid UTF-8 ({e})")
+    if bad:
+        sys.exit("will not package - these do not compile:\n" + "\n".join(bad))
+
+
 def check_metadata():
     path = os.path.join(SRC, "metadata.txt")
     if not os.path.exists(path):
@@ -59,6 +89,7 @@ def files():
 
 
 def main():
+    check_compiles()
     version, name = check_metadata()
     if os.path.exists(OUT):
         os.remove(OUT)

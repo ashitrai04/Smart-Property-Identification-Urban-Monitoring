@@ -12,13 +12,13 @@ from qgis.PyQt.QtCore import QVariant
 
 WGS84 = QgsCoordinateReferenceSystem("EPSG:4326")
 SERVER = "SERVER"
-DEFAULT_SERVER = "http://127.0.0.1:8777"
+DEFAULT_SERVER = "auto"
 
 
 def server_param():
     return QgsProcessingParameterString(
         SERVER,
-        "Model server URL",
+        "Model server URL (\"auto\" finds it)",
         defaultValue=DEFAULT_SERVER,
         optional=False,
     )
@@ -86,4 +86,4 @@ def check_server(client, url, feedback):
             f"(capabilities: {', '.join(caps) or 'none'}).")
     feedback.pushInfo(f"Server {url} — {h.get('device', '?')}"
                       + (f", {h['gpu']['name']}" if h.get("gpu") else ""))
-    return h
+    return url

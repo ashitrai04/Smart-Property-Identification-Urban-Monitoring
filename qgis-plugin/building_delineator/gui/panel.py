@@ -52,6 +52,7 @@ class DelineatorPanel(QWidget):
         self.iface = iface
         self.canvas = iface.mapCanvas()
         self.aoi_geom = None          # QgsGeometry, canvas CRS
+        self.resolved = None          # the address "auto" resolved to
         self.task = None
         self.layer = None
         self.pending = []             # [(fid, reg_ring, due_ms)]
@@ -75,7 +76,13 @@ class DelineatorPanel(QWidget):
         row = QHBoxLayout()
         self.server = QComboBox()
         self.server.setEditable(True)
-        self.server.addItems(["http://127.0.0.1:8777", "http://127.0.0.1:8800"])
+        # "auto" first and selected: the plugin asks the backend where the
+        # server currently is. The free tunnel changes hostname on every
+        # restart, so a remembered URL goes stale but "auto" never does.
+        self.server.addItems(["auto", "http://127.0.0.1:8777", "http://127.0.0.1:8800"])
+        self.server.setToolTip(
+            "Leave on \"auto\" to look the server up, which works whether it is "
+            "on this machine or another one. Or paste an address.")
         self.btn_check = QPushButton("Check")
         self.btn_check.clicked.connect(self.refresh_models)
         row.addWidget(self.server, 1)
@@ -184,19 +191,32 @@ class DelineatorPanel(QWidget):
 
     # ── server ──────────────────────────────────────────────────
     def refresh_models(self):
-        url = self.server.currentText().strip()
+        asked = self.server.currentText().strip()
         self.model.clear()
+        self.server_note.setText("looking…")
+        self.server_note.setStyleSheet("color: grey;")
+        QgsApplication.processEvents()
+        url = client.resolve(asked)
+        self.resolved = url
         try:
             h = client.health(url, timeout=8)
             tasks = client.tasks(url, timeout=10)
         except client.ServerError as e:
-            self.server_note.setText(f"✗ {e}")
+            self.server_note.setText(
+                f"✗ {e}" + "\n\n"
+                + ("No server found. Start it with start_everything.bat on the "
+                   "machine that has the GPU — it publishes its own address, "
+                   "which this panel looks up."
+                   if asked.lower() in ("", "auto") else
+                   "Or set this back to \"auto\" to look the address up."))
             self.server_note.setStyleSheet("color: #b91c1c;")
             return
         for t in tasks:
             self.model.addItem(t["label"], t["id"])
         gpu = (h.get("gpu") or {}).get("name")
-        self.server_note.setText(f"✓ {h.get('device', '?')}" + (f" · {gpu}" if gpu else ""))
+        where = f"\n{url}" if asked.lower() in ("", "auto") else ""
+        self.server_note.setText(f"✓ {h.get('device', '?')}"
+                                 + (f" · {gpu}" if gpu else "") + where)
         self.server_note.setStyleSheet("color: #15803d;")
 
     # ── area ────────────────────────────────────────────────────
@@ -272,7 +292,7 @@ class DelineatorPanel(QWidget):
             QMessageBox.information(self, "No models",
                                     "Check the server first — no model list yet.")
             return
-        url = self.server.currentText().strip()
+        url = getattr(self, "resolved", None) or client.resolve(self.server.currentText())
         scales, votes = QUALITY[self.quality.currentIndex()][1:]
         params = {
             "scales": [float(x) for x in scales.split(",")],

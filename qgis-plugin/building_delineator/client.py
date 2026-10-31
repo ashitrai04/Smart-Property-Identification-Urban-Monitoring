@@ -16,7 +16,16 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
-DEFAULT_SERVER = os.environ.get("URBANLY_SERVER", "http://127.0.0.1:8777")
+DEFAULT_SERVER = os.environ.get("URBANLY_SERVER", "auto")
+LOCAL_SERVER = "http://127.0.0.1:8777"
+
+# Where the server publishes its own current address. The free Cloudflare
+# tunnel gets a new random hostname every restart, so a URL written down today
+# is wrong tomorrow; the server writes its address here and the webapp reads
+# it. The plugin does the same, which is what lets it work from a laptop that
+# has never been told anything.
+DISCOVERY = os.environ.get("URBANLY_DISCOVERY",
+                           "https://asashit-smart-property-backend.hf.space/api/gpu-server")
 TIMEOUT = 900
 
 
@@ -76,6 +85,39 @@ def _multipart(fields, files):
 
 
 # ── the two ways to run a model ──────────────────────────────────
+def discover(timeout=8):
+    """The server's current public address, or None.
+
+    Never raises: discovery failing is normal (no internet, backend asleep)
+    and the caller still has the local address to fall back on.
+    """
+    try:
+        req = urllib.request.Request(DISCOVERY)
+        req.add_header("Accept-Encoding", "identity")
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            d = json.loads(resp.read().decode("utf-8"))
+        url = (d or {}).get("url") or ""
+        return url.rstrip("/") if d.get("online") and url else None
+    except Exception:
+        return None
+
+
+def resolve(server=None, timeout=8):
+    """Turn whatever the user typed into a URL to call.
+
+    "auto" (the default) asks the discovery endpoint first and falls back to
+    localhost, so the same plugin works on the machine running the server and
+    on a laptop across the country without being configured either way.
+    """
+    server = (server or "").strip()
+    if server and server.lower() != "auto":
+        return server.rstrip("/")
+    found = discover(timeout=timeout)
+    if found:
+        return found
+    return LOCAL_SERVER
+
+
 def health(server=DEFAULT_SERVER, timeout=10):
     return _request(server, "/api/health", timeout=timeout)
 

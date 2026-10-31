@@ -323,6 +323,20 @@ def main():
           lambda: (_eq(len(registry), 0), _eq(len(iface.menu), 0),
                    _eq(len(iface.docks), 0)))
 
+    print("\nserver discovery")
+    check("an explicit URL passes straight through",
+          lambda: _eq(client.resolve("http://example.test:1234/"),
+                      "http://example.test:1234"))
+    check("auto falls back to localhost when discovery finds nothing",
+          lambda: _with_no_discovery(
+              client, lambda: _eq(client.resolve("auto"), client.LOCAL_SERVER)))
+    check("discover returns None rather than raising when offline",
+          lambda: _with_no_discovery(
+              client, lambda: _eq(client.discover(timeout=1), None)))
+    check("an empty server box behaves like auto",
+          lambda: _with_no_discovery(
+              client, lambda: _eq(client.resolve(""), client.LOCAL_SERVER)))
+
     print("\nGeoJSON to features")
     fc = {"features": [
         {"geometry": {"type": "Polygon",
@@ -395,6 +409,20 @@ def main():
     print()
     print(("FAILED: " + ", ".join(FAILS)) if FAILS else "all checks passed")
     return 1 if FAILS else 0
+
+
+def _with_no_discovery(client, fn):
+    """Run fn with the discovery endpoint pointed somewhere dead.
+
+    A laptop with no route to the backend is the normal case this has to
+    survive, so it is worth testing rather than assuming.
+    """
+    old = client.DISCOVERY
+    client.DISCOVERY = "http://127.0.0.1:9/nothing"
+    try:
+        return fn()
+    finally:
+        client.DISCOVERY = old
 
 
 def _eq(got, want):
