@@ -300,6 +300,100 @@ def reload_weights():
             "note": "the next request loads it"}
 
 
+# The resize factor search. The network represents buildings 30-100 px across
+# and an Ongole house is ~63 px at the resolution that scored best, so the
+# factor that puts the median detection near 63 px is the one to run at.
+AUTO_TARGET_PX = 63.0
+AUTO_FACTORS = (0.15, 0.22, 0.33, 0.5, 0.75, 1.0, 1.5, 2.2)
+AUTO_PROBE = 1024          # probe a centre crop: the search costs the same for any image
+
+
+def _decode(raw, filename=""):
+    """Decode an upload to RGB, and read its real GSD when the file carries one.
+
+    A GeoTIFF states its own ground resolution in its transform, which is
+    better than anything we could infer - so for TIFFs go through rasterio
+    first and only fall back to the generic decoder. This is also what lets a
+    full-size orthophoto tile load at all: cv2 has no notion of a BigTIFF.
+    """
+    ext = os.path.splitext(filename or "")[1].lower()
+    if ext in (".tif", ".tiff"):
+        import tempfile
+        import rasterio
+        from rasterio.enums import Resampling
+        fd, tmp = tempfile.mkstemp(suffix=ext)
+        try:
+            with os.fdopen(fd, "wb") as fh:
+                fh.write(raw)
+            with rasterio.open(tmp) as src:
+                gsd = None
+                if src.crs:
+                    a = abs(src.transform.a)
+                    if src.crs.is_geographic:          # degrees -> metres at this latitude
+                        lat = (src.bounds.top + src.bounds.bottom) / 2
+                        a = a * 111320 * float(np.cos(np.radians(lat)))
+                    gsd = float(a)
+                n = min(3, src.count)
+                arr = src.read(list(range(1, n + 1)), out_dtype="uint8",
+                               resampling=Resampling.average)
+                if n == 1:
+                    arr = np.repeat(arr, 3, axis=0)
+                return np.ascontiguousarray(np.transpose(arr[:3], (1, 2, 0))), gsd
+        except Exception as e:
+            print(f"[hisup] rasterio could not read {filename}: {e}", flush=True)
+        finally:
+            try:
+                os.remove(tmp)
+            except OSError:
+                pass
+
+    arr = cv2.imdecode(np.frombuffer(raw, np.uint8), cv2.IMREAD_COLOR)
+    if arr is None:
+        raise HTTPException(400, f"could not decode {filename or 'the image'}")
+    return cv2.cvtColor(arr, cv2.COLOR_BGR2RGB), None
+
+
+def _auto_factor(img, core, lo):
+    """Work out how much to resize an image whose ground resolution is unknown.
+
+    Detect on a small centre crop at a ladder of factors and keep the one whose
+    buildings come out closest to the size the network was trained to see. A
+    wrong guess shows up clearly: too coarse and nothing is found, too fine and
+    the few detections are enormous. Scoring on detection count alone would
+    always pick the finest factor, so count is weighted by how far the median
+    building is from the trained size, on a log scale because being 2x too big
+    and 2x too small are equally wrong.
+    """
+    H, W = img.shape[:2]
+    y0 = max(0, (H - AUTO_PROBE) // 2)
+    x0 = max(0, (W - AUTO_PROBE) // 2)
+    crop = img[y0:y0 + AUTO_PROBE, x0:x0 + AUTO_PROBE]
+
+    best, best_score, tried = 1.0, -1.0, []
+    for f in AUTO_FACTORS:
+        h, w = int(crop.shape[0] * f), int(crop.shape[1] * f)
+        if min(h, w) < TILE // 2:
+            continue
+        im = cv2.resize(crop, (w, h), interpolation=(cv2.INTER_AREA if f < 1 else cv2.INTER_CUBIC))
+        try:
+            px = _detect_one(im, 0.125, core, lo, CORE_M2)
+        except Exception as e:
+            print(f"[hisup] auto probe failed at {f}: {e}", flush=True)
+            continue
+        polys = _dedup(_to_shapely(px, 1.0))
+        if len(polys) < 2:
+            tried.append({"factor": f, "n": len(polys), "score": 0.0})
+            continue
+        med_px = float(np.median([np.sqrt(g.area) for g in polys]))
+        fit = np.exp(-((np.log(max(med_px, 1.0) / AUTO_TARGET_PX)) ** 2) / 0.5)
+        score = len(polys) * fit
+        tried.append({"factor": f, "n": len(polys), "median_px": round(med_px, 1),
+                      "score": round(float(score), 2)})
+        if score > best_score:
+            best, best_score = f, score
+    return best, tried
+
+
 @router.post("/predict")
 async def predict(
     file: UploadFile = File(...),
@@ -312,22 +406,27 @@ async def predict(
 ):
     """Delineate buildings in an uploaded image.
 
-    `gsd` is the ground sample distance of the upload in metres per pixel. It
-    is what makes the resampling meaningful; without it the image is treated
-    as already being at the first working scale, which is right for a crop
-    exported at that resolution and wrong for anything else.
+    `gsd` is the ground sample distance of the upload in metres per pixel.
+    It no longer has to be supplied: a GeoTIFF states its own, and for
+    everything else the resolution is found by probing (`_auto_factor`).
+    Passing it explicitly still wins, since a known value beats a measured one.
     """
     raw = await file.read()
-    arr = cv2.imdecode(np.frombuffer(raw, np.uint8), cv2.IMREAD_COLOR)
-    if arr is None:
-        raise HTTPException(400, "could not decode the image")
-    img = cv2.cvtColor(arr, cv2.COLOR_BGR2RGB)
+    img, geo_gsd = _decode(raw, file.filename or "")
 
     want = [float(x) for x in scales.split(",") if x.strip()] or SCALES
     mv = min_votes or MIN_VOTES
     co = core or CORE
     l0 = lo or LO
-    src_gsd = gsd if gsd > 0 else want[0]
+
+    probe = None
+    if gsd > 0:
+        src_gsd, gsd_source = gsd, "declared"
+    elif geo_gsd and geo_gsd > 0:
+        src_gsd, gsd_source = geo_gsd, "georeferenced"
+    else:
+        f, probe = _auto_factor(img, co, l0)
+        src_gsd, gsd_source = f * 0.125, "auto"
 
     t0 = time.time()
     passes = []
@@ -383,7 +482,9 @@ async def predict(
         "model": "hisup",
         "count": len(feats),
         "seconds": round(time.time() - t0, 1),
-        "image": {"width": img.shape[1], "height": img.shape[0], "gsd": src_gsd},
+        "image": {"width": img.shape[1], "height": img.shape[0], "gsd": src_gsd,
+                  "gsd_source": gsd_source},
         "settings": {"scales": want, "min_votes": mv, "core": co, "lo": l0},
+        "auto": probe,
         "geojson": {"type": "FeatureCollection", "features": feats},
     })

@@ -48,17 +48,21 @@ if "%SKIP_ASK%"=="1" (
 )
 echo [1/4] Ollama
 curl -s -o nul -m 4 http://127.0.0.1:11434/api/tags
-if errorlevel 1 (
-    echo       not running - starting it
-    start "" /min ollama serve
-    for /l %%i in (1,1,20) do (
-        curl -s -o nul -m 2 http://127.0.0.1:11434/api/tags && goto ollama_up
-        ping -n 2 127.0.0.1 >nul
-    )
-    :ollama_up
-) else (
+if not errorlevel 1 (
     echo       already running
+    goto ollama_up
 )
+echo       not running - starting it
+start "" /min ollama serve
+rem The wait loop and its exit label stay at the top level: cmd parses a
+rem parenthesised block in one go, so a label written inside one is a syntax
+rem error - "^) was unexpected at this time" - before a single line runs.
+for /l %%i in (1,1,20) do (
+    curl -s -o nul -m 2 http://127.0.0.1:11434/api/tags && goto ollama_up
+    ping -n 2 127.0.0.1 >nul
+)
+echo       WARNING: no answer in 40s - the chat box will be offline
+:ollama_up
 
 rem ---------- 2. warm the chat model ----------
 echo.
