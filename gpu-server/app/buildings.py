@@ -262,7 +262,44 @@ def _vote(passes, iou_thr, min_votes):
             else:
                 kept.append(g)
                 votes.append(1)
-    return [g for g, v in zip(kept, votes) if v >= min_votes], votes
+    survived = [g for g, v in zip(kept, votes) if v >= min_votes]
+    return _drop_contained(survived), votes
+
+
+def _drop_contained(geoms, thr=0.7):
+    """Remove a footprint that sits inside another one.
+
+    Voting matches by IoU, which punishes a size difference hard: a small
+    polygon wholly inside a larger one scores small/large, so at 16 m2 inside
+    32 m2 the IoU is 0.5 even though containment is 98%. Such a pair is not
+    two buildings, it is one building found at two scales - one of them having
+    caught only part of the roof - and the vote lets both through.
+
+    Measured on a real run: 4 scales returned 18 footprints to a single pass's
+    16, and one of the extra two was exactly this, a 16.3 m2 polygon 98.4%
+    inside a 31.9 m2 one. Judging containment by the SMALLER area, the way
+    _dedup already does within a pass, is what catches it.
+
+    The larger polygon is kept: the partial detection is the broken one.
+    """
+    if len(geoms) < 2:
+        return list(geoms)
+    from shapely.strtree import STRtree
+    order = sorted(range(len(geoms)), key=lambda i: -geoms[i].area)
+    tree = STRtree(geoms)
+    dead = set()
+    for i in order:
+        if i in dead:
+            continue
+        g = geoms[i]
+        for j in tree.query(g):
+            j = int(j)
+            if j == i or j in dead or geoms[j].area > g.area:
+                continue
+            m = geoms[j].area
+            if m > 0 and g.intersection(geoms[j]).area / m > thr:
+                dead.add(j)
+    return [g for i, g in enumerate(geoms) if i not in dead]
 
 
 # ── endpoints ────────────────────────────────────────────────────

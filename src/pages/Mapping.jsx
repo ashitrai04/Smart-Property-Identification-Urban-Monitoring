@@ -1996,10 +1996,14 @@ export default function Mapping() {
 
                 {/* ═══════════ AOI — floating card, drag it by its header ═══════════ */}
                 <Draggable nodeRef={aoiCardRef} handle=".aoi-drag" cancel="button" bounds="parent">
+                    {/* max-h + a scrolling body: with a model run finished this
+                        card carries results, a legend and controls, which is
+                        taller than the map on a laptop screen. Without a cap the
+                        bottom of it simply could not be reached. */}
                     <div ref={aoiCardRef} data-tour="aoi-panel"
-                        className="anim-fade absolute right-3 top-3 z-30 w-[300px] max-w-[calc(100%-24px)] overflow-hidden rounded-[8px]"
+                        className="anim-fade absolute right-3 top-3 z-30 flex max-h-[calc(100%-24px)] w-[300px] max-w-[calc(100%-24px)] flex-col overflow-hidden rounded-[8px]"
                         style={{ background: "var(--surface)", border: "1px solid var(--line)", boxShadow: "var(--sh-lg)" }}>
-                        <div className="aoi-drag flex cursor-move select-none items-center gap-1.5 px-2.5"
+                        <div className="aoi-drag flex shrink-0 cursor-move select-none items-center gap-1.5 px-2.5"
                             style={{ height: 38, borderBottom: aoiMin ? "none" : "1px solid var(--line)" }}>
                             <GripVertical size={12} style={{ color: "var(--text-mute)" }} />
                             <span className="panel-title flex flex-1 items-center gap-1.5">
@@ -2012,7 +2016,7 @@ export default function Mapping() {
                             </button>
                         </div>
                         {!aoiMin && (
-                            <div className="p-3">
+                            <div className="min-h-0 flex-1 overflow-y-auto p-3">
                                 {drawMode ? (
                                     <div className="space-y-2">
                                         <div className="flex items-start gap-2 rounded-[6px] px-2.5 py-2"
