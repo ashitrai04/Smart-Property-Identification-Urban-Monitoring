@@ -46,6 +46,10 @@ GPU_SERVER = os.environ.get("GPU_SERVER_URL", "http://127.0.0.1:8800").rstrip("/
 # Prefixes the model server owns outright. Deliberately not /imagery or /jobs:
 # both servers answer those from their own stores, and this one's answer is the
 # correct one for the map.
+#
+# This tuple is documentation. What actually routes a request to the model
+# server is the explicit @app.api_route list further down - adding a prefix
+# here and nowhere else gets a 404, which is exactly what happened to /height.
 GPU_PREFIXES = ("/hisup/", "/area", "/pothole/", "/predict", "/change-detection",
                 "/r2/", "/height")
 # A four-resolution pass over a large image is minutes, not seconds.
@@ -555,6 +559,10 @@ async def _proxy(request, path):
 @app.api_route("/hisup/{rest:path}", methods=["GET", "POST", "OPTIONS"])
 @app.api_route("/pothole/{rest:path}", methods=["GET", "POST", "OPTIONS"])
 @app.api_route("/r2/{rest:path}", methods=["GET", "POST", "OPTIONS"])
+# Building heights: the model server forwards these on to the machine holding
+# the DSM and DTM. Only this server is reachable from the webapp, so without a
+# route here the height calls 404 before they ever leave this process.
+@app.api_route("/height/{rest:path}", methods=["GET", "POST", "OPTIONS"])
 async def _proxy_prefixed(request: Request, rest: str = ""):
     return await _proxy(request, request.url.path)
 
