@@ -337,6 +337,23 @@ def main():
           lambda: _with_no_discovery(
               client, lambda: _eq(client.resolve(""), client.LOCAL_SERVER)))
 
+    # The field failure this guards: the free tunnel takes a new hostname on
+    # every restart and the old one stops resolving, so a published address is
+    # not evidence that it works. Returning one unchecked killed a run with
+    # "getaddrinfo failed" while the server was up on localhost.
+    def _dead_discovery(body):
+        real_d, real_a = client.discover, client.alive
+        client.discover = lambda timeout=8: "https://gone.invalid"
+        client.alive = lambda base, timeout=2.5: False
+        try:
+            return body()
+        finally:
+            client.discover, client.alive = real_d, real_a
+
+    check("a published address that does not answer is not returned",
+          lambda: _dead_discovery(
+              lambda: _eq(client.resolve("auto"), client.LOCAL_SERVER)))
+
     print("\nGeoJSON to features")
     fc = {"features": [
         {"geometry": {"type": "Polygon",

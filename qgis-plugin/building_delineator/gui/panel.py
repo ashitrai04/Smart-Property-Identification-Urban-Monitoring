@@ -314,7 +314,15 @@ class DelineatorPanel(QWidget):
             QMessageBox.information(self, "No models",
                                     "Check the server first — no model list yet.")
             return
-        url = getattr(self, "resolved", None) or client.resolve(self.server.currentText())
+        # Re-resolve rather than reusing what Check found. The free tunnel takes
+        # a new hostname whenever the server restarts, and the old one stops
+        # resolving entirely - so an address that was right when Check ran can
+        # be dead by the time Run is pressed, which failed the job with
+        # "getaddrinfo failed" while the server itself was perfectly fine.
+        # resolve() is cheap and prefers localhost, so this costs nothing when
+        # QGIS and the server share a machine.
+        url = client.resolve(self.server.currentText())
+        self.resolved = url
         scales, votes = QUALITY[self.quality.currentIndex()][1:]
         params = {
             "scales": [float(x) for x in scales.split(",")],

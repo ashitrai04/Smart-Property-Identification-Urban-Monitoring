@@ -102,19 +102,46 @@ def discover(timeout=8):
         return None
 
 
+def alive(base, timeout=2.5):
+    """Does this address answer right now? Never raises."""
+    try:
+        req = urllib.request.Request(base.rstrip("/") + "/api/health")
+        req.add_header("Accept-Encoding", "identity")
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            return resp.status == 200
+    except Exception:
+        return False
+
+
 def resolve(server=None, timeout=8):
     """Turn whatever the user typed into a URL to call.
 
-    "auto" (the default) asks the discovery endpoint first and falls back to
-    localhost, so the same plugin works on the machine running the server and
-    on a laptop across the country without being configured either way.
+    "auto" (the default) works on the machine running the server and on a
+    laptop across the country, without being configured either way.
+
+    Order matters, and it is not the obvious one:
+
+    1. Localhost first. When QGIS is on the same machine as the server this is
+       both faster - no round trip through Cloudflare - and immune to the
+       tunnel churn below.
+    2. Then the published address, but only if it actually answers.
+
+    The published address is checked rather than trusted because the free
+    Cloudflare tunnel takes a new hostname on every restart, and the old one
+    stops resolving at all. A stale entry used to be returned as-is and the
+    run died on "getaddrinfo failed" - with a working server sitting on
+    localhost the whole time.
     """
     server = (server or "").strip()
     if server and server.lower() != "auto":
         return server.rstrip("/")
+    if alive(LOCAL_SERVER):
+        return LOCAL_SERVER
     found = discover(timeout=timeout)
-    if found:
+    if found and alive(found, timeout=min(timeout, 6)):
         return found
+    # Nothing answered. Hand back localhost so the error names something the
+    # user can act on, rather than a hostname that no longer exists.
     return LOCAL_SERVER
 
 
