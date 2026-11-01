@@ -306,44 +306,6 @@ export default function AreaModelPanel({ map, aoiFeatures }) {
         if (pollRef.current) clearInterval(pollRef.current);
     }, [clearLayer]);
 
-    // ── a result handed over from Analysis ──────────────────────
-    useEffect(() => {
-        if (!map) return;
-        const d = takeFromMap();
-        if (!d) return;
-        setHandoff(d);
-        featsRef.current = (d.geojson.features || []).map((f, i) => ({
-            type: "Feature",
-            geometry: f.geometry,
-            properties: {
-                ...f.properties, colour: nextColour(), stage: "reg", t: 0, id: i,
-                floorBin: floorBin(f.properties?.floors),
-                hlabel: heightLabel(f.properties),
-            },
-        }));
-        setCount(featsRef.current.length);
-        setDone(true);
-        push();
-        // Analysis may already have measured these. If not — an older result,
-        // or the laptop was off then — measure them now.
-        if (featsRef.current.some((f) => f.properties.height_m != null)) {
-            recount();
-        } else {
-            heightsAvailable().then((hp) => {
-                heightOkRef.current = hp.ok;
-                if (hp.ok) measureBatch(featsRef.current);
-                else setHeightNote(hp.reason);
-            });
-        }
-        try {
-            const xs = [], ys = [];
-            for (const f of featsRef.current) for (const [x, y] of f.geometry.coordinates[0]) { xs.push(x); ys.push(y); }
-            if (xs.length) map.fitBounds([[Math.min(...xs), Math.min(...ys)], [Math.max(...xs), Math.max(...ys)]],
-                                         { padding: 60, duration: 800 });
-        } catch { /* a bad ring should not stop the overlay showing */ }
-        // takeFromMap consumes the handoff, so a re-run is a no-op early return.
-    }, [map, push, measureBatch, recount]);
-
     /*
      * Heights, measured alongside detection rather than after it.
      *
@@ -391,6 +353,45 @@ export default function AreaModelPanel({ map, aoiFeatures }) {
             measuringRef.current -= 1;
         }
     }, [push, recount]);
+
+    // ── a result handed over from Analysis ──────────────────────
+    useEffect(() => {
+        if (!map) return;
+        const d = takeFromMap();
+        if (!d) return;
+        setHandoff(d);
+        featsRef.current = (d.geojson.features || []).map((f, i) => ({
+            type: "Feature",
+            geometry: f.geometry,
+            properties: {
+                ...f.properties, colour: nextColour(), stage: "reg", t: 0, id: i,
+                floorBin: floorBin(f.properties?.floors),
+                hlabel: heightLabel(f.properties),
+            },
+        }));
+        setCount(featsRef.current.length);
+        setDone(true);
+        push();
+        // Analysis may already have measured these. If not — an older result,
+        // or the laptop was off then — measure them now.
+        if (featsRef.current.some((f) => f.properties.height_m != null)) {
+            recount();
+        } else {
+            heightsAvailable().then((hp) => {
+                heightOkRef.current = hp.ok;
+                if (hp.ok) measureBatch(featsRef.current);
+                else setHeightNote(hp.reason);
+            });
+        }
+        try {
+            const xs = [], ys = [];
+            for (const f of featsRef.current) for (const [x, y] of f.geometry.coordinates[0]) { xs.push(x); ys.push(y); }
+            if (xs.length) map.fitBounds([[Math.min(...xs), Math.min(...ys)], [Math.max(...xs), Math.max(...ys)]],
+                                         { padding: 60, duration: 800 });
+        } catch { /* a bad ring should not stop the overlay showing */ }
+        // takeFromMap consumes the handoff, so a re-run is a no-op early return.
+    }, [map, push, measureBatch, recount]);
+
 
     // ── running ─────────────────────────────────────────────────
     const poll = useCallback((id) => {
