@@ -41,6 +41,28 @@ const LABEL = "area-model-label";
  */
 const LABEL_MINZOOM = 16.5;
 
+/*
+ * How hard to work, mirroring the QGIS plugin's own presets.
+ *
+ * "Best" runs the model at four resolutions and keeps only what two of them
+ * agree on. It finds a little more, and it costs about four times as much:
+ * measured on one AOI, 98.3s against 28.1s for a single pass, for 18
+ * buildings against 16.
+ *
+ * Fast is the default here, deliberately. Every job on this machine queues
+ * behind every other one - a 6 GB card cannot run two multi-scale passes - so
+ * a slow default does not just make your own run slow, it blocks the next
+ * person's. Reach for Best on a small area you care about.
+ */
+const QUALITY = [
+    { id: "fast", label: "Fast — single pass",
+      note: "about 4x quicker; a few less buildings",
+      scales: [0.125], votes: 1 },
+    { id: "best", label: "Best — four resolutions, agreement filter",
+      note: "finds slightly more, takes about 4x as long",
+      scales: [0.08, 0.10, 0.125, 0.15], votes: 2 },
+];
+
 // How long a building shows its raw outline before the regularized one
 // replaces it. Long enough to see the shape snap square, short enough that a
 // busy window does not look stalled.
@@ -117,6 +139,7 @@ export default function AreaModelPanel({ map, aoiFeatures }) {
     const [heightNote, setHeightNote] = useState(""); // why there are no heights
     const [byFloors, setByFloors] = useState(false);  // colour by storeys, not identity
     const [labels, setLabels] = useState(true);       // height written on each roof
+    const [quality, setQuality] = useState("fast");
     const [saving, setSaving] = useState(false);
 
     const heightOkRef = useRef(false);
@@ -459,6 +482,7 @@ export default function AreaModelPanel({ map, aoiFeatures }) {
         if (!hp.ok) setHeightNote(hp.reason);
 
         sinceRef.current = 0;
+        const q = QUALITY.find((x) => x.id === quality) || QUALITY[0];
         const aoi = aoiFeatures.length === 1
             ? aoiFeatures[0]
             : { type: "Feature", properties: {},
@@ -466,7 +490,10 @@ export default function AreaModelPanel({ map, aoiFeatures }) {
         try {
             const r = await gpuOnlyFetch("/area", {
                 method: "POST", headers: { "content-type": "application/json" },
-                body: JSON.stringify({ task, aoi }),
+                body: JSON.stringify({
+                    task, aoi,
+                    scales: q.scales, min_votes: q.votes,
+                }),
             });
             const d = await r.json();
             if (!r.ok) throw new Error(d.detail || `HTTP ${r.status}`);
@@ -571,6 +598,20 @@ export default function AreaModelPanel({ map, aoiFeatures }) {
                 {list.map((t) => <option key={t.id} value={t.id}>{t.label}</option>)}
             </select>
             {chosen?.note && <p className="text-[10px]" style={{ color: "var(--text-dim)" }}>{chosen.note}</p>}
+
+            {task === "hisup" && (
+                <>
+                    <select value={quality} onChange={(e) => setQuality(e.target.value)} disabled={running}
+                            className="w-full rounded-md px-2 py-1.5 text-[11px]"
+                            style={{ background: "var(--surface)", border: "1px solid var(--line)",
+                                     color: "var(--text-primary)" }}>
+                        {QUALITY.map((q) => <option key={q.id} value={q.id}>{q.label}</option>)}
+                    </select>
+                    <p className="text-[10px]" style={{ color: "var(--text-dim)" }}>
+                        {(QUALITY.find((q) => q.id === quality) || QUALITY[0]).note}
+                    </p>
+                </>
+            )}
 
             {handoff && (
                 <p className="rounded-md px-2 py-1.5 text-[10px]"
