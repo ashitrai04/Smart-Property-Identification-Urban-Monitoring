@@ -1,4 +1,4 @@
-import { gpuOnlyFetch } from "./modelApi";
+import { gpuBase, probeGpu } from "./modelApi";
 
 /*
  * Building heights, from the DSM laptop.
@@ -28,6 +28,40 @@ export const HEIGHT_FIELDS = [
 const CHUNK = 300;
 const PROBE_TTL = 60_000;
 
+/**
+ * fetch() against the height endpoints.
+ *
+ * Deliberately NOT gpuOnlyFetch. That helper marks the whole GPU server down
+ * for a minute whenever a call fails, and the detection polling reads the same
+ * flag - so one height hiccup made every later call, detection included,
+ * report GPU_OFFLINE. Heights are an enrichment; they are not allowed to take
+ * the model server offline on everyone else's behalf.
+ *
+ * probeGpu() is still awaited because it is what discovers the server's
+ * current address, but its verdict is not treated as fatal here: the address
+ * is what is wanted, and the request itself decides whether heights work.
+ */
+export async function heightFetch(path, init = {}) {
+    await probeGpu();
+    const base = gpuBase();
+    if (!base) {
+        const e = new Error("no model server address is known yet");
+        e.quiet = true;
+        throw e;
+    }
+    return fetch(base + path, init);
+}
+
+/** Turn whatever went wrong into something worth showing a person. */
+function readable(e) {
+    const m = String(e?.message || e || "");
+    if (m === "GPU_OFFLINE") return "the model server is offline";
+    if (m === "Failed to fetch" || e?.name === "TypeError") {
+        return "the model server could not be reached";
+    }
+    return m || "the height server did not answer";
+}
+
 let probe = { at: 0, ok: false, reason: "not checked yet", info: null };
 let inflight = null;
 
@@ -37,19 +71,21 @@ export async function heightsAvailable(force = false) {
     if (inflight) return inflight;
     inflight = (async () => {
         try {
-            const r = await gpuOnlyFetch("/height/health");
+            const r = await heightFetch("/height/health");
+            if (r.status === 404) {
+                // The data server proxies model calls; a 404 here means it has
+                // no /height route, not that the DSM machine is down.
+                probe = { at: Date.now(), ok: false, info: null,
+                          reason: "the model server has no height route — restart it" };
+                return probe;
+            }
             const d = await r.json();
             probe = {
                 at: Date.now(), ok: !!d.ok, info: d,
                 reason: d.ok ? "" : (d.reason || "the height server is not reachable"),
             };
         } catch (e) {
-            probe = {
-                at: Date.now(), ok: false, info: null,
-                reason: e.message === "GPU_OFFLINE"
-                    ? "the GPU server is offline"
-                    : "could not ask the GPU server about heights",
-            };
+            probe = { at: Date.now(), ok: false, info: null, reason: readable(e) };
         } finally {
             inflight = null;
         }
@@ -78,7 +114,7 @@ export async function measureFeatures(features, { signal } = {}) {
         const slice = features.slice(i, i + CHUNK);
         let d;
         try {
-            const r = await gpuOnlyFetch("/height/enrich", {
+            const r = await heightFetch("/height/enrich", {
                 method: "POST",
                 headers: { "content-type": "application/json" },
                 body: JSON.stringify({
@@ -96,7 +132,7 @@ export async function measureFeatures(features, { signal } = {}) {
             if (!r.ok) throw new Error(d.detail || `HTTP ${r.status}`);
         } catch (e) {
             if (e.name === "AbortError") throw e;
-            probe = { at: Date.now(), ok: false, info: null, reason: String(e.message || e) };
+            probe = { at: Date.now(), ok: false, info: null, reason: readable(e) };
             break;    // the laptop went away mid-run; keep what already arrived
         }
 

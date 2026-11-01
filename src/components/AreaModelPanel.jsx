@@ -4,7 +4,8 @@ import { Download, Play, Ruler, Square } from "lucide-react";
 import { Button, Pill } from "./ui";
 import { gpuOnlyFetch, useGpuStatus } from "../lib/modelApi";
 import {
-    floorBin, heightsAvailable, lastHeightProbe, measureFeatures, summarise,
+    floorBin, heightFetch, heightsAvailable, lastHeightProbe, measureFeatures,
+    summarise,
 } from "../lib/heights";
 import { logActivity } from "../lib/activityLog";
 import { takeFromMap } from "../lib/mapHandoff";
@@ -192,30 +193,36 @@ export default function AreaModelPanel({ map, aoiFeatures }) {
         });
     }, [map, opacity, byFloors, labels]);
 
+    /*
+     * These three run on every change to opacity, colouring or labels - which
+     * includes before a run has added any layer at all.
+     *
+     * getLayer() is the guard rather than try/catch, because mapbox-gl does not
+     * throw here: setPaintProperty on a missing layer is reported through the
+     * map's own error event, so a catch block never sees it and the console
+     * fills with "layer does not exist" on every render.
+     */
+    const hasLayers = useCallback(
+        () => !!map && !!map.getLayer(FILL) && !!map.getLayer(LINE), [map]);
+
     useEffect(() => {
-        if (!map) return;
-        try {
-            map.setPaintProperty(FILL, "fill-opacity", opacity);
-            map.setPaintProperty(LINE, "line-opacity", Math.min(1, opacity + 0.35));
-        } catch { /* layer not added yet */ }
-    }, [map, opacity]);
+        if (!hasLayers()) return;
+        map.setPaintProperty(FILL, "fill-opacity", opacity);
+        map.setPaintProperty(LINE, "line-opacity", Math.min(1, opacity + 0.35));
+    }, [map, opacity, hasLayers]);
 
     // Switching between "a colour per building" and "colour by storeys" repaints
     // the existing layer rather than rebuilding it, so the map does not flicker.
     useEffect(() => {
-        if (!map) return;
+        if (!hasLayers()) return;
         const paint = byFloors ? FLOOR_PAINT : ["get", "colour"];
-        try {
-            map.setPaintProperty(FILL, "fill-color", paint);
-            map.setPaintProperty(LINE, "line-color", paint);
-        } catch { /* layer not added yet */ }
-    }, [map, byFloors]);
+        map.setPaintProperty(FILL, "fill-color", paint);
+        map.setPaintProperty(LINE, "line-color", paint);
+    }, [map, byFloors, hasLayers]);
 
     useEffect(() => {
-        if (!map) return;
-        try {
-            map.setLayoutProperty(LABEL, "visibility", labels ? "visible" : "none");
-        } catch { /* layer not added yet */ }
+        if (!map || !map.getLayer(LABEL)) return;
+        map.setLayoutProperty(LABEL, "visibility", labels ? "visible" : "none");
     }, [map, labels]);
 
     /*
@@ -492,7 +499,9 @@ export default function AreaModelPanel({ map, aoiFeatures }) {
         if (!job?.id) return;
         setSaving(true); setErr("");
         try {
-            const r = await gpuOnlyFetch(`/height/area/${job.id}`, { method: "POST" });
+            // heightFetch, not gpuOnlyFetch: a height failure must not mark
+            // the model server offline for every other call.
+            const r = await heightFetch(`/height/area/${job.id}`, { method: "POST" });
             const d = await r.json();
             if (!r.ok) throw new Error(d.detail || `HTTP ${r.status}`);
             const st = d.height_status || {};
