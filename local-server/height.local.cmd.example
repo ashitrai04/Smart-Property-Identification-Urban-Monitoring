@@ -1,0 +1,12 @@
+@echo off
+rem Copy this to height.local.cmd and set your own address. height.local.cmd is not in git.
+rem
+rem The second laptop, the one holding the DSM and DTM folders. Use its
+rem Tailscale address if you have Tailscale on both machines: it works from any
+rem network and is not reachable from the internet. A 192.168.x address only
+rem works while both machines share a router.
+rem
+rem   set HEIGHT_SERVER=http://100.x.x.x:8900      Tailscale (recommended)
+rem   set HEIGHT_SERVER=http://192.168.1.42:8900   same wifi only
+rem   set HEIGHT_SERVER=auto                       tunnelled; looks the address up
+set HEIGHT_SERVER=

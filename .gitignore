@@ -55,3 +55,11 @@ public/live_demo_samples/*.mp4
 
 # built QGIS plugin package — rebuild with qgis-plugin/package.py
 qgis-plugin/*.zip
+
+# Local machine config: the second laptop's address is per-machine, and this
+# repo is public.
+local-server/height.local.cmd
+
+# Height server package, zipped for transfer to the DSM laptop
+height-server.zip
+height-fix.zip

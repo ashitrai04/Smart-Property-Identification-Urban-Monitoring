@@ -1,7 +1,10 @@
-import { useEffect, useRef, useState } from "react";
-import { Download, ImagePlus, Map as MapIcon, Play, RotateCcw, X } from "lucide-react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { Download, ImagePlus, Map as MapIcon, Play, RotateCcw, Ruler, X } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { logActivity } from "../lib/activityLog";
+import {
+    heightsAvailable, lastHeightProbe, measureFeatures, summarise,
+} from "../lib/heights";
 import { sendToMap } from "../lib/mapHandoff";
 import { gpuOnlyFetch, probeGpu, useGpuStatus } from "../lib/modelApi";
 import { Button, Card, Pill, SectionHeader, Spinner } from "./ui";
@@ -221,6 +224,54 @@ function ResultCard({ item, onShowOnMap }) {
                         Ground resolution {SOURCE_NOTE[res.image.gsd_source] || "as supplied"}
                         {res.geo?.features?.length > 0 ? " · georeferenced, can go straight on the map" : ""}.
                     </p>
+
+                    {/* Heights arrive a moment after the footprints: a second
+                        machine measures them off the DSM while this one works. */}
+                    {item.heights?.measured > 0 && (
+                        <div className="mb-2 rounded-md border border-[var(--line)] bg-[var(--surface)] px-2.5 py-2">
+                            <div className="mb-1 flex items-center justify-between">
+                                <span className="flex items-center gap-1 text-[10px] uppercase tracking-wide text-[var(--text-muted)]">
+                                    <Ruler className="h-3 w-3" /> Heights
+                                </span>
+                                <span className="mono text-[10px] text-[var(--text-muted)]">
+                                    {item.heights.measured}/{item.heights.n} measured
+                                </span>
+                            </div>
+                            <div className="mono text-sm text-[var(--text-primary)]">
+                                {item.heights.mean_height_m} m mean
+                                <span className="text-[11px] text-[var(--text-muted)]">
+                                    {" · "}{item.heights.max_height_m} m tallest
+                                </span>
+                            </div>
+                            <div className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5 text-[10px] text-[var(--text-muted)]">
+                                {item.heights.bins.map((n, i) => (n ? (
+                                    <span key={i}>
+                                        {i === 5 ? "6+" : i + 1} fl
+                                        <span className="mono ml-1 text-[var(--text-dim)]">{n}</span>
+                                    </span>
+                                ) : null))}
+                            </div>
+                        </div>
+                    )}
+                    {res.geo?.features?.length > 0 && !item.heights && item.state === "done" && (
+                        <p className="mb-2 text-[10px] text-[var(--text-muted)]">
+                            <Ruler className="mr-1 inline h-3 w-3" /> Measuring heights…
+                        </p>
+                    )}
+                    {item.heights && !item.heights.measured && (
+                        <p className="mb-2 text-[10px] text-[var(--text-muted)]">
+                            <Ruler className="mr-1 inline h-3 w-3" />
+                            {item.heights.quality?.no_dsm
+                                ? "No heights: this ground is outside the DSM coverage."
+                                : "No heights could be measured here."}
+                        </p>
+                    )}
+                    {!res.geo?.features?.length && (
+                        <p className="mb-2 text-[10px] text-[var(--text-muted)]">
+                            <Ruler className="mr-1 inline h-3 w-3" /> No heights: this upload
+                            is not georeferenced, so there is no ground to look up.
+                        </p>
+                    )}
                     <div className="overflow-hidden rounded-md border border-[var(--line)]">
                         <canvas ref={canvasRef} className="block w-full" />
                     </div>
@@ -237,6 +288,7 @@ export default function BuildingsPanel() {
     const [items, setItems] = useState([]);     // { file, state, res, err }
     const [busy, setBusy] = useState(false);
     const [err, setErr] = useState("");
+    const [heightNote, setHeightNote] = useState("");
     const abortRef = useRef(null);
     const gpu = useGpuStatus();
     const navigate = useNavigate();
@@ -258,12 +310,54 @@ export default function BuildingsPanel() {
         if (good.length) setItems((prev) => [...prev, ...good]);
     };
 
+    /*
+     * Heights for one finished image, measured while the next one is detecting.
+     *
+     * Only a georeferenced upload can be measured: a PNG has pixel coordinates
+     * and the DSM laptop has no way to know which piece of ground they are.
+     *
+     * The height fields are written into the existing feature objects rather
+     * than through a fresh `res`. The reveal animation keys off `res` identity,
+     * so replacing it would restart a 2.6-second draw every time a batch of
+     * heights landed. Nothing that draws the canvas reads these fields, and
+     * both exports read the features when the button is pressed, so writing in
+     * place is invisible except where it should be: the summary below, which
+     * re-renders off its own piece of state.
+     */
+    const measureImage = useCallback(async (index, res, signal) => {
+        const feats = res.geo?.features;
+        if (!feats?.length) return;
+        try {
+            const props = await measureFeatures(feats, { signal });
+            if (!props) {
+                setHeightNote(lastHeightProbe().reason);
+                return;
+            }
+            props.forEach((p, k) => {
+                if (!p) return;
+                Object.assign(feats[k].properties, p);
+                const px = res.geojson?.features?.[k];
+                if (px) Object.assign(px.properties, p);   // same order, pixel coords
+            });
+            const summary = summarise(props);
+            setItems((prev) => prev.map((it, j) => (j === index ? { ...it, heights: summary } : it)));
+        } catch (e) {
+            if (e.name !== "AbortError") setHeightNote(String(e.message || e));
+        }
+    }, []);
+
     const run = async () => {
         setBusy(true);
         setErr("");
+        setHeightNote("");
         abortRef.current = new AbortController();
         const signal = abortRef.current.signal;
         let done = 0;
+
+        // Asked once per run: if the DSM laptop is off, each image should not
+        // spend a timeout rediscovering that.
+        const hp = await heightsAvailable(true);
+        if (!hp.ok) setHeightNote(hp.reason);
 
         // One at a time: the model is 1.2 GB on a 6 GB card, and two concurrent
         // four-scale passes would simply run it out of memory.
@@ -275,6 +369,9 @@ export default function BuildingsPanel() {
                 const out = await delineate(items[i].file, signal);
                 setItems((prev) => prev.map((it, j) => (j === i ? { ...it, state: "done", res: out } : it)));
                 done += 1;
+                // Not awaited: the DSM laptop measures this image while the GPU
+                // starts on the next one.
+                if (hp.ok) measureImage(i, out, signal);
             } catch (e) {
                 if (e.name === "AbortError") break;
                 const msg = e.message === "GPU_OFFLINE"
@@ -347,6 +444,13 @@ export default function BuildingsPanel() {
             {err && (
                 <p className="mt-3 rounded-md border border-[var(--danger)] bg-[var(--danger-dim)] px-3 py-2 text-[11px] text-[var(--danger)]">
                     {err}
+                </p>
+            )}
+
+            {/* Not an error: footprints are the product, heights are an extra. */}
+            {heightNote && (
+                <p className="mt-3 text-[10px] text-[var(--text-muted)]">
+                    <Ruler className="mr-1 inline h-3 w-3" /> No building heights — {heightNote}.
                 </p>
             )}
 

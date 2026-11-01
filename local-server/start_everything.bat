@@ -15,6 +15,16 @@ rem
 rem  Options:
 rem    start_everything.bat --no-gpu     skip the model server (data only)
 rem    start_everything.bat --no-ask     skip Ollama (no chat)
+rem
+rem  Building heights come from a SECOND laptop, the one holding the DSM and
+rem  DTM folders (see height-server/README.md). It is reached over Tailscale,
+rem  which is set below and needs no further thought. To point somewhere else:
+rem
+rem    same wifi     set HEIGHT_SERVER=http://192.168.88.3:8900
+rem    over a tunnel set HEIGHT_SERVER=auto      (looks the address up)
+rem
+rem  Unset it and everything else still works - the webapp simply says no
+rem  height server is configured when heights are asked for.
 rem ============================================================
 title Urbanly - full stack
 cd /d "%~dp0"
@@ -22,6 +32,12 @@ cd /d "%~dp0"
 if "%GEO_DATA_DIR%"=="" set GEO_DATA_DIR=D:\GEO_SERVE
 if "%ASK_MODEL%"=="" set ASK_MODEL=qwen2.5vl:3b
 if "%GPU_SERVER_DIR%"=="" set GPU_SERVER_DIR=%~dp0..\gpu-server
+
+rem The DSM laptop's address lives in height.local.cmd, which is NOT in git: this is
+rem a public repo, and the address is per-machine anyway. Copy
+rem height.local.cmd.example to height.local.cmd and put yours in it.
+rem `start` passes the environment on, so it reaches the model window.
+if exist "%~dp0height.local.cmd" call "%~dp0height.local.cmd"
 
 set SKIP_GPU=0
 set SKIP_ASK=0
@@ -38,6 +54,11 @@ echo ============================================================
 echo   Urbanly local stack
 echo   data   : %GEO_DATA_DIR%
 echo   models : %GPU_SERVER_DIR%
+if "%HEIGHT_SERVER%"=="" (
+    echo   heights: not configured ^(set HEIGHT_SERVER - see the notes above^)
+) else (
+    echo   heights: %HEIGHT_SERVER%
+)
 echo ============================================================
 
 rem ---------- 1. Ollama ----------
@@ -106,6 +127,9 @@ goto after_gpu
 :gpu_up
 echo       ready on :8800
 for /f "delims=" %%r in ('curl -s -m 5 http://127.0.0.1:8800/hisup/health') do echo       hisup: %%r
+if not "%HEIGHT_SERVER%"=="" (
+    for /f "delims=" %%r in ('curl -s -m 8 http://127.0.0.1:8800/height/health') do echo       height: %%r
+)
 :after_gpu
 
 rem ---------- 4. data server (foreground) ----------

@@ -46,6 +46,7 @@ os.environ.setdefault("POTHOLE_WEIGHTS", str(config.WEIGHTS / "final_best.pt"))
 
 import pothole  # noqa: E402  (reads POTHOLE_WEIGHTS at import)
 import buildings  # noqa: E402  (HiSup delineation; loads weights lazily)
+import height  # noqa: E402  (thin client for the DSM laptop; no local data)
 
 pothole._lock = gpu.GPU_LOCK      # one GPU queue for every model
 buildings._lock = gpu.GPU_LOCK
@@ -67,6 +68,7 @@ app.add_middleware(
 app.include_router(pothole.router)
 app.include_router(buildings.router)
 app.include_router(buildings.area_router)
+app.include_router(height.router)
 
 print(f"[startup] device={seg.DEVICE} batch={seg.SEG_BATCH} fp16={seg.SEG_FP16} max_dim={seg.MAX_DIM} "
       f"gpu={gpu.device_info()}", flush=True)

@@ -46,7 +46,8 @@ GPU_SERVER = os.environ.get("GPU_SERVER_URL", "http://127.0.0.1:8800").rstrip("/
 # Prefixes the model server owns outright. Deliberately not /imagery or /jobs:
 # both servers answer those from their own stores, and this one's answer is the
 # correct one for the map.
-GPU_PREFIXES = ("/hisup/", "/area", "/pothole/", "/predict", "/change-detection", "/r2/")
+GPU_PREFIXES = ("/hisup/", "/area", "/pothole/", "/predict", "/change-detection",
+                "/r2/", "/height")
 # A four-resolution pass over a large image is minutes, not seconds.
 GPU_TIMEOUT = float(os.environ.get("GPU_PROXY_TIMEOUT", "900"))
 
