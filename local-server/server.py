@@ -521,7 +521,12 @@ async def _proxy(request, path):
     # back gzipped to a client that cannot read it.
     headers.setdefault("accept-encoding", "identity")
 
-    client = httpx.AsyncClient(timeout=httpx.Timeout(GPU_TIMEOUT, connect=5.0))
+    # connect=30, not 5: while the model server is inside a multi-scale pass it
+    # is doing synchronous CUDA work, and its accept queue can take longer than
+    # five seconds to answer. At 5s a poll during a heavy run came back 503
+    # "model server is not reachable" when the server was fine and answering in
+    # milliseconds either side of it - which reads to the user as a failed job.
+    client = httpx.AsyncClient(timeout=httpx.Timeout(GPU_TIMEOUT, connect=30.0))
     try:
         req = client.build_request(request.method, url, headers=headers,
                                    content=request.stream())
