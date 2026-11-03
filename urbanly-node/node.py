@@ -266,7 +266,9 @@ def peer_line(p):
         return f"  offline  {p['url']}\n           {p.get('reason', '')}"
     g = p.get("gpu") or {}
     gpu = (f"{g.get('name', '?')} - {g.get('free_gb', '?')} GB free"
-           if g.get("available") else "no GPU (CPU only)")
+           if g.get("available")
+           else ("models not installed there yet" if g.get("device") == "no-pytorch"
+                 else "no usable GPU"))
     c = p.get("counts") or {}
     bits = f"{c.get('layers', '?')} layers, {c.get('weights', '?')} weights, {c.get('rasters', '?')} rasters"
     auth = "" if p.get("authenticated", True) else "   [no key — manifest hidden]"
@@ -377,7 +379,13 @@ def show_status():
     if g.get("available"):
         print(f"  GPU         {g['name']} - {g['free_gb']} of {g['total_gb']} GB free")
     else:
-        print(f"  GPU         none detected — CPU only ({g.get('device')})")
+        if g.get("device") == "no-pytorch":
+            print("  GPU         not checked yet - PyTorch is not installed here")
+            print("              This machine cannot run models until you run")
+            print("              SETUP SERVER.bat once. It says nothing about")
+            print("              whether the laptop has a graphics card.")
+        else:
+            print(f"  GPU         none usable - {g.get('reason', g.get('device'))}")
     print(f"  data        {config.DATA_DIR}"
           + ("" if config.DATA_DIR.exists() else "   [MISSING]"))
     print(f"  weights     {config.WEIGHTS_DIR}"
@@ -433,7 +441,9 @@ def bring_up(skip_sync=False, no_tunnel=False):
     if port_open(config.GPU_PORT):
         print(f"      already running on :{config.GPU_PORT}")
     elif not (config.GPU_SERVER_DIR / "app" / "main.py").exists():
-        print(f"      not found at {config.GPU_SERVER_DIR} — skipped")
+        print(f"      not installed here ({config.GPU_SERVER_DIR})")
+        print("      Run SETUP SERVER.bat once to install it, or leave this")
+        print("      machine as a data peer and run models on the other one.")
     else:
         spawn("Urbanly - models", config.GPU_SERVER_DIR,
               [py, "-m", "uvicorn", "main:app", "--app-dir", "app",
@@ -449,7 +459,8 @@ def bring_up(skip_sync=False, no_tunnel=False):
     if port_open(config.DATA_PORT):
         print(f"      already running on :{config.DATA_PORT}")
     elif not (config.DATA_SERVER_DIR / "run.py").exists():
-        print(f"      not found at {config.DATA_SERVER_DIR} — skipped")
+        print(f"      not installed here ({config.DATA_SERVER_DIR})")
+        print("      Comes with SETUP SERVER.bat, same as the model server.")
     else:
         args = [py, "-u", "run.py", "--port", str(config.DATA_PORT)]
         if no_tunnel:

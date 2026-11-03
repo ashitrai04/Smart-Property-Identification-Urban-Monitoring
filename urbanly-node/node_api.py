@@ -100,8 +100,15 @@ def manifest() -> dict:
 def gpu_info() -> dict:
     try:
         import torch
+    except ImportError:
+        # Not the same thing as having no graphics card, and saying so saved
+        # someone concluding their RTX 3050 had vanished.
+        return {"available": False, "device": "no-pytorch",
+                "reason": "PyTorch is not installed on this machine yet"}
+    try:
         if not torch.cuda.is_available():
-            return {"available": False, "device": "cpu"}
+            return {"available": False, "device": "cpu",
+                    "reason": "PyTorch is installed but cannot see a usable card"}
         i = torch.cuda.current_device()
         free, total = torch.cuda.mem_get_info(i)
         return {"available": True, "device": f"cuda:{i}",
