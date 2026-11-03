@@ -36,6 +36,179 @@ def _requests():
     return requests
 
 
+# ── finding things without being told ───────────────────────────────
+TAILSCALE = [
+    r"C:\Program Files\Tailscale\tailscale.exe",
+    r"C:\Program Files (x86)\Tailscale\tailscale.exe",
+    "/usr/bin/tailscale", "/usr/local/bin/tailscale",
+    "/Applications/Tailscale.app/Contents/MacOS/Tailscale",
+]
+
+
+def tailscale_peers():
+    """Online machines on this tailnet, as (name, ip).
+
+    Tailscale already knows which of your machines are up and what address
+    each has, and it is the address that keeps working when the two laptops
+    are on different networks. Asking it is better than making someone copy an
+    IP between two config files and update it whenever the network changes.
+    """
+    exe = shutil.which("tailscale") or next((t for t in TAILSCALE if os.path.isfile(t)), None)
+    if not exe:
+        return []
+    try:
+        out = subprocess.run([exe, "status", "--json"], capture_output=True,
+                             text=True, timeout=20)
+        if out.returncode != 0:
+            return []
+        import json as _json
+        d = _json.loads(out.stdout)
+    except Exception:
+        return []
+    found = []
+    for v in (d.get("Peer") or {}).values():
+        if not v.get("Online"):
+            continue
+        ips = [i for i in (v.get("TailscaleIPs") or []) if ":" not in i]
+        if ips:
+            found.append((v.get("HostName", "peer"), ips[0]))
+    return found
+
+
+def sniff_peers():
+    """Which online tailnet machines are actually running a node."""
+    hits = []
+    for name, ip in tailscale_peers():
+        url = f"http://{ip}:{config.NODE_PORT}"
+        p = probe(url, timeout=3)
+        if p["online"]:
+            hits.append((name, url))
+    return hits
+
+
+DATA_CANDIDATES = [
+    r"D:\GEO_SERVE", r"E:\GEO_SERVE", r"C:\GEO_SERVE",
+    os.path.expanduser(r"~\Downloads\GEO_SERVE"),
+    os.path.expanduser(r"~\GEO_SERVE"),
+    os.path.expanduser(r"~\Downloads\GEO SERVE"),
+]
+
+
+def sniff_data_dir():
+    """The survey folder, preferring one that actually has survey data in it."""
+    best, best_score = None, -1
+    for c in DATA_CANDIDATES:
+        d = Path(c)
+        if not d.is_dir():
+            continue
+        try:
+            score = sum(1 for x in d.iterdir()
+                        if x.is_file() and x.suffix.lower() in (".gpkg", ".tif"))
+        except Exception:
+            score = 0
+        if score > best_score:
+            best, best_score = d, score
+    return best
+
+
+def sniff_weights_dir():
+    """The model folder, which is not always beside this package.
+
+    The zip can be extracted anywhere - next to the repository, or on its own
+    on a laptop that has no checkout at all. Walk up a few levels looking for
+    a real gpu-server/weights, and otherwise keep a local one so there is
+    always somewhere for a synced checkpoint to land.
+    """
+    here = Path(__file__).resolve().parent
+    for base in [here, *here.parents][:5]:
+        c = base / "gpu-server" / "weights"
+        if c.is_dir():
+            return c
+    # No absolute path from any one machine belongs here: the same folder runs
+    # on both laptops, and a path that happens to exist on one is a trap on
+    # the other.
+    local = here / "weights"
+    local.mkdir(parents=True, exist_ok=True)
+    return local
+
+
+def autoconfig(force=False):
+    """Write a config.env this machine can run with, without being edited."""
+    cfg = Path(__file__).resolve().parent / "config.env"
+    if cfg.exists() and not force:
+        return cfg
+
+    data = sniff_data_dir()
+    weights = sniff_weights_dir()
+    print("  detecting settings for this machine")
+    print(f"    name   : {config.NODE_NAME}")
+    print(f"    data   : {data if data else 'not found - set UN_DATA_DIR by hand'}")
+    print(f"    weights: {weights}")
+
+    peers = sniff_peers()
+    if peers:
+        for n, u in peers:
+            print(f"    peer   : {n} at {u}")
+    else:
+        found = tailscale_peers()
+        if found:
+            print(f"    peer   : none running a node yet "
+                  f"({len(found)} machine(s) online on the tailnet)")
+        else:
+            print("    peer   : none found - add UN_PEERS later if you want sync")
+
+    lines = [
+        "# Written automatically on first run. Edit freely.",
+        f"UN_NODE_NAME={config.NODE_NAME}",
+        f"UN_DATA_DIR={data if data else r'D:\GEO_SERVE'}",
+        f"UN_WEIGHTS_DIR={weights}",
+        "",
+        "# The other laptop running this package. Filled in automatically when",
+        "# it is online and reachable over Tailscale; set it by hand otherwise.",
+        f"UN_PEERS={','.join(u for _, u in peers)}",
+        "",
+        "# Leave empty on a private tailnet. If you ever expose the node port",
+        "# publicly, set the SAME long random string on both laptops.",
+        "UN_API_KEY=",
+        "",
+        f"UN_NODE_PORT={config.NODE_PORT}",
+        f"UN_GPU_PORT={config.GPU_PORT}",
+        f"UN_DATA_PORT={config.DATA_PORT}",
+        "",
+    ]
+    cfg.write_text("\n".join(lines), encoding="utf-8")
+    print(f"    written: {cfg.name}")
+    # config.py read its values at import, before this file existed, so apply
+    # the detected ones now rather than making the first run the odd one out.
+    if data:
+        config.DATA_DIR = Path(data)
+    config.WEIGHTS_DIR = Path(weights)
+    if peers:
+        config.PEERS = [u for _, u in peers]
+    return cfg
+
+
+def refresh_peers():
+    """If no peer is configured, look once more before giving up on sync."""
+    if config.PEERS:
+        return
+    hits = sniff_peers()
+    if not hits:
+        return
+    config.PEERS = [u for _, u in hits]
+    print(f"  found {len(hits)} peer(s) on the tailnet: "
+          + ", ".join(n for n, _ in hits))
+    cfg = Path(__file__).resolve().parent / "config.env"
+    if cfg.exists():
+        txt = cfg.read_text(encoding="utf-8")
+        if "\nUN_PEERS=" in txt:
+            out = []
+            for line in txt.splitlines():
+                out.append(f"UN_PEERS={','.join(config.PEERS)}"
+                           if line.startswith("UN_PEERS=") else line)
+            cfg.write_text("\n".join(out) + "\n", encoding="utf-8")
+
+
 # ── peers ───────────────────────────────────────────────────────────
 def probe(url, timeout=None):
     """Ask a peer what it is. Never raises - a peer being off is normal."""
@@ -179,7 +352,10 @@ def show_status():
           f"{len(m['rasters'])} rasters ({human(sum(e['bytes'] for e in m['rasters']))})")
     print(BAR)
     if not config.PEERS:
-        print("  PEERS       none configured (UN_PEERS in config.env)")
+        print("  PEERS       none found")
+        print("              Nothing to sync with yet. Start Urbanly on the")
+        print("              other laptop and it will be picked up by itself,")
+        print("              or set UN_PEERS in config.env by hand.")
     else:
         print("  PEERS")
         for url in config.PEERS:
@@ -207,6 +383,11 @@ def spawn(title, cwd, args):
 
 def bring_up(skip_sync=False, no_tunnel=False):
     py = sys.executable
+    print("\n[0/4] settings")
+    autoconfig()
+    refresh_peers()
+    if not config.PEERS:
+        print("      no peer found - running standalone, which is fine")
     if not skip_sync:
         print("\n[1/4] syncing with peers")
         do_sync()
@@ -271,15 +452,21 @@ def bring_up(skip_sync=False, no_tunnel=False):
 def main():
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("command", choices=["status", "sync", "up", "serve"])
+    ap.add_argument("command", nargs="?", default="up",
+                choices=["status", "sync", "up", "serve", "autoconfig"])
     ap.add_argument("--dry-run", action="store_true", help="sync: list, do not fetch")
     ap.add_argument("--no-sync", action="store_true", help="up: start without syncing")
     ap.add_argument("--no-tunnel", action="store_true", help="up: no public address")
     a = ap.parse_args()
 
-    if a.command == "status":
+    if a.command == "autoconfig":
+        autoconfig(force=True)
+    elif a.command == "status":
+        autoconfig()
+        refresh_peers()
         show_status()
     elif a.command == "sync":
+        refresh_peers()
         sys.exit(1 if do_sync(dry=a.dry_run) else 0)
     elif a.command == "serve":
         import uvicorn

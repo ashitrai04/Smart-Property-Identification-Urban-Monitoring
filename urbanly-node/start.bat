@@ -1,61 +1,73 @@
 @echo off
 REM ============================================================
-REM  Urbanly node — one command, either laptop.
+REM  Urbanly — double-click this. Nothing to set up, nothing to type.
 REM
-REM    start.bat              sync with peers, then start everything
-REM    start.bat status       what I have and who is reachable
-REM    start.bat sync         pull newer files, start nothing
-REM    start.bat --no-sync    start without syncing first
-REM    start.bat --no-tunnel  start without a public address
+REM  On the first run it works out this machine's settings by itself:
+REM  where the survey data is, what this computer is called, and which
+REM  other laptop on your Tailscale network is running Urbanly. Those
+REM  go into config.env, which you can edit later if you want to.
 REM
-REM  Both laptops run this same file. Neither is the master: whichever
-REM  is running serves, and on sync the newer file wins.
+REM  Then it syncs with the other laptop, starts the model server and
+REM  the data server, and shows what is running.
 REM
-REM  Settings live in config.env — copy config.env.example to start.
+REM  Both laptops run this same file. Neither is the master.
+REM
+REM  Optional, for anyone who prefers typing:
+REM     start.bat status     what I have and who is reachable
+REM     start.bat sync       pull newer files, start nothing
 REM ============================================================
 setlocal
 cd /d "%~dp0"
-title Urbanly node
+title Urbanly
 
-if not exist "config.env" (
-  echo.
-  echo   config.env is missing.
-  echo   Copy config.env.example to config.env and set UN_DATA_DIR,
-  echo   UN_PEERS and UN_API_KEY for this machine, then run again.
-  echo.
-  exit /b 1
-)
+echo.
+echo   Urbanly - starting up
+echo   ---------------------
 
-REM A venv is used when one exists, so this shares the project's installed
-REM packages rather than demanding its own copy of torch.
-set "PY=python"
+REM Prefer a project virtual environment when one exists, so this shares the
+REM already-installed torch rather than asking for its own copy.
+set "PY="
 if exist "..\gpu-server\.venv\Scripts\python.exe" set "PY=..\gpu-server\.venv\Scripts\python.exe"
 if exist ".venv\Scripts\python.exe" set "PY=.venv\Scripts\python.exe"
-
-"%PY%" -c "import fastapi, uvicorn, requests" 2>nul
-if errorlevel 1 (
-  echo.
-  echo   Installing the few packages this needs...
-  "%PY%" -m pip install --quiet fastapi "uvicorn[standard]" requests
+if not defined PY (
+  where python >nul 2>nul
   if errorlevel 1 (
-    echo   [!] Install failed. Is Python 3.10+ on PATH?  python --version
+    echo.
+    echo   [!] Python was not found.
+    echo       Install Python 3.10 or newer, tick "Add python.exe to PATH",
+    echo       then double-click this file again.
+    echo.
+    pause
+    exit /b 1
+  )
+  set "PY=python"
+)
+
+"%PY%" -c "import fastapi, uvicorn, requests" >nul 2>nul
+if errorlevel 1 (
+  echo   installing the few packages this needs, one time only...
+  "%PY%" -m pip install --quiet --disable-pip-version-check fastapi "uvicorn[standard]" requests
+  if errorlevel 1 (
+    echo.
+    echo   [!] That install failed. Check the internet connection and retry.
+    echo.
+    pause
     exit /b 1
   )
 )
 
-if "%~1"=="" (
-  "%PY%" node.py up
-) else if /i "%~1"=="status" (
-  "%PY%" node.py status
-) else if /i "%~1"=="sync" (
-  "%PY%" node.py sync %2 %3
-) else (
-  "%PY%" node.py up %1 %2 %3
-)
+if "%~1"=="" goto run
+if /i "%~1"=="status" ( "%PY%" node.py status & goto hold )
+if /i "%~1"=="sync"   ( "%PY%" node.py sync %2 & goto hold )
+"%PY%" node.py up %1 %2 %3
+goto hold
 
-REM Hold the window open when this was double-clicked, so the report can be
-REM read. Skipped when driven from a terminal or a script, where a pause is
-REM just something else that has to be killed.
+:run
+"%PY%" node.py up
+
+:hold
+echo.
+echo   This window can be closed. The servers keep running in their own windows.
 echo.
 if not defined UN_NO_PAUSE pause
 endlocal

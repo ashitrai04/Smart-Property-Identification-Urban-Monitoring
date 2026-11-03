@@ -14,49 +14,46 @@ identical on both and why nothing here is called "client".
 
 ## Setting it up
 
-On **each** laptop:
+Copy this folder to **both** laptops, then double-click:
 
-1. Copy this folder to the machine.
-2. Copy `config.env.example` to `config.env`.
-3. Edit three lines:
-
-```ini
-UN_NODE_NAME=laptop-a                     # a name you will recognise
-UN_DATA_DIR=D:\GEO_SERVE                  # where the survey data is HERE
-UN_PEERS=http://100.74.15.17:8790         # the OTHER laptop's node address
-UN_API_KEY=pick-one-long-random-string    # must be IDENTICAL on both
+```
+START URBANLY.bat
 ```
 
-Then:
+That is the whole setup. There is nothing to type and nothing to edit.
 
-```bat
-start.bat
-```
+On the first run it works out this machine's settings by itself and writes
+them to `config.env`:
 
-That is all. First run installs three small packages if they are missing.
+- **Name** — taken from the computer name.
+- **Data folder** — it checks the usual places (`D:\GEO_SERVE`,
+  `Downloads\GEO_SERVE`, and so on) and picks the one that actually holds
+  survey files.
+- **The other laptop** — it asks Tailscale which of your machines are online
+  and checks each for a running node. If the other laptop is up, it is filled
+  in automatically. If it is not, this one runs standalone and picks it up
+  next time.
 
-### The peer address
+`config.env` is a plain text file you can edit afterwards if any of that was
+guessed wrong.
 
-Use the other laptop's **Tailscale** address. A `192.168.x.x` address only
-works while both machines are on the same router, and they frequently are not —
-one has been on a phone hotspot. The Tailscale address follows the laptop onto
-any network and is not reachable from the internet.
+### If the other laptop is not found
 
-`start.bat status` prints the address to give the other machine.
+It only needs to be running `START URBANLY.bat` too. Start it there, then run
+this one again — or press `status`, which looks again. Nothing breaks in the
+meantime; a node with no peer simply serves its own data.
 
-### The API key
+### About the key
 
-Must match on both laptops. Without it the two will see each other but refuse
-to exchange files, which is reported plainly rather than failing silently. Any
-long random string will do.
-
----
+`UN_API_KEY` is left empty, which is right for a private Tailscale network:
+the node port is not exposed to the internet. If you ever publish that port,
+set the **same** long random string in `config.env` on both laptops.
 
 ## What the commands do
 
 | Command | What happens |
 |---|---|
-| `start.bat` | Sync, start model server, data server and node service, then report |
+| `START URBANLY.bat` | Sync, start model server, data server and node service, then report |
 | `start.bat status` | What this machine holds, and which peers answer |
 | `start.bat sync` | Pull anything newer from a peer; start nothing |
 | `start.bat sync --dry-run` | List what would be pulled, transfer nothing |
