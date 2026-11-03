@@ -147,6 +147,9 @@ export default function AreaModelPanel({ map, aoiFeatures }) {
 
     const featsRef = useRef([]);          // every feature drawn so far
     const pollRef = useRef(null);
+    // Bumped on every run. A poll tick that belongs to an older run checks this
+    // and stops, so stale results can never land in a newer run's layer.
+    const runRef = useRef(0);
     const settleRef = useRef(null);
     const sinceRef = useRef(0);
     const gpu = useGpuStatus();
@@ -426,7 +429,9 @@ export default function AreaModelPanel({ map, aoiFeatures }) {
     // ── running ─────────────────────────────────────────────────
     const poll = useCallback((id) => {
         if (pollRef.current) clearInterval(pollRef.current);
+        const mine = runRef.current;
         pollRef.current = setInterval(async () => {
+            if (runRef.current !== mine) return;   // a newer run owns the layer
             try {
                 const [liveRes, statRes] = await Promise.all([
                     gpuOnlyFetch(`/area/${id}/live?since=${sinceRef.current}`),
@@ -471,6 +476,19 @@ export default function AreaModelPanel({ map, aoiFeatures }) {
 
     const start = async () => {
         if (!hasAoi) return;
+
+        // Stop the previous run's poll FIRST. It is otherwise cleared inside
+        // poll(), which does not run until the new job exists - two network
+        // round trips later - and until then the old interval keeps appending
+        // the old run's buildings into the array cleared just below. The count
+        // then reads as leftovers plus the new run, higher than any single job
+        // ever produced.
+        if (pollRef.current) {
+            clearInterval(pollRef.current);
+            pollRef.current = null;
+        }
+        runRef.current += 1;
+
         setErr(""); setDone(false); setJob(null); setCount(0); setHandoff(null);
         setHeights(null); setByFloors(false); setHeightNote("");
         clearLayer();
