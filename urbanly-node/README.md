@@ -49,6 +49,47 @@ meantime; a node with no peer simply serves its own data.
 the node port is not exposed to the internet. If you ever publish that port,
 set the **same** long random string in `config.env` on both laptops.
 
+## Making a laptop a full server
+
+The node package on its own only shares files with a peer. To let a laptop
+*run the models* and *serve the webapp and QGIS*, run once:
+
+```
+SETUP SERVER.bat
+```
+
+It fetches the project (68 MB), builds a virtual environment, installs PyTorch
+and the rest, sizes the model settings to that machine's graphics card, and
+pulls the model weights from the other laptop. Expect a long wait: PyTorch
+alone is about 2.5 GB.
+
+It reads the card's memory before PyTorch exists and sets the job sizes
+accordingly, because the alternative is discovering the card is too small
+part-way through a long run:
+
+| Graphics memory | Batch | Window |
+|---|---|---|
+| 4 GB | 2 | 1024 px |
+| 6 GB | 4 | 1536 px |
+| 8 GB and above | 8 | 1536 px |
+
+Install somewhere else with `SETUP SERVER.bat E:\Urbanly`.
+
+After it finishes, `START URBANLY.bat` brings up the model server and the data
+server on that machine too.
+
+### Either laptop can be the one serving
+
+Once both are set up they are interchangeable. Whichever is running publishes
+its own public address, and the webapp and the QGIS plugin look that address up
+rather than remembering it - so you can start one, stop it, start the other,
+and both clients follow without being reconfigured.
+
+If both run at once, the one that started most recently is the one clients
+reach. Stop the one you are not using if that matters.
+
+---
+
 ## What the commands do
 
 | Command | What happens |
