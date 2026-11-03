@@ -55,24 +55,60 @@ function discover(force = false) {
 }
 
 /** Is the GPU server reachable right now? Cached; pass force to re-check. */
+/** One health probe. Resolves to the server's info, or null. */
+function ping(base, ms = 4000) {
+    const ctl = new AbortController();
+    const t = setTimeout(() => ctl.abort(), ms);
+    return fetch(`${base}/api/health`, { cache: "no-store", signal: ctl.signal })
+        .then((r) => (r.ok ? r.json() : null))
+        .catch(() => null)
+        .finally(() => clearTimeout(t));
+}
+
+/*
+ * Addresses to try when the published one does not answer.
+ *
+ * The published address is a Cloudflare quick tunnel, and a freshly created
+ * hostname is not resolvable everywhere at once - a phone hotspot's resolver
+ * returned "non-existent domain" for one that 1.1.1.1 was already serving.
+ * When that happens and the browser is on the same machine as the server,
+ * localhost is sitting right there and works.
+ *
+ * Chrome treats http://127.0.0.1 as a trustworthy origin, so this is not
+ * blocked as mixed content from the deployed HTTPS site.
+ */
+const LOCAL_FALLBACKS = ["http://127.0.0.1:8777", "http://127.0.0.1:8800"];
+
 export async function probeGpu(force = false) {
     const base = await discover(force);
-    if (!base) return false;
     const now = Date.now();
     if (!force && now < state.downUntil) return false;
     if (!force && state.checked && now - state.checked < RECHECK_MS) return state.ok;
     if (probing) return probing;
-    const ctl = new AbortController();
-    const t = setTimeout(() => ctl.abort(), 4000);
-    probing = fetch(`${base}/api/health`, { cache: "no-store", signal: ctl.signal })
-        .then((r) => (r.ok ? r.json() : null))
-        .catch(() => null)
-        .then((info) => {
-            const ok = !!info && info.status === "ok";
-            set({ ok, info, checked: Date.now(), downUntil: ok ? 0 : Date.now() + DOWN_MS });
-            return ok;
-        })
-        .finally(() => { clearTimeout(t); probing = null; });
+
+    probing = (async () => {
+        if (base) {
+            const info = await ping(base);
+            if (info && info.status === "ok") {
+                set({ ok: true, info, checked: Date.now(), downUntil: 0 });
+                return true;
+            }
+        }
+        // The published address is unreachable from here. Before declaring the
+        // whole stack offline, check whether it is simply running on this
+        // machine - which it is whenever someone is working at the server.
+        for (const alt of LOCAL_FALLBACKS) {
+            if (alt === base) continue;
+            const info = await ping(alt, 1500);
+            if (info && info.status === "ok") {
+                set({ base: alt, ok: true, info, checked: Date.now(), downUntil: 0 });
+                return true;
+            }
+        }
+        set({ ok: false, checked: Date.now(), downUntil: Date.now() + DOWN_MS });
+        return false;
+    })().finally(() => { probing = null; });
+
     return probing;
 }
 

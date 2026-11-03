@@ -75,6 +75,39 @@ def tailscale_peers():
     return found
 
 
+def tailscale_self_ip():
+    """This machine's own tailnet address, or None.
+
+    The address to hand a peer is this one, not the LAN address: the two
+    laptops are regularly on different networks, where a 192.168 address
+    reaches nothing. Printing the LAN address as the thing to copy sent
+    someone to 192.168.88.7 from a machine on a phone hotspot.
+    """
+    exe = shutil.which("tailscale") or next((t for t in TAILSCALE if os.path.isfile(t)), None)
+    if not exe:
+        return None
+    try:
+        out = subprocess.run([exe, "status", "--json"], capture_output=True,
+                             text=True, timeout=20)
+        if out.returncode != 0:
+            return None
+        import json as _json
+        ips = (_json.loads(out.stdout).get("Self") or {}).get("TailscaleIPs") or []
+        return next((i for i in ips if ":" not in i), None)
+    except Exception:
+        return None
+
+
+def reachable_address():
+    """Where a peer should be told to find this node."""
+    ts = tailscale_self_ip()
+    if ts:
+        return f"http://{ts}:{config.NODE_PORT}", "Tailscale - works from any network"
+    import node_api
+    return (f"http://{node_api.lan_ip()}:{config.NODE_PORT}",
+            "LAN only - both machines must share a router")
+
+
 def sniff_peers():
     """Which online tailnet machines are actually running a node."""
     hits = []
@@ -338,7 +371,9 @@ def show_status():
     m = node_api.manifest()
     print(BAR)
     print(f"  THIS NODE   {config.NODE_NAME}")
-    print(f"  address     {node_api.lan_ip()}:{config.NODE_PORT}")
+    addr, how = reachable_address()
+    print(f"  address     {addr}")
+    print(f"              {how}")
     if g.get("available"):
         print(f"  GPU         {g['name']} - {g['free_gb']} of {g['total_gb']} GB free")
     else:
@@ -443,9 +478,10 @@ def bring_up(skip_sync=False, no_tunnel=False):
 
     print()
     show_status()
+    addr, how = reachable_address()
     print("\n  The other laptop reaches this one at:")
-    print(f"      UN_PEERS={node_api.lan_ip()}:{config.NODE_PORT}".replace(
-        "UN_PEERS=", "UN_PEERS=http://"))
+    print(f"      UN_PEERS={addr}")
+    print(f"      ({how})")
     print("\n  Leave the server windows open. Closing one stops that service.\n")
 
 
