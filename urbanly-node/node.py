@@ -127,6 +127,32 @@ DATA_CANDIDATES = [
 ]
 
 
+HEIGHT_PORT = int(os.environ.get("UN_HEIGHT_PORT", "8900"))
+
+
+def sniff_height_server():
+    """Find the machine holding the DSM, the same way peers are found.
+
+    The height server is a separate package on whichever laptop holds the
+    elevation data, so its address is one more thing that would otherwise have
+    to be copied between machines by hand and corrected whenever the network
+    changed.
+    """
+    explicit = os.environ.get("UN_HEIGHT_SERVER", "").strip()
+    if explicit:
+        return explicit.rstrip("/")
+    rq = _requests()
+    for _, ip in [("self", "127.0.0.1")] + tailscale_peers():
+        url = f"http://{ip}:{HEIGHT_PORT}"
+        try:
+            r = rq.get(f"{url}/health", timeout=3)
+            if r.ok and (r.json() or {}).get("service") == "building-height":
+                return url
+        except Exception:
+            continue
+    return None
+
+
 def sniff_data_dir():
     """The survey folder, preferring one that actually has survey data in it."""
     best, best_score = None, -1
@@ -416,28 +442,197 @@ def port_open(port, host="127.0.0.1", timeout=1.0):
         return False
 
 
-def spawn(title, cwd, args):
-    """Start a server in its own console so one crash does not take the rest."""
-    if os.name == "nt":
-        return subprocess.Popen(["cmd", "/c", "start", title, "cmd", "/k",
-                                 "cd", "/d", str(cwd), "&&", *args])
-    return subprocess.Popen(args, cwd=str(cwd))
+LOG_DIR = Path(__file__).resolve().parent / "logs"
 
 
-def bring_up(skip_sync=False, no_tunnel=False):
+def spawn(title, cwd, args, env=None):
+    """Start a server so that it outlives this script and its own crashes.
+
+    Not `cmd /c start`: that needs an interactive desktop to put a window on,
+    and where there is none - a scheduled task, a remote session, a script
+    driving the start - the window never appears and the server silently never
+    runs. Asking Windows for the console directly works in both cases.
+
+    Whatever happens, the output goes to a file as well, because a server that
+    dies in its own window takes the reason with it when the window closes.
+    """
+    LOG_DIR.mkdir(exist_ok=True)
+    log = LOG_DIR / (title.replace(" ", "_").replace("-", "") + ".log")
+    fh = open(log, "ab", buffering=0)
+    if os.name != "nt":
+        return subprocess.Popen(args, cwd=str(cwd), stdout=fh, stderr=fh,
+                                env=env)
+
+    CREATE_NEW_CONSOLE = 0x00000010
+    DETACHED_PROCESS = 0x00000008
+    try:
+        p = subprocess.Popen(args, cwd=str(cwd), env=env,
+                             creationflags=CREATE_NEW_CONSOLE)
+        fh.close()
+        return p
+    except OSError:
+        # No desktop to open a console on; run it detached and keep the log.
+        return subprocess.Popen(args, cwd=str(cwd), stdout=fh, stderr=fh,
+                                env=env, creationflags=DETACHED_PROCESS)
+
+
+ASK_MODEL = os.environ.get("ASK_MODEL", "qwen2.5vl:3b")
+OLLAMA_PORT = 11434
+
+
+def start_ask_service(py):
+    """Ollama, which answers the webapp's "Ask the survey" box.
+
+    Warmed with a throwaway question, because the first request to a cold
+    model loads several gigabytes from disk and otherwise that cost lands on
+    whoever asks the first real question.
+    """
+    if port_open(OLLAMA_PORT):
+        print(f"      already running on :{OLLAMA_PORT}")
+    elif not shutil.which("ollama"):
+        print("      ollama not installed - the chat box will be offline")
+        print("      (everything else works; install it from ollama.com if wanted)")
+        return
+    else:
+        try:
+            subprocess.Popen(["ollama", "serve"],
+                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        except Exception as e:
+            print(f"      could not start ollama: {str(e)[:70]}")
+            return
+        for _ in range(30):
+            if port_open(OLLAMA_PORT):
+                break
+            time.sleep(1)
+        print(f"      {'ready' if port_open(OLLAMA_PORT) else 'did not answer in 30s'}"
+              f" on :{OLLAMA_PORT}")
+    if not port_open(OLLAMA_PORT):
+        return
+    try:
+        rq = _requests()
+        rq.post(f"http://127.0.0.1:{OLLAMA_PORT}/api/chat", timeout=90,
+                json={"model": ASK_MODEL, "stream": False,
+                      "messages": [{"role": "user", "content": "ok"}]})
+        print(f"      {ASK_MODEL} warmed")
+    except Exception:
+        # Loading several GB can outlast the wait. The model keeps loading in
+        # the background, so this is a note, not a failure.
+        print(f"      {ASK_MODEL} still loading - the chat box will work shortly")
+        print(f"      (if it never does:  ollama pull {ASK_MODEL})")
+
+
+QGIS_PLUGIN_DIRS = [
+    Path(os.path.expanduser(
+        r"~\AppData\Roaming\QGIS\QGIS3\profiles\default\python\plugins"
+        r"\building_delineator")),
+]
+
+
+def report_models():
+    """What the model server is actually serving, once it is up.
+
+    HiSup is not a separate process - it lives inside the model server - so
+    "the model server started" does not tell you the 1.19 GB checkpoint
+    loaded. This asks.
+    """
+    if not port_open(config.GPU_PORT):
+        print("      model server is not up, so nothing to report")
+        return
+    rq = _requests()
+    base = f"http://127.0.0.1:{config.GPU_PORT}"
+    try:
+        h = rq.get(f"{base}/hisup/health", timeout=30).json()
+        loaded = (h.get("load") or {}).get("loaded")
+        state = "loaded" if loaded else ("ready, loads on first use"
+                                         if h.get("weights_present") else "WEIGHTS MISSING")
+        print(f"      HiSup buildings : {state} on {h.get('device', '?')}")
+        if h.get("load", {}).get("matched"):
+            print(f"                        {h['load']['matched']} tensors matched")
+    except Exception as e:
+        print(f"      HiSup buildings : could not ask ({str(e)[:50]})")
+    try:
+        a = rq.get(f"{base}/api/health", timeout=20).json()
+        caps = a.get("capabilities") or []
+        print(f"      also serving    : {', '.join(c for c in caps if c != 'hisup')}")
+    except Exception:
+        pass
+    try:
+        hh = rq.get(f"{base}/height/health", timeout=25).json()
+        if hh.get("ok"):
+            idx = hh.get("index") or {}
+            print(f"      building height : ready via {hh.get('server')} "
+                  f"({(idx.get('dsm') or {}).get('count', '?')} DSM clips)")
+        else:
+            print(f"      building height : not available - {str(hh.get('reason', ''))[:48]}")
+    except Exception:
+        print("      building height : not available")
+
+
+def report_qgis():
+    """Whether the QGIS plugin is installed here and current.
+
+    The plugin is not a service and nothing starts it, but it is part of the
+    stack and the usual failure is an installed copy older than the server it
+    talks to - which is invisible until a job fails.
+    """
+    here = Path(__file__).resolve().parent
+    source = None
+    for base in [here, *here.parents][:5]:
+        c = base / "qgis-plugin" / "building_delineator" / "client.py"
+        if c.is_file():
+            source = c
+            break
+
+    installed = next((d for d in QGIS_PLUGIN_DIRS if (d / "client.py").is_file()), None)
+    if installed is None:
+        print("      not installed in QGIS")
+        if source:
+            print(f"      Install from: {source.parents[1] / 'building_delineator.zip'}")
+        return
+
+    print(f"      installed at {installed}")
+    if source:
+        same = source.read_bytes() == (installed / "client.py").read_bytes()
+        print("      up to date with this project" if same else
+              "      OLDER than this project - reinstall the zip and restart QGIS")
+    try:
+        import importlib.util
+        spec = importlib.util.spec_from_file_location("_bd_client", installed / "client.py")
+        m = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(m)
+        url = m.resolve("auto")
+        print(f"      it will use {url}")
+    except Exception as e:
+        print(f"      could not check which server it would use ({str(e)[:40]})")
+
+
+def bring_up(skip_sync=False, no_tunnel=False, no_ask=False):
     py = sys.executable
-    print("\n[0/4] settings")
+    print("\n[0/7] settings")
     autoconfig()
     refresh_peers()
     if not config.PEERS:
         print("      no peer found - running standalone, which is fine")
     if not skip_sync:
-        print("\n[1/4] syncing with peers")
+        print("\n[1/7] syncing with peers")
         do_sync()
     else:
-        print("\n[1/4] sync skipped")
+        print("\n[1/7] sync skipped")
 
-    print("\n[2/4] model server")
+    print("\n[2/7] chat service")
+    start_ask_service(py)
+
+    print("\n[2b]  height server")
+    height = sniff_height_server()
+    env = dict(os.environ)
+    if height:
+        env["HEIGHT_SERVER"] = height
+        print(f"      height server found at {height}")
+    else:
+        print("      no height server found - buildings will have no heights")
+        print("      (start height-server\\start.bat on the machine with the DSM)")
+
+    print("\n[3/7] model server")
     if port_open(config.GPU_PORT):
         print(f"      already running on :{config.GPU_PORT}")
     elif not (config.GPU_SERVER_DIR / "app" / "main.py").exists():
@@ -447,7 +642,7 @@ def bring_up(skip_sync=False, no_tunnel=False):
     else:
         spawn("Urbanly - models", config.GPU_SERVER_DIR,
               [py, "-m", "uvicorn", "main:app", "--app-dir", "app",
-               "--host", "0.0.0.0", "--port", str(config.GPU_PORT)])
+               "--host", "0.0.0.0", "--port", str(config.GPU_PORT)], env=env)
         for _ in range(60):
             if port_open(config.GPU_PORT):
                 break
@@ -455,7 +650,7 @@ def bring_up(skip_sync=False, no_tunnel=False):
         print(f"      {'ready' if port_open(config.GPU_PORT) else 'did not answer in 60s'}"
               f" on :{config.GPU_PORT}")
 
-    print("\n[3/4] data server")
+    print("\n[4/7] data server")
     if port_open(config.DATA_PORT):
         print(f"      already running on :{config.DATA_PORT}")
     elif not (config.DATA_SERVER_DIR / "run.py").exists():
@@ -473,7 +668,7 @@ def bring_up(skip_sync=False, no_tunnel=False):
         print(f"      {'ready' if port_open(config.DATA_PORT) else 'did not answer in 90s'}"
               f" on :{config.DATA_PORT}")
 
-    print("\n[4/4] node service")
+    print("\n[5/7] node service")
     if port_open(config.NODE_PORT):
         print(f"      already running on :{config.NODE_PORT}")
     else:
@@ -487,6 +682,12 @@ def bring_up(skip_sync=False, no_tunnel=False):
         print(f"      {'ready' if port_open(config.NODE_PORT) else 'did not answer'}"
               f" on :{config.NODE_PORT}")
 
+    print("\n[6/7] models")
+    report_models()
+
+    print("\n[7/7] QGIS plugin")
+    report_qgis()
+
     print()
     show_status()
     addr, how = reachable_address()
@@ -497,6 +698,13 @@ def bring_up(skip_sync=False, no_tunnel=False):
 
 
 def main():
+    # Progress that arrives only at the end is not progress. Python
+    # block-buffers stdout whenever it is not a terminal, which is
+    # exactly the case when this is run from a script or piped to a log.
+    try:
+        sys.stdout.reconfigure(line_buffering=True)
+    except Exception:
+        pass
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("command", nargs="?", default="up",
@@ -504,6 +712,8 @@ def main():
     ap.add_argument("--dry-run", action="store_true", help="sync: list, do not fetch")
     ap.add_argument("--no-sync", action="store_true", help="up: start without syncing")
     ap.add_argument("--no-tunnel", action="store_true", help="up: no public address")
+    ap.add_argument("--no-ask", action="store_true",
+                    help="up: skip the chat service")
     a = ap.parse_args()
 
     if a.command == "autoconfig":
@@ -519,7 +729,7 @@ def main():
         import uvicorn
         uvicorn.run("node_api:app", host="0.0.0.0", port=config.NODE_PORT)
     else:
-        bring_up(skip_sync=a.no_sync, no_tunnel=a.no_tunnel)
+        bring_up(skip_sync=a.no_sync, no_tunnel=a.no_tunnel, no_ask=a.no_ask)
 
 
 if __name__ == "__main__":

@@ -64,10 +64,10 @@ echo ============================================================
 rem ---------- 1. Ollama ----------
 echo.
 if "%SKIP_ASK%"=="1" (
-    echo [1/4] Ollama              skipped ^(--no-ask^)
+    echo [1/5] Ollama              skipped ^(--no-ask^)
     goto after_ask
 )
-echo [1/4] Ollama
+echo [1/5] Ollama
 curl -s -o nul -m 4 http://127.0.0.1:11434/api/tags
 if not errorlevel 1 (
     echo       already running
@@ -87,7 +87,7 @@ echo       WARNING: no answer in 40s - the chat box will be offline
 
 rem ---------- 2. warm the chat model ----------
 echo.
-echo [2/4] Loading %ASK_MODEL%
+echo [2/5] Loading %ASK_MODEL%
 curl -s -m 300 http://127.0.0.1:11434/api/chat -H "content-type: application/json" ^
   -d "{\"model\":\"%ASK_MODEL%\",\"stream\":false,\"messages\":[{\"role\":\"user\",\"content\":\"ok\"}]}" >nul
 if errorlevel 1 (
@@ -100,10 +100,10 @@ if errorlevel 1 (
 rem ---------- 3. GPU model server ----------
 echo.
 if "%SKIP_GPU%"=="1" (
-    echo [3/4] Model server        skipped ^(--no-gpu^)
+    echo [3/5] Model server        skipped ^(--no-gpu^)
     goto after_gpu
 )
-echo [3/4] Model server
+echo [3/5] Model server
 curl -s -o nul -m 4 http://127.0.0.1:8800/api/health
 if not errorlevel 1 (
     echo       already running on :8800
@@ -132,9 +132,25 @@ if not "%HEIGHT_SERVER%"=="" (
 )
 :after_gpu
 
-rem ---------- 4. data server (foreground) ----------
+rem ---------- 4. node service ----------
+rem Peer sync with the other laptop. Not needed by the webapp or QGIS, but
+rem starting it here means this command and START URBANLY.bat leave the
+rem machine in the same state, so it does not matter which one you run.
 echo.
-echo [4/4] Data server on %GEO_DATA_DIR%
+echo [4/5] Node service
+curl -s -o nul -m 4 http://127.0.0.1:8790/node/status
+if not errorlevel 1 (
+    echo       already running on :8790
+) else if exist "%~dp0..\urbanly-node\node_api.py" (
+    start "Urbanly - node" cmd /k "cd /d "%~dp0..\urbanly-node" && python -m uvicorn node_api:app --host 0.0.0.0 --port 8790"
+    echo       starting on :8790
+) else (
+    echo       urbanly-node not present - skipped
+)
+
+rem ---------- 5. data server (foreground) ----------
+echo.
+echo [5/5] Data server on %GEO_DATA_DIR%
 echo       Ctrl+C stops it and marks the site offline.
 echo.
 python -u run.py --port 8777 %PASSTHRU%
