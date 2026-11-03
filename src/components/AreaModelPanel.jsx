@@ -54,6 +54,20 @@ const LABEL_MINZOOM = 16.5;
  * a slow default does not just make your own run slow, it blocks the next
  * person's. Reach for Best on a small area you care about.
  */
+/*
+ * Land-use classes keep the same colours as the sidebar legend, so a result
+ * drawn here reads the same as the layers already on the map. A second palette
+ * for the same four classes would be worse than an imperfect shared one.
+ */
+const LAYER_COLOURS = {
+    buildings: "#FF4FD8",
+    roads: "#22D3EE",
+    water: "#38BDF8",
+    waterbodies: "#38BDF8",
+    open: "#FBBF24",
+    openareas: "#FBBF24",
+};
+
 const QUALITY = [
     { id: "fast", label: "Fast — single pass",
       note: "about 4x quicker; a few less buildings",
@@ -426,6 +440,37 @@ export default function AreaModelPanel({ map, aoiFeatures }) {
     }, [map, push, measureBatch, recount]);
 
 
+    /*
+     * Load a finished job's saved result.
+     *
+     * Only HiSup fills the live feed - it streams each window's footprints as
+     * they are found. Segmentation and fusion write their layers at the end
+     * and stream nothing, so a panel that renders only the feed showed an
+     * empty map for a job that had in fact succeeded. Measured: segment and
+     * fusion produced 0 live items against 319 and 499 saved features.
+     */
+    const loadResult = useCallback(async (id) => {
+        try {
+            const r = await gpuOnlyFetch(`/area/${id}/result.geojson`);
+            if (!r.ok) return;
+            const d = await r.json();
+            featsRef.current = (d.features || []).map((f, i) => {
+                const layer = String(f.properties?.layer || "").toLowerCase();
+                return {
+                    type: "Feature",
+                    geometry: f.geometry,
+                    properties: {
+                        ...f.properties,
+                        colour: LAYER_COLOURS[layer] || nextColour(),
+                        stage: "reg", t: 0, id: i, floorBin: 0,
+                    },
+                };
+            });
+            setCount(featsRef.current.length);
+            push();
+        } catch { /* the job still finished; this only costs the overlay */ }
+    }, [push]);
+
     // ── running ─────────────────────────────────────────────────
     const poll = useCallback((id) => {
         if (pollRef.current) clearInterval(pollRef.current);
@@ -467,12 +512,16 @@ export default function AreaModelPanel({ map, aoiFeatures }) {
                     clearInterval(pollRef.current); pollRef.current = null;
                     if (d.status === "done") {
                         setDone(true);
-                        logActivity?.({ kind: "model", label: `Area run — ${featsRef.current.length} buildings` });
+                        // Nothing streamed means this task writes its result at
+                        // the end rather than per window. Fetch it.
+                        if (!featsRef.current.length) await loadResult(id);
+                        logActivity?.({ kind: "model",
+                                       label: `Area run — ${featsRef.current.length} features` });
                     }
                 }
             } catch { /* transient; the next tick retries */ }
         }, 1200);
-    }, [push, measureBatch]);
+    }, [push, measureBatch, loadResult]);
 
     const start = async () => {
         if (!hasAoi) return;
@@ -601,6 +650,17 @@ export default function AreaModelPanel({ map, aoiFeatures }) {
     const list = tasks.length ? tasks : [{ id: "hisup", label: "Building delineation", note: "individual footprints" }];
     const chosen = list.find((t) => t.id === task) || list[0];
 
+    // Recomputed off the features on screen, so it cannot disagree with the
+    // map. `count` is what actually changes between renders.
+    const layerCounts = (() => {
+        const by = new Map();
+        for (const f of featsRef.current) {
+            const l = String(f.properties?.layer || "").toLowerCase();
+            if (l) by.set(l, (by.get(l) || 0) + 1);
+        }
+        return [...by.entries()].sort((a, b) => b[1] - a[1]);
+    })();
+
     return (
         <div className="space-y-2.5">
             <div className="flex items-center justify-between">
@@ -676,12 +736,28 @@ export default function AreaModelPanel({ map, aoiFeatures }) {
                 <div className="space-y-2 rounded-md p-2" style={{ background: "var(--surface-2)", border: "1px solid var(--line)" }}>
                     <div className="flex items-center justify-between text-[11px]">
                         <span style={{ color: "var(--text-primary)" }}>
-                            <span className="mono">{count.toLocaleString()}</span> buildings
+                            <span className="mono">{count.toLocaleString()}</span>
+                            {task === "hisup" ? " buildings" : " features"}
                         </span>
                         {(done || !running) && (
                             <Button onClick={exportGeoJSON}><Download size={12} /> Export</Button>
                         )}
                     </div>
+                    {/* Land-use runs return several classes; say which. */}
+                    {task !== "hisup" && layerCounts.length > 0 && (
+                        <div className="space-y-1">
+                            {layerCounts.map(([name, n]) => (
+                                <div key={name} className="flex items-center gap-2 text-[10px]">
+                                    <span className="inline-block h-2.5 w-4 shrink-0 rounded-[2px]"
+                                          style={{ background: LAYER_COLOURS[name] || "#94A3B8",
+                                                   border: "1px solid var(--line)" }} />
+                                    <span style={{ color: "var(--text-dim)" }}>{name}</span>
+                                    <span className="mono ml-auto" style={{ color: "var(--text-mute)" }}>{n}</span>
+                                </div>
+                            ))}
+                        </div>
+                    )}
+
                     <label className="block">
                         <div className="flex items-center justify-between text-[10px]" style={{ color: "var(--text-dim)" }}>
                             <span>Overlay opacity</span><span className="mono">{Math.round(opacity * 100)}%</span>
