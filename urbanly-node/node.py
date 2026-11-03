@@ -442,6 +442,40 @@ def port_open(port, host="127.0.0.1", timeout=1.0):
         return False
 
 
+def server_python():
+    r"""The interpreter the servers must run under - not the one running this.
+
+    SETUP SERVER.bat builds a virtual environment beside the project and puts
+    PyTorch in it. The script you double-click may well be running under a
+    bare system Python that has none of that: on the second laptop the project
+    is installed in C:\Urbanly while the node package sits wherever it was
+    copied, so the venv is nowhere near `..\gpu-server`. Spawning the model
+    server with the wrong interpreter starts a process that dies on
+    `import torch`, which shows up only as "did not answer in 60s" and gives
+    no hint as to why.
+    """
+    here = Path(__file__).resolve().parent
+    for c in [config.GPU_SERVER_DIR / ".venv" / "Scripts" / "python.exe",
+              config.GPU_SERVER_DIR.parent / ".venv" / "Scripts" / "python.exe",
+              here.parent / "gpu-server" / ".venv" / "Scripts" / "python.exe",
+              config.GPU_SERVER_DIR / ".venv" / "bin" / "python"]:
+        try:
+            if c.is_file():
+                return str(c)
+        except OSError:
+            continue
+    return sys.executable
+
+
+def has_module(py, mod):
+    try:
+        return subprocess.run([py, "-c", "import " + mod], timeout=120,
+                              stdout=subprocess.DEVNULL,
+                              stderr=subprocess.DEVNULL).returncode == 0
+    except Exception:
+        return False
+
+
 LOG_DIR = Path(__file__).resolve().parent / "logs"
 
 
@@ -521,11 +555,71 @@ def start_ask_service(py):
         print(f"      (if it never does:  ollama pull {ASK_MODEL})")
 
 
-QGIS_PLUGIN_DIRS = [
-    Path(os.path.expanduser(
-        r"~\AppData\Roaming\QGIS\QGIS3\profiles\default\python\plugins"
-        r"\building_delineator")),
-]
+QGIS_PROFILES = Path(os.path.expanduser(r"~\AppData\Roaming\QGIS\QGIS3\profiles"))
+PLUGIN_NAME = "building_delineator"
+
+
+def qgis_profiles():
+    """Every QGIS profile on this machine, not just "default".
+
+    A machine that has had QGIS reinstalled, or that someone set a second
+    profile up on, loads plugins from the profile in use - which is not
+    necessarily the one named default. Installing into all of them costs
+    nothing and removes a failure that looks like the plugin never installed.
+    """
+    if not QGIS_PROFILES.is_dir():
+        return []
+    return [d for d in QGIS_PROFILES.iterdir() if d.is_dir()]
+
+
+QGIS_PLUGIN_DIRS = [p / "python" / "plugins" / PLUGIN_NAME for p in qgis_profiles()]
+
+
+def enable_in_qgis_ini(ini, name=PLUGIN_NAME):
+    """Tick the plugin's box in QGIS's own settings file.
+
+    A copied folder is an installed plugin but a disabled one: QGIS keeps the
+    enabled list in QGIS3.ini and will not load anything missing from it, so
+    without this the plugin is present and still does nothing.
+    """
+    if not ini.is_file():
+        return
+    txt = ini.read_text(encoding="utf-8", errors="ignore")
+    if name + "=true" in txt:
+        return
+    lines = [ln for ln in txt.splitlines() if not ln.startswith(name + "=")]
+    if "[PythonPlugins]" in lines:
+        lines.insert(lines.index("[PythonPlugins]") + 1, name + "=true")
+    else:
+        lines += ["", "[PythonPlugins]", name + "=true"]
+    ini.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
+def install_qgis_plugin(src):
+    """Copy the plugin into every QGIS profile here and enable it.
+
+    Handing someone a zip to install by hand is one more step that can be
+    skipped, and a skipped step looks exactly like a broken server - the
+    plugin is simply absent from the menu. Copying the folder is what QGIS's
+    own installer does with the zip, so there is nothing to build first.
+    """
+    profiles = qgis_profiles()
+    if not profiles:
+        return [], "QGIS is not installed here"
+    done = []
+    for prof in profiles:
+        dest = prof / "python" / "plugins" / src.name
+        try:
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            if dest.exists():
+                shutil.rmtree(dest, ignore_errors=True)
+            shutil.copytree(src, dest, ignore=shutil.ignore_patterns(
+                "__pycache__", "*.pyc", "*.zip"))
+            enable_in_qgis_ini(prof / "QGIS" / "QGIS3.ini", src.name)
+            done.append(dest)
+        except Exception as e:
+            return done, str(e)[:60]
+    return done, None
 
 
 def report_models():
@@ -577,24 +671,45 @@ def report_qgis():
     """
     here = Path(__file__).resolve().parent
     source = None
-    for base in [here, *here.parents][:5]:
+    # GPU_SERVER_DIR.parent first: on a machine set up by SETUP SERVER.bat the
+    # project lives in its own folder and this package sits wherever it was
+    # copied, so walking up from here never reaches the plugin source.
+    bases = [config.GPU_SERVER_DIR.parent, here, *list(here.parents)[:4]]
+    for base in bases:
         c = base / "qgis-plugin" / "building_delineator" / "client.py"
-        if c.is_file():
-            source = c
-            break
+        try:
+            if c.is_file():
+                source = c
+                break
+        except OSError:
+            continue
 
-    installed = next((d for d in QGIS_PLUGIN_DIRS if (d / "client.py").is_file()), None)
-    if installed is None:
-        print("      not installed in QGIS")
-        if source:
-            print(f"      Install from: {source.parents[1] / 'building_delineator.zip'}")
+    dirs = [q / "python" / "plugins" / PLUGIN_NAME for q in qgis_profiles()]
+    installed = next((d for d in dirs if (d / "client.py").is_file()), None)
+    stale = bool(source and installed
+                 and source.read_bytes() != (installed / "client.py").read_bytes())
+
+    if source and (installed is None or stale):
+        print("      not installed in QGIS" if installed is None
+              else "      older than this project")
+        done, why = install_qgis_plugin(source.parent)
+        for d in done:
+            print(f"      installed -> {d}")
+        if why:
+            print(f"      could not install automatically: {why}")
+            print(f"      Install this folder by hand in QGIS: {source.parent}")
+        elif done:
+            print("      enabled - restart QGIS if it is open")
+            installed = done[0]
+    elif installed is None:
+        print("      plugin source not found next to this package")
         return
+    else:
+        print(f"      installed at {installed}")
+        print("      up to date with this project")
 
-    print(f"      installed at {installed}")
-    if source:
-        same = source.read_bytes() == (installed / "client.py").read_bytes()
-        print("      up to date with this project" if same else
-              "      OLDER than this project - reinstall the zip and restart QGIS")
+    if installed is None:
+        return
     try:
         import importlib.util
         spec = importlib.util.spec_from_file_location("_bd_client", installed / "client.py")
@@ -608,6 +723,7 @@ def report_qgis():
 
 def bring_up(skip_sync=False, no_tunnel=False, no_ask=False):
     py = sys.executable
+    srv = server_python()
     print("\n[0/7] settings")
     autoconfig()
     refresh_peers()
@@ -633,6 +749,8 @@ def bring_up(skip_sync=False, no_tunnel=False, no_ask=False):
         print("      (start height-server\\start.bat on the machine with the DSM)")
 
     print("\n[3/7] model server")
+    if srv != py:
+        print(f"      project environment: {srv}")
     if port_open(config.GPU_PORT):
         print(f"      already running on :{config.GPU_PORT}")
     elif not (config.GPU_SERVER_DIR / "app" / "main.py").exists():
@@ -640,27 +758,44 @@ def bring_up(skip_sync=False, no_tunnel=False, no_ask=False):
         print("      Run SETUP SERVER.bat once to install it, or leave this")
         print("      machine as a data peer and run models on the other one.")
     else:
-        spawn("Urbanly - models", config.GPU_SERVER_DIR,
-              [py, "-m", "uvicorn", "main:app", "--app-dir", "app",
-               "--host", "0.0.0.0", "--port", str(config.GPU_PORT)], env=env)
-        for _ in range(60):
+        if not has_module(srv, "torch"):
+            print("      PyTorch is missing from the environment this would use,")
+            print("      so the model server would start and immediately die.")
+            print(f"      Run SETUP SERVER.bat once.  ({srv})")
+        else:
+            spawn("Urbanly - models", config.GPU_SERVER_DIR,
+                  [srv, "-m", "uvicorn", "main:app", "--app-dir", "app",
+                   "--host", "0.0.0.0", "--port", str(config.GPU_PORT)], env=env)
+            for _ in range(90):
+                if port_open(config.GPU_PORT):
+                    break
+                time.sleep(1)
             if port_open(config.GPU_PORT):
-                break
-            time.sleep(1)
-        print(f"      {'ready' if port_open(config.GPU_PORT) else 'did not answer in 60s'}"
-              f" on :{config.GPU_PORT}")
+                print(f"      ready on :{config.GPU_PORT}")
+            else:
+                print("      did not answer in 90s - the reason is in")
+                print(f"      {LOG_DIR / 'Urbanly__models.log'}")
 
     print("\n[4/7] data server")
+    print(f"      serving {config.DATA_DIR}"
+          f"{'' if config.DATA_DIR.is_dir() else '   [!] no such folder'}")
     if port_open(config.DATA_PORT):
         print(f"      already running on :{config.DATA_PORT}")
     elif not (config.DATA_SERVER_DIR / "run.py").exists():
         print(f"      not installed here ({config.DATA_SERVER_DIR})")
         print("      Comes with SETUP SERVER.bat, same as the model server.")
     else:
-        args = [py, "-u", "run.py", "--port", str(config.DATA_PORT)]
+        # --data explicitly: run.py falls back to a hardcoded path that
+        # is this laptop's layout and nobody else's. Without it the second
+        # machine starts a data server over an empty folder, and both the
+        # webapp and the QGIS plugin show no layers at all.
+        args = [srv, "-u", "run.py", "--port", str(config.DATA_PORT),
+                "--data", str(config.DATA_DIR)]
         if no_tunnel:
             args.append("--no-tunnel")
-        spawn("Urbanly - data", config.DATA_SERVER_DIR, args)
+        denv = dict(env)
+        denv["GEO_DATA_DIR"] = str(config.DATA_DIR)
+        spawn("Urbanly - data", config.DATA_SERVER_DIR, args, env=denv)
         for _ in range(90):
             if port_open(config.DATA_PORT):
                 break
@@ -673,7 +808,8 @@ def bring_up(skip_sync=False, no_tunnel=False, no_ask=False):
         print(f"      already running on :{config.NODE_PORT}")
     else:
         spawn("Urbanly - node", Path(__file__).resolve().parent,
-              [py, "-m", "uvicorn", "node_api:app", "--host", "0.0.0.0",
+              [srv if has_module(srv, "fastapi") else py,
+               "-m", "uvicorn", "node_api:app", "--host", "0.0.0.0",
                "--port", str(config.NODE_PORT)])
         for _ in range(40):
             if port_open(config.NODE_PORT):
@@ -695,6 +831,49 @@ def bring_up(skip_sync=False, no_tunnel=False, no_ask=False):
     print(f"      UN_PEERS={addr}")
     print(f"      ({how})")
     print("\n  Leave the server windows open. Closing one stops that service.\n")
+
+
+def self_update():
+    """Keep a handed-over copy of this package in step with the project.
+
+    On a machine set up by SETUP SERVER.bat there are two copies of this
+    folder: the one that was copied over by hand, which is what gets
+    double-clicked, and the one inside the project, which is a git clone and
+    can be pulled. Without this, every fix to the startup has to be carried
+    across by hand - and the machine that needs the fix is the one nobody is
+    sitting at.
+
+    Does nothing when the package being run is already the project's own, so
+    the machine the project is developed on is unaffected.
+
+    Returns (restart_needed, names_changed).
+    """
+    here = Path(__file__).resolve().parent
+    src = config.GPU_SERVER_DIR.parent / "urbanly-node"
+    try:
+        if not src.is_dir() or src.resolve() == here:
+            return False, []
+    except OSError:
+        return False, []
+
+    if (src.parent / ".git").is_dir() and shutil.which("git"):
+        try:
+            subprocess.run(["git", "-C", str(src.parent), "pull", "--ff-only"],
+                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                           timeout=240)
+        except Exception:
+            pass
+
+    changed = []
+    for f in sorted(src.glob("*.py")) + sorted(src.glob("*.bat")):
+        dst = here / f.name
+        try:
+            if not dst.exists() or dst.read_bytes() != f.read_bytes():
+                shutil.copy2(f, dst)
+                changed.append(f.name)
+        except OSError:
+            continue
+    return ("node.py" in changed or "config.py" in changed), changed
 
 
 def main():
@@ -729,6 +908,15 @@ def main():
         import uvicorn
         uvicorn.run("node_api:app", host="0.0.0.0", port=config.NODE_PORT)
     else:
+        if not os.environ.get("UN_NO_SELF_UPDATE"):
+            restart, changed = self_update()
+            if changed:
+                print(f"  updated from the project: {', '.join(changed)}")
+            if restart:
+                print("  restarting with the new version\n")
+                os.environ["UN_NO_SELF_UPDATE"] = "1"
+                os.execv(sys.executable,
+                         [sys.executable, str(Path(__file__).resolve())] + sys.argv[1:])
         bring_up(skip_sync=a.no_sync, no_tunnel=a.no_tunnel, no_ask=a.no_ask)
 
 

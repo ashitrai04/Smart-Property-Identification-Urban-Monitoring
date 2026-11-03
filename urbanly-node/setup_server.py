@@ -260,6 +260,17 @@ def main():
     cfg.write_text("\n".join(lines) + "\n", encoding="utf-8")
     print(f"      {cfg}")
 
+    # The project carries its own copy of this package, and its START
+    # URBANLY.bat is just as double-clickable. Give that copy the same
+    # settings, so it does not matter which of the two gets started.
+    twin = repo / "urbanly-node" / "config.env"
+    try:
+        if twin.parent.is_dir() and twin.resolve() != cfg.resolve():
+            shutil.copy2(cfg, twin)
+            print(f"      {twin}")
+    except OSError:
+        pass
+
     step("pulling the model weights from the other laptop")
     (repo / "gpu-server" / "weights").mkdir(parents=True, exist_ok=True)
     ok = run([sys.executable, str(here / "node.py"), "sync"])

@@ -29,6 +29,14 @@ REM already-installed torch rather than asking for its own copy.
 set "PY="
 if exist "..\gpu-server\.venv\Scripts\python.exe" set "PY=..\gpu-server\.venv\Scripts\python.exe"
 if exist ".venv\Scripts\python.exe" set "PY=.venv\Scripts\python.exe"
+
+REM On a laptop set up by SETUP SERVER.bat the project is installed somewhere
+REM else entirely and this folder is only a copy, so the environment holding
+REM PyTorch is nowhere near "..\gpu-server". config.env records where it went.
+if exist "config.env" (
+  for /f "usebackq tokens=1,* delims==" %%a in (`findstr /b "UN_GPU_SERVER_DIR=" config.env`) do set "UN_GSD=%%b"
+)
+if defined UN_GSD if exist "%UN_GSD%\.venv\Scripts\python.exe" set "PY=%UN_GSD%\.venv\Scripts\python.exe"
 if not defined PY (
   where python >nul 2>nul
   if errorlevel 1 (
