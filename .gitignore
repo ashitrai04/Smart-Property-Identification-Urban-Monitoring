@@ -63,3 +63,6 @@ local-server/height.local.cmd
 # Height server package, zipped for transfer to the DSM laptop
 height-server.zip
 height-fix.zip
+
+# Node package, zipped for transfer to the other laptop
+urbanly-node.zip
