@@ -43,6 +43,17 @@ It only needs to be running `START URBANLY.bat` too. Start it there, then run
 this one again — or press `status`, which looks again. Nothing breaks in the
 meantime; a node with no peer simply serves its own data.
 
+If it is definitely running and still shows as offline, the firewall is the
+usual reason. Windows puts the Tailscale adapter in the Private profile, while
+the rule Python gets from the prompt someone clicked through covers Public
+only - so the laptop can reach its peer and cannot be reached by it, which
+from the other side looks exactly like it being switched off.
+
+Right-click **ALLOW TAILSCALE.bat** and choose *Run as administrator*, once
+per laptop. It opens 8777, 8790, 8800 and 8900 to `100.64.0.0/10` - the range
+Tailscale hands out - and to nothing else, so no network you join later can
+reach them. The start reports this itself if the rule is missing.
+
 ### About the key
 
 `UN_API_KEY` is left empty, which is right for a private Tailscale network:

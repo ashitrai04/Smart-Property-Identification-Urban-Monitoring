@@ -622,6 +622,29 @@ def install_qgis_plugin(src):
     return done, None
 
 
+FIREWALL_RULE = "Urbanly (Tailscale)"
+
+
+def firewall_ok():
+    """Whether inbound connections from the tailnet are actually allowed.
+
+    Tailscale's adapter lands in the Private firewall profile, while the
+    allow-rule Python gets from the prompt someone clicked through usually
+    covers Public only. A machine like that can reach its peer and cannot be
+    reached by it, which looks from the other side exactly like the peer being
+    switched off - and that is the whole of the "offline" in a failed sync.
+    """
+    if os.name != "nt":
+        return True
+    try:
+        r = subprocess.run(["netsh", "advfirewall", "firewall", "show", "rule",
+                            f"name={FIREWALL_RULE}"], timeout=30,
+                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        return r.returncode == 0
+    except Exception:
+        return True
+
+
 def report_models():
     """What the model server is actually serving, once it is up.
 
@@ -729,6 +752,11 @@ def bring_up(skip_sync=False, no_tunnel=False, no_ask=False):
     refresh_peers()
     if not config.PEERS:
         print("      no peer found - running standalone, which is fine")
+    if not firewall_ok():
+        print("      [!] inbound connections are blocked by Windows Firewall,")
+        print("          so the other laptop will see this one as offline.")
+        print("          Right-click ALLOW TAILSCALE.bat -> Run as administrator")
+        print("          (once per machine; it opens the ports to the tailnet only)")
     if not skip_sync:
         print("\n[1/7] syncing with peers")
         do_sync()
@@ -833,6 +861,78 @@ def bring_up(skip_sync=False, no_tunnel=False, no_ask=False):
     print("\n  Leave the server windows open. Closing one stops that service.\n")
 
 
+REPO_ZIP = ("https://codeload.github.com/ashitrai04/"
+            "Smart-Property-Identification-Urban-Monitoring/zip/refs/heads/main")
+SNAPSHOT_EVERY = 12 * 3600
+
+
+def refresh_snapshot(repo):
+    """Update a project that was installed from a zip rather than cloned.
+
+    `git clone` is tried first at install time, but on a machine without git
+    the project arrives as a zip: a snapshot with no way to pull. Left alone
+    it stays frozen at whatever main looked like that day, which is how the
+    second laptop came to run a startup script several versions behind the one
+    it had just been given - and to report step [2/4] of a sequence that has
+    had seven steps for a while.
+
+    Code only. The virtual environment, the weights and config.env are left
+    exactly as they are, so this costs a download and nothing else.
+    """
+    import tempfile
+    import urllib.request
+    import zipfile
+
+    stamp = repo / "urbanly-node" / ".snapshot"
+    try:
+        if stamp.is_file() and time.time() - stamp.stat().st_mtime < SNAPSHOT_EVERY:
+            return 0
+    except OSError:
+        pass
+
+    keep = {".venv", "weights", "config.env", "node_modules", ".git", "logs",
+            "__pycache__", ".snapshot"}
+    print("      refreshing the project (no git here, so it came as a zip)")
+    try:
+        with tempfile.TemporaryDirectory() as td:
+            td = Path(td)
+            z = td / "repo.zip"
+            with urllib.request.urlopen(REPO_ZIP, timeout=600) as r, open(z, "wb") as fh:
+                shutil.copyfileobj(r, fh)
+            with zipfile.ZipFile(z) as zf:
+                zf.extractall(td)
+            root = next((d for d in td.iterdir()
+                         if d.is_dir() and d.name.startswith("Smart-Property")), None)
+            if root is None:
+                return 0
+            n = 0
+            for f in root.rglob("*"):
+                if not f.is_file():
+                    continue
+                rel = f.relative_to(root)
+                if any(part in keep for part in rel.parts):
+                    continue
+                dst = repo / rel
+                try:
+                    if dst.exists() and dst.read_bytes() == f.read_bytes():
+                        continue
+                    dst.parent.mkdir(parents=True, exist_ok=True)
+                    shutil.copy2(f, dst)
+                    n += 1
+                except OSError:
+                    continue
+    except Exception as e:
+        print(f"      could not refresh it: {str(e)[:60]}")
+        return 0
+    try:
+        stamp.parent.mkdir(parents=True, exist_ok=True)
+        stamp.write_text("", encoding="utf-8")
+    except OSError:
+        pass
+    print(f"      {n} file(s) updated in the project")
+    return n
+
+
 def self_update():
     """Keep a handed-over copy of this package in step with the project.
 
@@ -863,14 +963,23 @@ def self_update():
                            timeout=240)
         except Exception:
             pass
+    else:
+        refresh_snapshot(src.parent)
 
     changed = []
     for f in sorted(src.glob("*.py")) + sorted(src.glob("*.bat")):
         dst = here / f.name
         try:
-            if not dst.exists() or dst.read_bytes() != f.read_bytes():
-                shutil.copy2(f, dst)
-                changed.append(f.name)
+            if dst.exists() and dst.read_bytes() == f.read_bytes():
+                continue
+            # Newer only. A project installed from a zip can be months behind
+            # the copy someone just handed over, and copying it anyway
+            # silently replaces a working startup with the broken one it was
+            # brought in to replace.
+            if dst.exists() and f.stat().st_mtime <= dst.stat().st_mtime:
+                continue
+            shutil.copy2(f, dst)
+            changed.append(f.name)
         except OSError:
             continue
     return ("node.py" in changed or "config.py" in changed), changed
