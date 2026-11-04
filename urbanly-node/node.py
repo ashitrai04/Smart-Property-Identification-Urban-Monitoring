@@ -26,7 +26,7 @@ import node_api
 # A number beats comparing timestamps: a file extracted from a zip carries
 # whatever date the zip recorded, so "newer" was a coin toss in exactly the
 # situation this exists for.
-__version__ = 8
+__version__ = 9
 
 BAR = "=" * 66
 
@@ -578,20 +578,29 @@ def spawn(title, cwd, args, env=None):
     """
     LOG_DIR.mkdir(exist_ok=True)
     log = LOG_DIR / (title.replace(" ", "_").replace("-", "") + ".log")
-    fh = open(log, "ab", buffering=0)
     if os.name != "nt":
+        fh = open(log, "ab", buffering=0)
         return subprocess.Popen(args, cwd=str(cwd), stdout=fh, stderr=fh,
                                 env=env)
+
+    # Through run_logged.py rather than directly: Windows hands a process
+    # either a console or a redirected file, so a server with its own window
+    # writes an empty log and a server with a log shows an empty window. The
+    # wrapper copies each line to both, and holds the window open when the
+    # server stops by itself, so the error is readable instead of blinking
+    # shut with the console that was showing it.
+    tee = Path(__file__).resolve().parent / "run_logged.py"
+    wrapped = ([sys.executable, "-u", str(tee), str(log)] + list(args)
+               if tee.is_file() else list(args))
 
     CREATE_NEW_CONSOLE = 0x00000010
     DETACHED_PROCESS = 0x00000008
     try:
-        p = subprocess.Popen(args, cwd=str(cwd), env=env,
-                             creationflags=CREATE_NEW_CONSOLE)
-        fh.close()
-        return p
+        return subprocess.Popen(wrapped, cwd=str(cwd), env=env,
+                                creationflags=CREATE_NEW_CONSOLE)
     except OSError:
-        # No desktop to open a console on; run it detached and keep the log.
+        # No desktop to open a console on; run it detached, log only.
+        fh = open(log, "ab", buffering=0)
         return subprocess.Popen(args, cwd=str(cwd), stdout=fh, stderr=fh,
                                 env=env, creationflags=DETACHED_PROCESS)
 
@@ -898,7 +907,8 @@ def bring_up(skip_sync=False, no_tunnel=False, no_ask=False):
             if port_open(config.GPU_PORT):
                 print(f"      ready on :{config.GPU_PORT}")
             else:
-                print("      did not answer in 90s - the reason is in")
+                print("      did not answer in 90s. The error is on screen in the")
+                print("      window titled \"Urbanly - models\", which stays open, and in")
                 print(f"      {LOG_DIR / 'Urbanly__models.log'}")
 
     print("\n[4/7] data server")
@@ -963,7 +973,7 @@ REPO_ZIP = ("https://codeload.github.com/ashitrai04/"
 SNAPSHOT_EVERY = 12 * 3600
 
 
-def refresh_snapshot(repo):
+def refresh_snapshot(repo, force=False):
     """Update a project that was installed from a zip rather than cloned.
 
     `git clone` is tried first at install time, but on a machine without git
@@ -982,7 +992,8 @@ def refresh_snapshot(repo):
 
     stamp = repo / "urbanly-node" / ".snapshot"
     try:
-        if stamp.is_file() and time.time() - stamp.stat().st_mtime < SNAPSHOT_EVERY:
+        if (not force and stamp.is_file()
+                and time.time() - stamp.stat().st_mtime < SNAPSHOT_EVERY):
             return 0
     except OSError:
         pass
@@ -1078,7 +1089,11 @@ def self_update():
         except Exception:
             pass
     else:
-        refresh_snapshot(src.parent)
+        # Behind this file is reason enough, without waiting for the clock:
+        # the stamp is there to stop a download on every start, not to keep a
+        # laptop on an old startup for half a day.
+        behind = file_version(src / "node.py") < __version__
+        refresh_snapshot(src.parent, force=behind)
 
     # A project installed from a zip can be well behind the copy someone has
     # just handed over, and copying it anyway replaces a working startup with
