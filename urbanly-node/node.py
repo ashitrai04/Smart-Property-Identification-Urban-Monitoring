@@ -191,6 +191,85 @@ def sniff_weights_dir():
     return local
 
 
+PROJECT_FOLDER = "Smart-Property-Identification-Urban-Monitoring"
+
+
+def sniff_project():
+    """Find a project installed by SETUP SERVER.bat, whatever config.env says.
+
+    config.env gets written twice - once by autoconfig when this package first
+    runs on its own, once by setup when the project lands - and whichever ran
+    last wins. Get that order wrong, or lose the file, and the package looks
+    for the servers inside its own folder, reports them "not installed here",
+    and puts the weights somewhere nothing will read them, while the real
+    install sits a few directories away.
+    """
+    here = Path(__file__).resolve().parent
+    bases = [Path(d) for d in (r"C:\Urbanly", r"D:\Urbanly", r"E:\Urbanly")]
+    bases += [Path.home() / "Urbanly", here.parent, here.parent.parent]
+    for base in bases:
+        for cand in (base / PROJECT_FOLDER, base):
+            try:
+                if (cand / "gpu-server" / "app" / "main.py").is_file():
+                    return cand
+            except OSError:
+                continue
+    return None
+
+
+def persist_env(values):
+    """Write settings into config.env, replacing any line that sets them."""
+    cfg = Path(__file__).resolve().parent / "config.env"
+    try:
+        txt = cfg.read_text(encoding="utf-8") if cfg.exists() else ""
+        lines = [ln for ln in txt.splitlines()
+                 if ln.split("=", 1)[0].strip() not in values]
+        lines += ["", "# Written automatically - where the project was found."]
+        lines += [f"{k}={v}" for k, v in values.items()]
+        cfg.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    except OSError:
+        pass
+
+
+def repair_paths():
+    """Re-point this package at the project, and bring the weights with it.
+
+    Re-downloading 1.5 GB because a settings file lost three lines is not a
+    reasonable thing to ask of anyone, so weights already pulled into the
+    wrong folder are moved rather than fetched again.
+    """
+    if (config.GPU_SERVER_DIR / "app" / "main.py").is_file():
+        return None
+    proj = sniff_project()
+    if proj is None:
+        return None
+
+    old_w = config.WEIGHTS_DIR
+    config.GPU_SERVER_DIR = proj / "gpu-server"
+    config.DATA_SERVER_DIR = proj / "local-server"
+    config.WEIGHTS_DIR = proj / "gpu-server" / "weights"
+
+    moved = 0
+    try:
+        if old_w.is_dir() and old_w.resolve() != config.WEIGHTS_DIR.resolve():
+            config.WEIGHTS_DIR.mkdir(parents=True, exist_ok=True)
+            for f in sorted(old_w.iterdir()):
+                if not f.is_file():
+                    continue
+                dst = config.WEIGHTS_DIR / f.name
+                if dst.exists() and dst.stat().st_size == f.stat().st_size:
+                    continue
+                shutil.move(str(f), str(dst))
+                moved += 1
+    except OSError:
+        pass
+
+    persist_env({"UN_GPU_SERVER_DIR": str(config.GPU_SERVER_DIR),
+                 "UN_DATA_SERVER_DIR": str(config.DATA_SERVER_DIR),
+                 "UN_WEIGHTS_DIR": str(config.WEIGHTS_DIR)})
+    return proj, moved
+
+
 def autoconfig(force=False):
     """Write a config.env this machine can run with, without being edited."""
     cfg = Path(__file__).resolve().parent / "config.env"
@@ -749,6 +828,13 @@ def bring_up(skip_sync=False, no_tunnel=False, no_ask=False):
     srv = server_python()
     print("\n[0/7] settings")
     autoconfig()
+    fixed = repair_paths()
+    if fixed:
+        proj, moved = fixed
+        print(f"      found the project at {proj}")
+        if moved:
+            print(f"      moved {moved} weight file(s) into its weights folder")
+        print("      config.env updated - this will not need doing again")
     refresh_peers()
     if not config.PEERS:
         print("      no peer found - running standalone, which is fine")
@@ -950,6 +1036,13 @@ def self_update():
     """
     here = Path(__file__).resolve().parent
     src = config.GPU_SERVER_DIR.parent / "urbanly-node"
+    # config.env can be missing the line that says where the project went,
+    # in which case the above resolves to this very folder and nothing ever
+    # updates. Look for the project the same way the startup does.
+    if not (src / "node.py").is_file():
+        proj = sniff_project()
+        if proj is not None:
+            src = proj / "urbanly-node"
     try:
         if not src.is_dir() or src.resolve() == here:
             return False, []
