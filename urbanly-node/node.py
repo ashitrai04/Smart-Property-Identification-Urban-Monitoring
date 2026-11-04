@@ -10,6 +10,7 @@ is the same on both and why nothing here is called "client".
 """
 import argparse
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -20,6 +21,12 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import config
 import node_api
+
+# Bumped whenever this file changes in a way the other laptop should pick up.
+# A number beats comparing timestamps: a file extracted from a zip carries
+# whatever date the zip recorded, so "newer" was a coin toss in exactly the
+# situation this exists for.
+__version__ = 8
 
 BAR = "=" * 66
 
@@ -825,7 +832,6 @@ def report_qgis():
 
 def bring_up(skip_sync=False, no_tunnel=False, no_ask=False):
     py = sys.executable
-    srv = server_python()
     print("\n[0/7] settings")
     autoconfig()
     fixed = repair_paths()
@@ -835,6 +841,11 @@ def bring_up(skip_sync=False, no_tunnel=False, no_ask=False):
         if moved:
             print(f"      moved {moved} weight file(s) into its weights folder")
         print("      config.env updated - this will not need doing again")
+    # After repair_paths, never before it: the environment holding PyTorch is
+    # inside the project, so asking where it is while the project is still
+    # being located gets the answer "nowhere" and quietly falls back to a
+    # system Python that has none of the model packages.
+    srv = server_python()
     refresh_peers()
     if not config.PEERS:
         print("      no peer found - running standalone, which is fine")
@@ -1019,6 +1030,16 @@ def refresh_snapshot(repo):
     return n
 
 
+def file_version(path):
+    """The __version__ another copy of this file declares, or 0."""
+    try:
+        m = re.search(r"^__version__ = (\d+)", path.read_text(encoding="utf-8"),
+                      re.M)
+        return int(m.group(1)) if m else 0
+    except OSError:
+        return 0
+
+
 def self_update():
     """Keep a handed-over copy of this package in step with the project.
 
@@ -1059,17 +1080,17 @@ def self_update():
     else:
         refresh_snapshot(src.parent)
 
+    # A project installed from a zip can be well behind the copy someone has
+    # just handed over, and copying it anyway replaces a working startup with
+    # the broken one it was brought in to replace.
+    if file_version(src / "node.py") <= __version__:
+        return False, []
+
     changed = []
     for f in sorted(src.glob("*.py")) + sorted(src.glob("*.bat")):
         dst = here / f.name
         try:
             if dst.exists() and dst.read_bytes() == f.read_bytes():
-                continue
-            # Newer only. A project installed from a zip can be months behind
-            # the copy someone just handed over, and copying it anyway
-            # silently replaces a working startup with the broken one it was
-            # brought in to replace.
-            if dst.exists() and f.stat().st_mtime <= dst.stat().st_mtime:
                 continue
             shutil.copy2(f, dst)
             changed.append(f.name)
