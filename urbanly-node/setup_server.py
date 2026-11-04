@@ -172,6 +172,16 @@ def install(py: Path, repo: Path, skip_torch: bool):
         print("      installing the rest")
         if not run([str(py), "-m", "pip", "install", "-r", str(req)]):
             sys.exit("dependency install failed")
+    # ultralytics, --no-deps and on its own: with its dependencies it pulls
+    # the GUI build of opencv and moves numpy, both of which break rasterio.
+    # Its runtime deps are already pinned in requirements.txt above. The
+    # Linux setup.sh has always done this; leaving it out of the Windows
+    # installer is why a fresh machine started the model server and lost it
+    # on "No module named ultralytics" - a package only potholes use.
+    print("      installing ultralytics (pothole model)")
+    run([str(py), "-m", "pip", "install", "--quiet", "--no-deps",
+         "ultralytics>=8.4,<8.5", "ultralytics-thop"], quiet=True)
+
     # The data server needs these too; they overlap with the above but are
     # named here so a change to one requirements file cannot silently break it.
     run([str(py), "-m", "pip", "install", "--quiet",

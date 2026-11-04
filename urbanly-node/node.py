@@ -26,7 +26,7 @@ import node_api
 # A number beats comparing timestamps: a file extracted from a zip carries
 # whatever date the zip recorded, so "newer" was a coin toss in exactly the
 # situation this exists for.
-__version__ = 9
+__version__ = 10
 
 BAR = "=" * 66
 

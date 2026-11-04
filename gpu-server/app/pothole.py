@@ -22,7 +22,6 @@ import torch
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from PIL import Image
 from torchvision.ops import batched_nms
-from ultralytics import YOLO
 
 WEIGHTS = os.environ.get("WEIGHTS", os.path.join(os.path.dirname(__file__), "final_best.pt"))
 IMGSZ = 1024
@@ -58,6 +57,13 @@ ROAD_MASK_FN = None
 
 
 def _m():
+    # ultralytics is imported here rather than at the top of the file: it is
+    # installed --no-deps on purpose, so it is the package most likely to be
+    # missing on a fresh machine, and an import at module level takes the
+    # whole model server down - building delineation included - over a
+    # dependency that only potholes need.
+    from ultralytics import YOLO
+
     global _model, NAMES
     if _model is None:
         print("[pothole] first request — loading YOLO weights…", flush=True)
