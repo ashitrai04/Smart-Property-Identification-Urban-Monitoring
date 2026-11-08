@@ -122,7 +122,7 @@ reach. Stop the one you are not using if that matters.
   holds       17 layers (80.7 MB) · 4 weights (1.5 GB) · 4 rasters (44.4 GB)
 
   PEERS
-  ONLINE   laptop-b at http://100.74.15.17:8790  (18 ms)
+  ONLINE   laptop-b at http://100.x.y.z:8790  (18 ms)
            NVIDIA GeForce RTX 4060 · 7.1 GB free
            17 layers · 4 weights · 4 rasters
 ```

@@ -119,11 +119,18 @@ def load_model(weights_path):
     if _MODEL is not None:
         return _MODEL
     model = SegformerForSemanticSegmentation(_build_config())
-    ckpt = torch.load(weights_path, map_location=DEVICE, weights_only=False)
+    # Onto the CPU first, then .to(DEVICE) below - never straight to the card.
+    # The checkpoint is a training checkpoint and carries more than the model;
+    # mapping it to CUDA puts all of that in VRAM and holds the discarded part
+    # there until the next garbage collection, so on a 6 GB laptop GPU the load
+    # peaks at roughly twice the model's size and can fail with an
+    # out-of-memory error on a card that has ample room for inference.
+    ckpt = torch.load(weights_path, map_location="cpu", weights_only=False)
     sd = ckpt.get("model_state_dict", ckpt) if isinstance(ckpt, dict) else ckpt
     sd = {k.replace("module.", "").replace("backbone.", "").replace("model.", ""): v for k, v in sd.items()}
     sd = _to_current_naming(sd, model.state_dict())
     miss, unexp = model.load_state_dict(sd, strict=False)
+    del ckpt, sd
     LOAD_INFO.update({
         "loaded": len(miss) < 50,  # a clean load has ~0 missing; large => version mismatch
         "missing": len(miss),
