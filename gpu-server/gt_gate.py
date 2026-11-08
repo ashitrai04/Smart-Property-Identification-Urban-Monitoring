@@ -25,6 +25,9 @@ import sys
 import time
 from pathlib import Path
 
+# launched from Jupyter, MPLBACKEND points at the notebook backend, which these envs lack
+os.environ["MPLBACKEND"] = "Agg"
+
 ROOT = Path(__file__).resolve().parent
 for line in (ROOT / "config.env").read_text().splitlines() if (ROOT / "config.env").exists() else []:
     if "=" in line and not line.lstrip().startswith("#"):
