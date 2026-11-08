@@ -95,6 +95,16 @@ def _load():
             return _model
         if not os.path.exists(WEIGHTS):
             raise HTTPException(503, f"HiSup weights not found at {WEIGHTS}")
+        size = os.path.getsize(WEIGHTS)
+        # The checkpoint is 1.19 GB and reaches the second laptop over the
+        # peer sync. A truncated or still-downloading file is the likeliest
+        # way this goes wrong, and torch then raises something unreadable
+        # about a corrupted zip, so name the real problem first.
+        if size < 900_000_000:
+            raise HTTPException(503,
+                f"HiSup weights at {WEIGHTS} are {size / 1e6:.0f} MB; the "
+                f"checkpoint is about 1191 MB, so this copy is incomplete. "
+                f"Delete it and let the sync pull it again.")
         print(f"[hisup] loading {WEIGHTS} on {DEVICE}…", flush=True)
         t0 = time.time()
         from hisup.config import cfg
@@ -102,11 +112,30 @@ def _load():
         cfg.merge_from_file(os.path.join(HERE, "app", "hisup_config.yaml"))
         cfg.MODEL.DEVICE = DEVICE
         m = BuildingDetector(cfg, test=True)
-        sd = torch.load(WEIGHTS, map_location="cpu", weights_only=False)
+        try:
+            sd = torch.load(WEIGHTS, map_location="cpu", weights_only=False)
+        except Exception as e:
+            raise HTTPException(503,
+                f"HiSup weights at {WEIGHTS} could not be read ({size / 1e6:.0f} "
+                f"MB): {type(e).__name__}: {str(e)[:200]}. If this says the "
+                f"archive is corrupt the file arrived damaged - delete it and "
+                f"let the sync pull it again.") from e
         sd = sd.get("model", sd.get("state_dict", sd))
         sd = {k.replace("module.", "", 1): v for k, v in sd.items()}
         miss, _ = m.load_state_dict(sd, strict=False)
         tot = len(m.state_dict())
+        # strict=False is here so a checkpoint may omit buffers, not so a
+        # mismatched one can load a tenth of the network and then quietly
+        # predict noise. A clean load matches every tensor; refuse anything
+        # that does not, because a half-initialised model returns plausible
+        # polygons in the wrong places, which is worse than an error.
+        if len(miss) > 0.02 * tot:
+            _model = None
+            raise HTTPException(503,
+                f"HiSup checkpoint does not match this architecture: only "
+                f"{tot - len(miss)} of {tot} tensors matched. The weights and "
+                f"the vendored HiSup are different versions - do not trust "
+                f"predictions from this pair.")
         _model = m.to(DEVICE).eval()
         LOAD_INFO.update(loaded=True, matched=f"{tot - len(miss)}/{tot}",
                          seconds=round(time.time() - t0, 1),
@@ -607,6 +636,8 @@ def _pick_imagery(aoi_geojson, imagery_id=None):
 AREA_TASKS = {
     "hisup":   {"label": "Building delineation", "kind": "vector",
                 "note": "individual footprints - our Ongole model"},
+    "roadnet": {"label": "Road extraction", "kind": "vector",
+                "note": "carriageway surface and centrelines - DINOv3 ViT-L"},
     "segment": {"label": "Land-use segmentation", "kind": "vector",
                 "note": "buildings / roads / water / open ground"},
     "fusion":  {"label": "Segmentation + SAM", "kind": "vector",
@@ -635,7 +666,10 @@ async def area_start(payload: dict = Body(...)):
     img = _pick_imagery(aoi, payload.get("imagery_id"))
 
     params = {"aoi": aoi, "regularize": bool(payload.get("regularize", True))}
-    for k in ("scales", "min_votes", "core", "lo", "work_gsd_m", "window"):
+    # reg_mode and threshold belong to the road model; the others to HiSup.
+    # Both are carried on the same job row, and each task reads what it knows.
+    for k in ("scales", "min_votes", "core", "lo", "work_gsd_m", "window",
+              "reg_mode", "threshold"):
         if payload.get(k) not in (None, "", []):
             params[k] = payload[k]
 

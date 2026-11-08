@@ -10,8 +10,8 @@ from qgis.core import (QgsCoordinateTransform, QgsProcessing, QgsProcessingAlgor
                        QgsProcessingParameterFeatureSource, QgsProject, QgsWkbTypes)
 
 from .. import client
-from .common import (SERVER, WGS84, check_server, features_from_geojson, out_fields,
-                     server_param)
+from .common import (SERVER, WGS84, check_server, features_from_geojson, line_fields,
+                     lines_from_geojson, out_fields, server_param)
 
 
 class DetectInAreaAlgorithm(QgsProcessingAlgorithm):
@@ -19,12 +19,14 @@ class DetectInAreaAlgorithm(QgsProcessingAlgorithm):
     EXTENT = "EXTENT"
     TASK = "TASK"
     OUTPUT = "OUTPUT"
+    CENTRELINES = "CENTRELINES"
 
     # Filled from the server when the dialog opens, so the list cannot drift
     # from what the server will actually run.
     def __init__(self):
         super().__init__()
         self._tasks = [("hisup", "Building delineation"),
+                       ("roadnet", "Road extraction (DINOv3)"),
                        ("segment", "Land-use segmentation"),
                        ("fusion", "Segmentation + SAM")]
 
@@ -67,6 +69,12 @@ class DetectInAreaAlgorithm(QgsProcessingAlgorithm):
             defaultValue=0))
         self.addParameter(QgsProcessingParameterFeatureSink(
             self.OUTPUT, "Detected features", type=QgsProcessing.TypeVectorPolygon))
+        # Road extraction returns centrelines beside the carriageway polygons.
+        # They cannot share a sink with the polygons, so they get their own;
+        # for every other model it simply comes back empty.
+        self.addParameter(QgsProcessingParameterFeatureSink(
+            self.CENTRELINES, "Road centrelines", type=QgsProcessing.TypeVectorLine,
+            optional=True, createByDefault=False))
 
     def processAlgorithm(self, parameters, context, feedback):
         url = check_server(client, self.parameterAsString(parameters, SERVER, context),
@@ -99,7 +107,18 @@ class DetectInAreaAlgorithm(QgsProcessingAlgorithm):
                                           QgsWkbTypes.Polygon, WGS84)
         for f in feats:
             sink.addFeature(f)
-        return {self.OUTPUT: dest}
+
+        out = {self.OUTPUT: dest}
+        lines = lines_from_geojson(fc, line_fields())
+        if lines:
+            lsink, ldest = self.parameterAsSink(parameters, self.CENTRELINES, context,
+                                                line_fields(), QgsWkbTypes.LineString, WGS84)
+            if lsink is not None:
+                for f in lines:
+                    lsink.addFeature(f)
+                out[self.CENTRELINES] = ldest
+                feedback.pushInfo(f"{len(lines)} centrelines")
+        return out
 
     def _aoi(self, parameters, context, feedback):
         """The area to process, as one EPSG:4326 GeoJSON geometry.

@@ -26,7 +26,7 @@ import node_api
 # A number beats comparing timestamps: a file extracted from a zip carries
 # whatever date the zip recorded, so "newer" was a coin toss in exactly the
 # situation this exists for.
-__version__ = 10
+__version__ = 12
 
 BAR = "=" * 66
 
@@ -553,6 +553,80 @@ def server_python():
     return sys.executable
 
 
+def read_env_file(path):
+    """KEY=VALUE out of a .env / config.env, without needing python-dotenv."""
+    out = {}
+    try:
+        text = Path(path).read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return out
+    for line in text.splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        k, v = line.split("=", 1)
+        k = k.strip().lstrip("\ufeff")
+        v = v.strip().strip('"').strip("'")
+        if k:
+            out[k] = v
+    return out
+
+
+# What the model server reads but Windows never gave it. VITE_* belong to the
+# web build and are deliberately not passed on.
+SERVER_KEYS = ("R2_", "SP_", "SEG_", "HISUP_", "POTHOLE_", "FUSE_", "HEIGHT_",
+               "HF_", "SAM_", "MIN_FREE_MB", "CF_TUNNEL_TOKEN")
+
+
+def server_env(extra=None):
+    r"""The environment the model server needs - the Windows half of run.sh.
+
+    gpu-server/app/config.py says in its first line that everything is
+    overridable from config.env, and on Linux run.sh sources it before
+    exec'ing uvicorn. Nothing did that here: node.py handed the server a bare
+    copy of os.environ, so on Windows the server ran with no R2 credentials
+    (every /r2/presign and /predict-url answered 500, which is what "errors
+    while loading models" looks like from the web app), no MPLBACKEND, and no
+    PYTORCH_CUDA_ALLOC_CONF - the last one matters on a 6 GB laptop GPU, where
+    tiled inference fragments the heap and fails with an out-of-memory error
+    long before the card is actually full.
+
+    Files are read in increasing order of specificity, so a value set in
+    gpu-server/config.env wins over the same key in the project's .env, and
+    anything already exported wins over both.
+    """
+    env = dict(os.environ)
+    root = Path(config.GPU_SERVER_DIR).parent
+    picked = {}
+    for f in (root / ".env", config.GPU_SERVER_DIR / "config.env"):
+        for k, v in read_env_file(f).items():
+            if v and k.startswith(SERVER_KEYS):
+                picked[k] = v
+    for k, v in picked.items():
+        env.setdefault(k, v)
+
+    # Headless: launched from a shortcut the process can inherit an MPLBACKEND
+    # that does not exist in this environment, and matplotlib then raises on
+    # import - taking the whole server with it.
+    env.setdefault("MPLBACKEND", "Agg")
+    # Return freed blocks instead of hoarding them. On a 6 GB card this is the
+    # difference between a job finishing and a CUDA out-of-memory half way in.
+    env.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
+    # Keep model caches inside the project instead of the roaming profile,
+    # which on a managed laptop may be read-only or synced to OneDrive.
+    env.setdefault("HF_HOME", str(config.GPU_SERVER_DIR / "weights" / "hf"))
+    env.setdefault("YOLO_CONFIG_DIR",
+                   str(config.GPU_SERVER_DIR / "data" / ".ultralytics"))
+    for k in ("HF_HOME", "YOLO_CONFIG_DIR"):
+        try:
+            Path(env[k]).mkdir(parents=True, exist_ok=True)
+        except OSError:
+            pass
+    if extra:
+        env.update(extra)
+    return env, sorted(picked)
+
+
 def has_module(py, mod):
     try:
         return subprocess.run([py, "-c", "import " + mod], timeout=120,
@@ -763,6 +837,14 @@ def report_models():
     except Exception as e:
         print(f"      HiSup buildings : could not ask ({str(e)[:50]})")
     try:
+        h = rq.get(f"{base}/roadnet/health", timeout=30).json()
+        loaded = (h.get("load") or {}).get("loaded")
+        state = "loaded" if loaded else ("ready, loads on first use"
+                                         if h.get("weights_present") else "WEIGHTS MISSING")
+        print(f"      road extraction : {state} on {h.get('device', '?')}")
+    except Exception as e:
+        print(f"      road extraction : could not ask ({str(e)[:50]})")
+    try:
         a = rq.get(f"{base}/api/health", timeout=20).json()
         caps = a.get("capabilities") or []
         print(f"      also serving    : {', '.join(c for c in caps if c != 'hisup')}")
@@ -874,9 +956,8 @@ def bring_up(skip_sync=False, no_tunnel=False, no_ask=False):
 
     print("\n[2b]  height server")
     height = sniff_height_server()
-    env = dict(os.environ)
+    env, carried = server_env({"HEIGHT_SERVER": height} if height else None)
     if height:
-        env["HEIGHT_SERVER"] = height
         print(f"      height server found at {height}")
     else:
         print("      no height server found - buildings will have no heights")
@@ -885,6 +966,15 @@ def bring_up(skip_sync=False, no_tunnel=False, no_ask=False):
     print("\n[3/7] model server")
     if srv != py:
         print(f"      project environment: {srv}")
+    # Silence here used to mean the server was about to answer 500 to every
+    # upload, with nothing on screen to say why.
+    if carried:
+        groups = sorted({k.split("_")[0] for k in carried})
+        print(f"      settings loaded: {', '.join(groups)}")
+    else:
+        print("      [!] no R2 or model settings found. Imagery upload and")
+        print("          /predict-url will fail with 500. Put the project's")
+        print(f"          .env in {Path(config.GPU_SERVER_DIR).parent}")
     if port_open(config.GPU_PORT):
         print(f"      already running on :{config.GPU_PORT}")
     elif not (config.GPU_SERVER_DIR / "app" / "main.py").exists():

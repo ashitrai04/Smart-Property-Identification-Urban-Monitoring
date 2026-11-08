@@ -447,6 +447,151 @@ def _run_hisup(job, img, out_dir):
                       "scales": scales, "min_votes": min_votes, "regularized": want_reg}}
 
 
+# ── task: roadnet (DINOv3 road extraction over an area) ──────────
+# A road is one continuous thing that runs through many windows, which makes it
+# the opposite of a building for assembly purposes. HiSup can decide each
+# window independently and keep whatever is centred there, because a footprint
+# lives in one place. A carriageway does not: regularizing window by window
+# would smooth each fragment towards a different centreline and leave a visible
+# kink at every seam, which is exactly the blobbiness this model is here to
+# avoid. So the probability is accumulated into one AOI-wide raster first, and
+# the geometry is extracted from that raster once, at the end.
+ROADNET_MAXPIX = int(os.environ.get("ROADNET_MAX_PIXELS", str(80_000_000)))
+
+
+def _run_roadnet(job, img, out_dir):
+    import roadnet as R
+    import roadreg
+
+    params = job.get("params") or {}
+    want_reg = bool(params.get("regularize", True))
+    mode = str(params.get("reg_mode") or "corridor")
+    if not want_reg:
+        mode = "none"
+    if mode not in ("corridor", "smooth", "none"):
+        raise ValueError(f"reg_mode must be corridor, smooth or none (got {mode})")
+    thr = float(params.get("threshold") or R.THRESH)
+    work = float(params.get("work_gsd_m") or R.WORK_GSD)
+
+    with rasterio.open(img["cog_path"]) as src:
+        native = abs(src.transform.a)
+        if not src.crs or not src.crs.is_projected:
+            raise ValueError("this area tool needs a projected raster (metre CRS)")
+        scale = max(work / native, 1.0)
+        W, H = int(src.width / scale), int(src.height / scale)
+        T = src.transform * Affine.scale(scale)
+        gsd = abs(T.a)
+
+        aoi = _aoi_in_crs(params.get("aoi"), src.crs)
+        if aoi is not None and aoi.is_empty:
+            raise ValueError("the drawn area is empty")
+
+        win = int(params.get("window") or 1024)
+        step = win - 2 * OVERLAP
+        cells = _aoi_cells(aoi, T, W, H, win, step)
+        if not cells:
+            raise ValueError("the drawn area does not overlap this imagery")
+
+        # Work in the AOI's own pixel box rather than the whole mosaic, so the
+        # accumulator is the size of what was drawn and not of Ongole.
+        bx0 = min(c[0] for c in cells)
+        by0 = min(c[1] for c in cells)
+        bx1 = max(c[0] + c[2] for c in cells)
+        by1 = max(c[1] + c[3] for c in cells)
+        bw, bh = bx1 - bx0, by1 - by0
+        if bw * bh > ROADNET_MAXPIX:
+            raise ValueError(
+                f"that area is {bw * bh / 1e6:.0f} megapixels at {gsd:.2f} m/px, "
+                f"over the {ROADNET_MAXPIX / 1e6:.0f} MP limit for one road job. "
+                f"Draw a smaller area, or raise work_gsd_m.")
+
+        acc = np.zeros((bh, bw), np.float32)
+        wsum = np.zeros((bh, bw), np.float32)
+        n, done = len(cells), 0
+        db.update_job(job["id"], stats={"windows": n, "gsd": gsd, "mode": mode})
+
+        for (x, y, w, h) in cells:
+            if _cancelled(job["id"]):
+                return None
+            src_win = Window(x * scale, y * scale, w * scale, h * scale)
+            rgb, valid = _read_rgb(src, src_win, w, h)
+            done += 1
+            if valid.mean() < 0.02:
+                _progress(job["id"], 0.85 * done / n)
+                continue
+            prob = _on_gpu(job["id"], lambda: R.probability(rgb))
+            prob = np.asarray(prob, np.float32)
+            prob[~valid] = 0.0
+            # Feather the window edges so neighbouring windows blend instead of
+            # meeting at a step that would survive thresholding as a notch.
+            fy = np.minimum(np.arange(h), h - 1 - np.arange(h)).astype(np.float32)
+            fx = np.minimum(np.arange(w), w - 1 - np.arange(w)).astype(np.float32)
+            edge = max(1.0, OVERLAP / 2.0)
+            wgt = np.outer(np.clip(fy / edge, 0.02, 1.0), np.clip(fx / edge, 0.02, 1.0))
+            acc[y - by0:y - by0 + h, x - bx0:x - bx0 + w] += prob * wgt
+            wsum[y - by0:y - by0 + h, x - bx0:x - bx0 + w] += wgt
+            _progress(job["id"], 0.85 * done / n)
+
+        prob = acc / np.maximum(wsum, 1e-6)
+        del acc, wsum
+        mask = prob >= thr
+
+        # Outside the drawn polygon is not an answer, so cut before the
+        # geometry is built - a corridor half inside the AOI would otherwise be
+        # smoothed using pixels the operator did not ask about.
+        if aoi is not None:
+            from rasterio.features import rasterize as _rz
+            bt = T * Affine.translation(bx0, by0)
+            inside = _rz([(aoi, 1)], out_shape=(bh, bw), transform=bt, fill=0,
+                         dtype="uint8").astype(bool)
+            mask &= inside
+
+        _progress(job["id"], 0.9)
+        polys, lines, how = roadreg.regularize_roads(mask, gsd, mode=mode)
+
+        sink = _Sink(out_dir / "results.gpkg", src.crs)
+        bt = T * Affine.translation(bx0, by0)
+        geoms, props = [], []
+        for g in polys:
+            if g.is_empty or g.geom_type != "Polygon":
+                continue
+            ring = _pix_to_map(np.asarray(g.exterior.coords, float), bt)
+            holes = [_pix_to_map(np.asarray(r.coords, float), bt) for r in g.interiors]
+            try:
+                mg = shapely.Polygon(ring, holes)
+            except Exception:
+                continue
+            if mg.is_empty or not mg.is_valid:
+                mg = mg.buffer(0)
+            if mg.is_empty or mg.geom_type != "Polygon":
+                continue
+            geoms.append(mg)
+            props.append({"area_m2": round(mg.area, 2)})
+        if geoms:
+            sink.add("roads", geoms, props)
+
+        cls, cprops = [], []
+        for ln in lines:
+            pts = _pix_to_map(np.asarray(ln.coords, float), bt)
+            if len(pts) >= 2:
+                g = shapely.LineString(pts)
+                cls.append(g)
+                cprops.append({"length_m": round(g.length, 2)})
+        if cls:
+            sink.add("road_centrelines", cls, cprops)
+
+        _progress(job["id"], 1.0)
+        total_m2 = float(sum(g.area for g in geoms))
+        total_km = float(sum(g.length for g in cls)) / 1000.0
+
+    return {"layers": sink.counts,
+            "stats": {"features": {"roads": len(geoms), "centrelines": len(cls)},
+                      "windows": n, "gsd": gsd, "threshold": thr,
+                      "regularize": mode, "applied": how,
+                      "road_area_m2": round(total_m2, 1),
+                      "centreline_km": round(total_km, 3)}}
+
+
 # ── task: pothole ────────────────────────────────────────────────
 def _run_pothole(job, img, out_dir):
     """YOLO road damage over a whole orthomosaic, kept to roads.
@@ -589,6 +734,8 @@ def run_job(job):
             res = _run_segmentation(job, img, out_dir, fusion=job["task"] == "fusion")
         elif job["task"] == "hisup":
             res = _run_hisup(job, img, out_dir)
+        elif job["task"] == "roadnet":
+            res = _run_roadnet(job, img, out_dir)
         elif job["task"] == "pothole":
             res = _run_pothole(job, img, out_dir)
         elif job["task"] == "refine":

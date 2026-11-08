@@ -29,6 +29,7 @@ const SRC = "area-model-src";
 const FILL = "area-model-fill";
 const LINE = "area-model-line";
 const LABEL = "area-model-label";
+const CENTRE = "area-model-centreline";
 
 /*
  * Height written on each roof.
@@ -62,11 +63,28 @@ const LABEL_MINZOOM = 16.5;
 const LAYER_COLOURS = {
     buildings: "#FF4FD8",
     roads: "#22D3EE",
+    road_centrelines: "#FDE047",
     water: "#38BDF8",
     waterbodies: "#38BDF8",
     open: "#FBBF24",
     openareas: "#FBBF24",
 };
+
+/*
+ * How the road model's output is cleaned up. The model returns a probability
+ * per pixel; left alone that thresholds into a blobby mask with sawtooth edges,
+ * so the server rebuilds geometry from it. Corridor is the default because a
+ * carriageway is a corridor, not a blob - but a junction is not a corridor
+ * either, so the server falls back per component and reports which it used.
+ */
+const ROAD_REG = [
+    { id: "corridor", label: "Corridor — centreline + width",
+      note: "cleanest road shapes; rebuilds the carriageway from a smoothed centreline" },
+    { id: "smooth", label: "Smooth — follow the mask edge",
+      note: "keeps junctions and odd widths exactly; still de-blobbed" },
+    { id: "none", label: "Raw — no regularization",
+      note: "the mask as the model drew it, stair-steps and all" },
+];
 
 const QUALITY = [
     { id: "fast", label: "Fast — single pass",
@@ -154,6 +172,7 @@ export default function AreaModelPanel({ map, aoiFeatures }) {
     const [byFloors, setByFloors] = useState(false);  // colour by storeys, not identity
     const [labels, setLabels] = useState(true);       // height written on each roof
     const [quality, setQuality] = useState("fast");
+    const [roadReg, setRoadReg] = useState("corridor");
     const [saving, setSaving] = useState(false);
 
     const heightOkRef = useRef(false);
@@ -196,11 +215,30 @@ export default function AreaModelPanel({ map, aoiFeatures }) {
         });
         map.addLayer({
             id: LINE, type: "line", source: SRC,
+            // Outlines only. A mapbox line layer happily draws LineStrings as
+            // well, so without this the road centrelines would be painted
+            // twice - once solid here and once dashed below.
+            filter: ["==", ["geometry-type"], "Polygon"],
             paint: {
                 "line-color": byFloors ? FLOOR_PAINT : ["get", "colour"],
                 // A building still showing the detector's outline is drawn
                 // thicker, so the eye is drawn to what just happened.
                 "line-width": ["case", ["==", ["get", "stage"], "raw"], 2.6, 1.2],
+                "line-opacity": Math.min(1, opacity + 0.35),
+            },
+        });
+        // Road centrelines are LineStrings in the same collection. They need
+        // their own layer: the fill layer ignores them entirely, and in the
+        // outline layer above they would be indistinguishable from a
+        // carriageway edge, which is the one thing they must not look like.
+        map.addLayer({
+            id: CENTRE, type: "line", source: SRC,
+            filter: ["==", ["geometry-type"], "LineString"],
+            layout: { "line-cap": "round", "line-join": "round" },
+            paint: {
+                "line-color": LAYER_COLOURS.road_centrelines,
+                "line-width": ["interpolate", ["linear"], ["zoom"], 14, 1.2, 18, 2.4],
+                "line-dasharray": [2, 2],
                 "line-opacity": Math.min(1, opacity + 0.35),
             },
         });
@@ -249,6 +287,9 @@ export default function AreaModelPanel({ map, aoiFeatures }) {
         if (!hasLayers()) return;
         map.setPaintProperty(FILL, "fill-opacity", opacity);
         map.setPaintProperty(LINE, "line-opacity", Math.min(1, opacity + 0.35));
+        if (map.getLayer(CENTRE)) {
+            map.setPaintProperty(CENTRE, "line-opacity", Math.min(1, opacity + 0.35));
+        }
     }, [map, opacity, hasLayers]);
 
     // Switching between "a colour per building" and "colour by storeys" repaints
@@ -324,7 +365,7 @@ export default function AreaModelPanel({ map, aoiFeatures }) {
 
     const clearLayer = useCallback(() => {
         if (!map) return;
-        for (const id of [LABEL, FILL, LINE]) { try { map.getLayer(id) && map.removeLayer(id); } catch { /* gone */ } }
+        for (const id of [LABEL, CENTRE, FILL, LINE]) { try { map.getLayer(id) && map.removeLayer(id); } catch { /* gone */ } }
         try { map.getSource(SRC) && map.removeSource(SRC); } catch { /* gone */ }
         featsRef.current = [];
     }, [map]);
@@ -560,6 +601,11 @@ export default function AreaModelPanel({ map, aoiFeatures }) {
                 body: JSON.stringify({
                     task, aoi,
                     scales: q.scales, min_votes: q.votes,
+                    // Only meaningful to the road model; the server hands each
+                    // task the parameters it knows and ignores the rest.
+                    ...(task === "roadnet"
+                        ? { reg_mode: roadReg, regularize: roadReg !== "none" }
+                        : {}),
                 }),
             });
             const d = await r.json();
@@ -687,6 +733,20 @@ export default function AreaModelPanel({ map, aoiFeatures }) {
                     </select>
                     <p className="text-[10px]" style={{ color: "var(--text-dim)" }}>
                         {(QUALITY.find((q) => q.id === quality) || QUALITY[0]).note}
+                    </p>
+                </>
+            )}
+
+            {task === "roadnet" && (
+                <>
+                    <select value={roadReg} onChange={(e) => setRoadReg(e.target.value)} disabled={running}
+                            className="w-full rounded-md px-2 py-1.5 text-[11px]"
+                            style={{ background: "var(--surface)", border: "1px solid var(--line)",
+                                     color: "var(--text-primary)" }}>
+                        {ROAD_REG.map((r) => <option key={r.id} value={r.id}>{r.label}</option>)}
+                    </select>
+                    <p className="text-[10px]" style={{ color: "var(--text-dim)" }}>
+                        {(ROAD_REG.find((r) => r.id === roadReg) || ROAD_REG[0]).note}
                     </p>
                 </>
             )}

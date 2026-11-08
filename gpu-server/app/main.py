@@ -43,13 +43,16 @@ import jobs
 
 WEIGHTS = os.environ.get("WEIGHTS_PATH", str(config.WEIGHTS / "best_model.pth"))
 os.environ.setdefault("POTHOLE_WEIGHTS", str(config.WEIGHTS / "final_best.pt"))
+os.environ.setdefault("ROADNET_WEIGHTS", str(config.WEIGHTS / "roadnet_dinov3.pth"))
 
 import pothole  # noqa: E402  (reads POTHOLE_WEIGHTS at import)
 import buildings  # noqa: E402  (HiSup delineation; loads weights lazily)
+import roadnet  # noqa: E402  (DINOv3 road extraction; loads weights lazily)
 import height  # noqa: E402  (thin client for the DSM laptop; no local data)
 
 pothole._lock = gpu.GPU_LOCK      # one GPU queue for every model
 buildings._lock = gpu.GPU_LOCK
+roadnet._lock = gpu.GPU_LOCK
 
 
 def _road_mask_for_pothole(rgb):
@@ -68,6 +71,7 @@ app.add_middleware(
 app.include_router(pothole.router)
 app.include_router(buildings.router)
 app.include_router(buildings.area_router)
+app.include_router(roadnet.router)
 app.include_router(height.router)
 
 print(f"[startup] device={seg.DEVICE} batch={seg.SEG_BATCH} fp16={seg.SEG_FP16} max_dim={seg.MAX_DIM} "
@@ -146,10 +150,13 @@ def health():
         "classes": seg.CLASS_NAMES, "weights": seg.LOAD_INFO, "r2": bool(R2_ACCOUNT and R2_KEY),
         "max_dim": seg.MAX_DIM,
         "capabilities": ["predict", "predict-fusion", "change-detection", "pothole",
-                         "hisup", "imagery", "jobs"],
+                         "hisup", "roadnet", "imagery", "jobs"],
         "hisup": {"present": os.path.exists(buildings.WEIGHTS),
                   "weights": os.path.basename(buildings.WEIGHTS),
                   "loaded": buildings.LOAD_INFO.get("loaded", False)},
+        "roadnet": {"present": os.path.exists(roadnet.WEIGHTS),
+                    "weights": os.path.basename(roadnet.WEIGHTS),
+                    "loaded": roadnet.LOAD_INFO.get("loaded", False)},
     }
 
 
