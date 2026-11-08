@@ -465,7 +465,7 @@ def _run_roadnet(job, img, out_dir):
 
     params = job.get("params") or {}
     want_reg = bool(params.get("regularize", True))
-    mode = str(params.get("reg_mode") or "corridor")
+    mode = str(params.get("reg_mode") or "smooth")
     if not want_reg:
         mode = "none"
     if mode not in ("corridor", "smooth", "none"):

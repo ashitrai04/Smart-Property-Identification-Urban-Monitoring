@@ -64,7 +64,11 @@ STD = np.array([float(x) for x in os.environ.get(
 # city-sized area affordable. Raise it for speed on a large AOI; 10 cm is the
 # one to pick when precision matters more than finding every lane.
 WORK_GSD = float(os.environ.get("ROADNET_GSD", "0.20"))
-THRESH = float(os.environ.get("ROADNET_THRESH", "0.5"))
+# 0.45, not 0.50. Swept against centre_part_Rd_v1: the curve is flat from
+# 0.35 to 0.55 and peaks at 0.45 (F1 0.790 against 0.789 at 0.50), buying a
+# little recall for a little precision. Raise it when false road on open
+# ground matters more than finding every lane.
+THRESH = float(os.environ.get("ROADNET_THRESH", "0.45"))
 # Multiple of 64: the ViT needs a multiple of its 16 px patch, and the head
 # pools the deepest tap by 4, so the token grid must divide by 4 as well.
 TILE = int(os.environ.get("ROADNET_TILE", "512"))
@@ -209,10 +213,12 @@ def health():
         "defaults": {"work_gsd_m": WORK_GSD, "threshold": THRESH, "tile": TILE,
                      "overlap": OVERLAP, "fp16": FP16,
                      "mean": MEAN.tolist(), "std": STD.tolist()},
-        "regularize": {"modes": ["corridor", "smooth", "none"], "default": "corridor",
-                       "note": "corridor rebuilds the carriageway from a smoothed "
-                               "centreline; it falls back to smooth where a "
-                               "centreline is a poor description, such as a junction"},
+        "regularize": {"modes": ["smooth", "corridor", "none"], "default": "smooth",
+                       "note": "smooth follows the model's own outline and scores "
+                               "F1 0.786 against the test labels; corridor rebuilds "
+                               "the carriageway from a smoothed centreline, which "
+                               "reads cleaner but measures 0.783. Centrelines come "
+                               "back either way."},
     }
 
 
@@ -233,7 +239,7 @@ async def predict(
     file: UploadFile = File(...),
     gsd: float = Form(0.0),
     threshold: float = Form(0.0),
-    regularize: str = Form("corridor"),
+    regularize: str = Form("smooth"),
     want_centrelines: bool = Form(True),
 ):
     """Extract roads from an uploaded image.

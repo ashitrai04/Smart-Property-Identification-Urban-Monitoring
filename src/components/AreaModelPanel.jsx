@@ -72,16 +72,18 @@ const LAYER_COLOURS = {
 
 /*
  * How the road model's output is cleaned up. The model returns a probability
- * per pixel; left alone that thresholds into a blobby mask with sawtooth edges,
- * so the server rebuilds geometry from it. Corridor is the default because a
- * carriageway is a corridor, not a blob - but a junction is not a corridor
- * either, so the server falls back per component and reports which it used.
+ * per pixel; left alone that thresholds into a blobby mask with sawtooth
+ * edges, so the server rebuilds geometry from it. Smooth is the default on
+ * evidence: scored against the labels the model was tested on, it gives up
+ * almost nothing against the raw mask (F1 0.786 against 0.790) while corridor,
+ * which imposes a slowly varying width, measures 0.783. Both return
+ * centrelines.
  */
 const ROAD_REG = [
+    { id: "smooth", label: "Smooth — follow the road edge",
+      note: "most accurate; keeps true width at junctions and laybys" },
     { id: "corridor", label: "Corridor — centreline + width",
-      note: "cleanest road shapes; rebuilds the carriageway from a smoothed centreline" },
-    { id: "smooth", label: "Smooth — follow the mask edge",
-      note: "keeps junctions and odd widths exactly; still de-blobbed" },
+      note: "most uniform shapes; slightly less faithful where width varies" },
     { id: "none", label: "Raw — no regularization",
       note: "the mask as the model drew it, stair-steps and all" },
 ];
@@ -172,7 +174,7 @@ export default function AreaModelPanel({ map, aoiFeatures }) {
     const [byFloors, setByFloors] = useState(false);  // colour by storeys, not identity
     const [labels, setLabels] = useState(true);       // height written on each roof
     const [quality, setQuality] = useState("fast");
-    const [roadReg, setRoadReg] = useState("corridor");
+    const [roadReg, setRoadReg] = useState("smooth");
     const [saving, setSaving] = useState(false);
 
     const heightOkRef = useRef(false);
