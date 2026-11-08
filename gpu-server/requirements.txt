@@ -42,3 +42,19 @@ psutil
 polars
 tqdm
 pandas<2.3
+
+# Model dependencies that are imported directly and were previously undeclared.
+# Each worked on the laptop where it had once been installed by hand and failed
+# on a fresh one, which is the worst way for a dependency to behave:
+#   yacs   every vendored HiSup config module starts with
+#          `from yacs.config import CfgNode`, so without it building
+#          delineation fails with "No module named 'yacs'" on first use.
+#   timm   supplies the DINOv3 ViT-L encoder the road model is built on.
+#   affine is imported by app/buildings.py. rasterio depends on it so it has
+#          always arrived anyway, which is precisely why nobody noticed.
+# Not listed, deliberately: pycocotools, descartes, rdp and multiprocess are
+# imported only by vendor/hisup/utils/metrics and vendor/hisup/dataset, which
+# are training and evaluation code the server never imports.
+yacs>=0.1.8
+timm>=1.0.19
+affine>=2.4

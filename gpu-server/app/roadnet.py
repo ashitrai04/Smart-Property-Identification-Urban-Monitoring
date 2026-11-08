@@ -114,8 +114,18 @@ def _load():
         meta = {k: ck[k] for k in ("epoch", "val_f1", "timm_id")
                 if isinstance(ck, dict) and k in ck}
 
-        import roadnet_arch
-        m, miss, unexp = roadnet_arch.verify(sd)
+        # Same treatment as HiSup's yacs: timm supplies the DINOv3 encoder and
+        # is imported inside the architecture module, so without it the failure
+        # arrives as a bare ModuleNotFoundError with no hint of the remedy.
+        try:
+            import roadnet_arch
+            m, miss, unexp = roadnet_arch.verify(sd)
+        except ModuleNotFoundError as e:
+            raise HTTPException(503,
+                f"the road model needs the '{e.name}' package, which is not "
+                f"installed in the environment this server is running under "
+                f"({sys.executable}). Run SETUP SERVER.bat once on this machine, "
+                f"or: pip install {e.name}") from e
         # Same stance as HiSup: a partial load predicts confident nonsense, so
         # it is an error, not a warning. The architecture here is reconstructed
         # from the weights, which makes this check the thing that would catch a

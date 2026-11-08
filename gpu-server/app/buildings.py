@@ -107,8 +107,21 @@ def _load():
                 f"Delete it and let the sync pull it again.")
         print(f"[hisup] loading {WEIGHTS} on {DEVICE}…", flush=True)
         t0 = time.time()
-        from hisup.config import cfg
-        from hisup.detector import BuildingDetector
+        # Named here rather than left to bubble up: every vendored HiSup config
+        # module begins with `from yacs.config import CfgNode`, so a machine
+        # that never got yacs fails with a bare "No module named 'yacs'" in a
+        # QGIS dialog, which says nothing about what to do. It went undeclared
+        # for a long time because it was installed by hand on the laptop the
+        # model was developed on.
+        try:
+            from hisup.config import cfg
+            from hisup.detector import BuildingDetector
+        except ModuleNotFoundError as e:
+            raise HTTPException(503,
+                f"the building model needs the '{e.name}' package, which is not "
+                f"installed in the environment this server is running under "
+                f"({sys.executable}). Run SETUP SERVER.bat once on this machine, "
+                f"or: pip install {e.name}") from e
         cfg.merge_from_file(os.path.join(HERE, "app", "hisup_config.yaml"))
         cfg.MODEL.DEVICE = DEVICE
         m = BuildingDetector(cfg, test=True)
