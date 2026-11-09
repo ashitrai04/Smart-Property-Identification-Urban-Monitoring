@@ -22,7 +22,11 @@ echo "=== chip set ==="
 du -sh "$SRC"
 find "$SRC" -type f | wc -l | xargs echo "files:"
 
-tar -C "$(dirname "$SRC")" -cf "$OUT/ongole_roads.tar" "$(basename "$SRC")"
+# --force-local, or GNU tar reads "C:/ongole_roads" as host C, path
+# /ongole_roads and fails with "Cannot connect to C: resolve failed". The
+# colon in a Windows drive letter is the same character it uses for rsh
+# targets, and it guesses remote first.
+tar --force-local -C "$(dirname "$SRC")" -cf "$OUT/ongole_roads.tar" "$(basename "$SRC")"
 ls -la "$OUT/ongole_roads.tar" | awk '{printf "  ongole_roads.tar  %.1f GB\n", $5/1073741824}'
 
 # A checksum so a truncated transfer is caught on arrival rather than halfway
