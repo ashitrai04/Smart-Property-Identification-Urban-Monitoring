@@ -21,6 +21,13 @@ set PUSER=vaibhavt_iitp
 set PHOST=paramrudra.iitp.ac.in
 set PPORT=4422
 set UPLOAD=C:\param_upload
+
+rem Optional overrides, so nothing here needs editing:
+rem   upload_to_param.bat vaibhavt_iitp 4422
+if not "%~1"=="" set PUSER=%~1
+if not "%~2"=="" set PPORT=%~2
+if not "%~3"=="" set PHOST=%~3
+
 set "CODE=%~dp0"
 if "%CODE:~-1%"=="\" set "CODE=%CODE:~0,-1%"
 rem sftp reads a backslash as an escape character, so lcd gets forward slashes.

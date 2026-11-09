@@ -20,6 +20,13 @@ set PHOST=paramrudra.iitp.ac.in
 set PPORT=4422
 set KEY=%USERPROFILE%\.ssh\id_ed25519
 
+rem Optional overrides, so nothing here needs editing:
+rem   setup_param_key.bat vaibhavt_iitp 4422
+if not "%~1"=="" set PUSER=%~1
+if not "%~2"=="" set PPORT=%~2
+if not "%~3"=="" set PHOST=%~3
+
+
 if not exist "%USERPROFILE%\.ssh" mkdir "%USERPROFILE%\.ssh"
 
 if exist "%KEY%" (
