@@ -50,8 +50,8 @@ GPU_SERVER = os.environ.get("GPU_SERVER_URL", "http://127.0.0.1:8800").rstrip("/
 # This tuple is documentation. What actually routes a request to the model
 # server is the explicit @app.api_route list further down - adding a prefix
 # here and nowhere else gets a 404, which is exactly what happened to /height.
-GPU_PREFIXES = ("/hisup/", "/area", "/pothole/", "/predict", "/change-detection",
-                "/r2/", "/height")
+GPU_PREFIXES = ("/hisup/", "/roadnet/", "/area", "/pothole/", "/predict",
+                "/change-detection", "/r2/", "/height")
 # A four-resolution pass over a large image is minutes, not seconds.
 GPU_TIMEOUT = float(os.environ.get("GPU_PROXY_TIMEOUT", "900"))
 
@@ -562,6 +562,7 @@ async def _proxy(request, path):
 @app.api_route("/area", methods=["POST", "OPTIONS"])
 @app.api_route("/area/{rest:path}", methods=["GET", "POST", "OPTIONS"])
 @app.api_route("/hisup/{rest:path}", methods=["GET", "POST", "OPTIONS"])
+@app.api_route("/roadnet/{rest:path}", methods=["GET", "POST", "OPTIONS"])
 @app.api_route("/pothole/{rest:path}", methods=["GET", "POST", "OPTIONS"])
 @app.api_route("/r2/{rest:path}", methods=["GET", "POST", "OPTIONS"])
 # Building heights: the model server forwards these on to the machine holding

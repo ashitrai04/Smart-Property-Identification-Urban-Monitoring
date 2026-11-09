@@ -39,6 +39,60 @@ rem height.local.cmd.example to height.local.cmd and put yours in it.
 rem `start` passes the environment on, so it reaches the model window.
 if exist "%~dp0height.local.cmd" call "%~dp0height.local.cmd"
 
+rem ---------- pick the interpreter, once, explicitly ----------
+rem Every server below used to call a bare `python`, which means they ran
+rem under whatever happened to be first on PATH in the window you launched
+rem from. Start this from a shell with a venv active and the servers inherit
+rem that venv; start it from Explorer and they get a different one. That is
+rem how building delineation came to fail with "No module named 'yacs'" on a
+rem machine where yacs was installed - just not in the interpreter that
+rem actually got used. Resolve it once here and pass it down.
+set "PY="
+if not "%URBANLY_PYTHON%"=="" set "PY=%URBANLY_PYTHON%"
+if "%PY%"=="" if exist "%~dp0..\.venv\Scripts\python.exe" set "PY=%~dp0..\.venv\Scripts\python.exe"
+if "%PY%"=="" if exist "%~dp0..\..\.venv\Scripts\python.exe" set "PY=%~dp0..\..\.venv\Scripts\python.exe"
+if "%PY%"=="" if exist "%GPU_SERVER_DIR%\.venv\Scripts\python.exe" set "PY=%GPU_SERVER_DIR%\.venv\Scripts\python.exe"
+if "%PY%"=="" for %%p in (python.exe) do set "PY=%%~$PATH:p"
+if "%PY%"=="" (
+    echo   FATAL: no python found. Set URBANLY_PYTHON to the interpreter to use.
+    pause
+    exit /b 1
+)
+echo   python : %PY%
+
+rem ---------- the model server's own settings ----------
+rem gpu-server/app/config.py says its settings come from config.env, which
+rem only run.sh reads - and run.sh is the Linux path. Without this the model
+rem server starts with no R2 credentials and answers 500 to every
+rem /r2/presign and /predict-url, which from the webapp looks like "the
+rem models are broken" rather than "nobody told it the keys".
+for %%F in ("%~dp0..\.env" "%GPU_SERVER_DIR%\config.env") do (
+    if exist %%F for /f "usebackq eol=# tokens=1,* delims==" %%a in (%%F) do (
+        if not "%%~b"=="" set "%%a=%%~b"
+    )
+)
+rem Headless matplotlib, and return freed CUDA blocks instead of hoarding
+rem them - the difference between a job finishing and an out-of-memory error
+rem half way through on a 6 GB card.
+if "%MPLBACKEND%"=="" set MPLBACKEND=Agg
+if "%PYTORCH_CUDA_ALLOC_CONF%"=="" set PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
+if "%HF_HOME%"=="" set "HF_HOME=%GPU_SERVER_DIR%\weights\hf"
+if "%YOLO_CONFIG_DIR%"=="" set "YOLO_CONFIG_DIR=%GPU_SERVER_DIR%\data\.ultralytics"
+
+rem ---------- fail here, not in a QGIS dialog ----------
+rem The model server imports these lazily, so a missing one surfaces much
+rem later as a 503 in whatever happened to ask first. Checking now costs a
+rem second and names the problem while someone is still looking at a console.
+"%PY%" -c "import torch, timm, yacs, affine, cv2, rasterio, fastapi" 2>nul
+if errorlevel 1 (
+    echo.
+    echo   WARNING: that interpreter is missing packages the models need.
+    "%PY%" -c "import importlib;[print('            missing:',m) for m in ('torch','timm','yacs','affine','cv2','rasterio','fastapi','ultralytics') if not __import__('importlib.util',fromlist=['x']).find_spec(m)]"
+    echo   Fix with:  "%PY%" -m pip install ^<name^>
+    echo   or run SETUP SERVER.bat once on this machine.
+    echo.
+)
+
 set SKIP_GPU=0
 set SKIP_ASK=0
 set PASSTHRU=
@@ -117,7 +171,7 @@ if not exist "%GPU_SERVER_DIR%\app\main.py" (
 echo       starting in its own window
 rem Its own window on purpose: a model that runs out of GPU memory should not
 rem take the imagery server down with it.
-start "Urbanly - models" cmd /k "cd /d "%GPU_SERVER_DIR%" && python -m uvicorn main:app --app-dir app --host 0.0.0.0 --port 8800"
+start "Urbanly - models" cmd /k "cd /d "%GPU_SERVER_DIR%" && "%PY%" -m uvicorn main:app --app-dir app --host 0.0.0.0 --port 8800"
 for /l %%i in (1,1,30) do (
     curl -s -o nul -m 2 http://127.0.0.1:8800/api/health && goto gpu_up
     ping -n 2 127.0.0.1 >nul
@@ -142,7 +196,7 @@ curl -s -o nul -m 4 http://127.0.0.1:8790/node/status
 if not errorlevel 1 (
     echo       already running on :8790
 ) else if exist "%~dp0..\urbanly-node\node_api.py" (
-    start "Urbanly - node" cmd /k "cd /d "%~dp0..\urbanly-node" && python -m uvicorn node_api:app --host 0.0.0.0 --port 8790"
+    start "Urbanly - node" cmd /k "cd /d "%~dp0..\urbanly-node" && "%PY%" -m uvicorn node_api:app --host 0.0.0.0 --port 8790"
     echo       starting on :8790
 ) else (
     echo       urbanly-node not present - skipped
@@ -153,7 +207,7 @@ echo.
 echo [5/5] Data server on %GEO_DATA_DIR%
 echo       Ctrl+C stops it and marks the site offline.
 echo.
-python -u run.py --port 8777 %PASSTHRU%
+"%PY%" -u run.py --port 8777 %PASSTHRU%
 
 echo.
 echo Data server stopped. The model window stays open - close it to stop models too.

@@ -130,15 +130,20 @@ def load_model(weights_path):
     sd = {k.replace("module.", "").replace("backbone.", "").replace("model.", ""): v for k, v in sd.items()}
     sd = _to_current_naming(sd, model.state_dict())
     miss, unexp = model.load_state_dict(sd, strict=False)
+    # Count before freeing, not after: an earlier version of this deleted sd
+    # on the line above and then asked for len(sd), which made every call to
+    # /predict fail with UnboundLocalError the moment the model was first
+    # needed - and only then, because the load is lazy.
+    n_ckpt = len(sd)
     del ckpt, sd
     LOAD_INFO.update({
         "loaded": len(miss) < 50,  # a clean load has ~0 missing; large => version mismatch
         "missing": len(miss),
         "unexpected": len(unexp),
-        "ckpt_tensors": len(sd),
+        "ckpt_tensors": n_ckpt,
         "transformers": _tfver,
     })
-    print(f"[model] weights — missing={len(miss)} unexpected={len(unexp)} ckpt_tensors={len(sd)}")
+    print(f"[model] weights — missing={len(miss)} unexpected={len(unexp)} ckpt_tensors={n_ckpt}")
     model.to(DEVICE).eval()
     _MODEL = model
     return model

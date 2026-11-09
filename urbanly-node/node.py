@@ -541,10 +541,20 @@ def server_python():
     no hint as to why.
     """
     here = Path(__file__).resolve().parent
+    # The list goes from most specific to least. The grandparent entries
+    # matter: on this machine the environment with torch in it lives one
+    # level ABOVE the checkout, at D:\React folder\.venv, which an earlier
+    # version of this search missed entirely - so the servers silently ran
+    # under a bare system Python and building delineation failed with
+    # "No module named 'yacs'" on a machine where yacs was installed.
     for c in [config.GPU_SERVER_DIR / ".venv" / "Scripts" / "python.exe",
               config.GPU_SERVER_DIR.parent / ".venv" / "Scripts" / "python.exe",
+              config.GPU_SERVER_DIR.parent.parent / ".venv" / "Scripts" / "python.exe",
               here.parent / "gpu-server" / ".venv" / "Scripts" / "python.exe",
-              config.GPU_SERVER_DIR / ".venv" / "bin" / "python"]:
+              here.parent / ".venv" / "Scripts" / "python.exe",
+              here.parent.parent / ".venv" / "Scripts" / "python.exe",
+              config.GPU_SERVER_DIR / ".venv" / "bin" / "python",
+              config.GPU_SERVER_DIR.parent.parent / ".venv" / "bin" / "python"]:
         try:
             if c.is_file():
                 return str(c)
