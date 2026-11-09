@@ -38,8 +38,16 @@ rem there yet it fails with "stat remote: No such file or directory"
 rem and transfers nothing. (Same for `put -a` - identical code path.)
 rem So: `put` for a first run, `reput` only to pick up a broken one.
 set XFER=put
+set DATAFILES=1
 if /i "%~1"=="resume" (
     set XFER=reput
+    shift
+)
+rem "code" sends ONLY the scripts and skips the 5.4 GiB of data. Use it
+rem after a code change: the data is already there, and re-putting it
+rem would start again from byte zero.
+if /i "%~1"=="code" (
+    set DATAFILES=0
     shift
 )
 
@@ -59,6 +67,7 @@ set LABELS=C:/Users/asash/Downloads/centre_part_Rd_v1.zip
 
 rem ---------- check locally before asking for a password ----------
 set MISSING=0
+if "%DATAFILES%"=="0" goto checked
 for %%F in ("%UPLOAD%\ongole_roads_lean.tar" "%UPLOAD%\ongole_roads_lean.tar.sha256" "%UPLOAD%\ongole_1km.tif" "%LABELS%") do (
     if not exist %%F (
         echo   MISSING: %%F
@@ -73,6 +82,8 @@ if "%MISSING%"=="1" (
     exit /b 1
 )
 
+:checked
+
 where sftp >nul 2>nul
 if errorlevel 1 (
     echo   FATAL: no sftp on PATH. Install the Windows OpenSSH client:
@@ -84,7 +95,15 @@ if errorlevel 1 (
 rem ---------- the batch script sftp will run ----------
 rem A leading `-` on a line means "carry on if this fails", which is
 rem what we want for mkdir on a directory that already exists.
-set BATCH=%TEMP%\param_upload.sftp
+rem A UNIQUE name per run. With a fixed one, a second run started while
+rem the first is still going cannot write this file - sftp holds it open -
+rem and every redirect below fails with "The process cannot access the
+rem file because it is being used by another process". The old batch
+rem would then be left on disk and handed to sftp: the second session
+rem would re-run the FIRST session's transfer list, writing the same
+rem 5.4 GiB remote file the first session is still writing. That is how
+rem you get a corrupt archive that only fails at sha256sum, hours later.
+set "BATCH=%TEMP%\param_upload.%RANDOM%%RANDOM%.sftp"
 > "%BATCH%" echo progress
 >>"%BATCH%" echo -mkdir /scratch/%PUSER%
 >>"%BATCH%" echo -mkdir /scratch/%PUSER%/data
@@ -100,6 +119,7 @@ rem --- code: lcd first so the globs below carry no spaces ---
 >>"%BATCH%" echo put *.yaml
 >>"%BATCH%" echo put *.md
 rem --- the chips: reput, so a broken transfer resumes ---
+if "%DATAFILES%"=="0" goto no_data
 >>"%BATCH%" echo lcd "%UPLOADF%"
 >>"%BATCH%" echo cd /scratch/%PUSER%
 >>"%BATCH%" echo %XFER% ongole_roads_lean.tar
@@ -108,7 +128,31 @@ rem --- inference clip and labels ---
 >>"%BATCH%" echo cd /scratch/%PUSER%/data
 >>"%BATCH%" echo %XFER% ongole_1km.tif
 >>"%BATCH%" echo put "%LABELS%"
+:no_data
+rem (the "bye" line is appended just below, then the file is checked)
 >>"%BATCH%" echo bye
+
+rem Never hand sftp a batch file we did not just write in full.
+if not exist "%BATCH%" (
+    echo   FATAL: could not write %BATCH%
+    echo   Nothing was uploaded.
+    pause
+    exit /b 1
+)
+rem A size test, not `find` or `findstr`: run this from a shell whose PATH
+rem carries Unix tools - Git Bash, MSYS, WSL interop - and cmd resolves `find`
+rem to /usr/bin/find, which takes different arguments and sits waiting on
+rem stdin forever. A for-loop size test spawns no external command at all.
+set BSIZE=0
+for %%A in ("%BATCH%") do set BSIZE=%%~zA
+if %BSIZE% LSS 40 (
+    echo   FATAL: %BATCH% is empty or incomplete ^(%BSIZE% bytes^).
+    echo   Refusing to run sftp against it - a stale or partial command list
+    echo   could transfer the wrong thing.
+    del "%BATCH%" 2>nul
+    pause
+    exit /b 1
+)
 
 echo.
 echo ============================================================
@@ -124,7 +168,10 @@ echo   Type the captcha exactly as shown, case included.
 echo.
 echo   One challenge for all four transfers.
 echo.
-echo   mode: %XFER%   ^(use "upload_to_param.bat resume" after a drop^)
+echo   mode: %XFER%  data=%DATAFILES%
+echo     upload_to_param.bat           everything, from the start
+echo     upload_to_param.bat resume    continue a broken big file
+echo     upload_to_param.bat code      scripts only, skip the 5.4 GiB
 echo.
 echo   Several "remote mkdir ... Failure" lines at the start are
 echo   EXPECTED and harmless - they mean the directory already exists.
