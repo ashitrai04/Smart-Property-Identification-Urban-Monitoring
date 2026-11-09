@@ -29,7 +29,7 @@ allowance. Your allowance is 200 GB. What this work needs:
 |---|---|
 | `ongole_roads_lean.tar` | 5.4 GiB (delete after extracting) |
 | extracted chips | 9.2 GiB |
-| HF cache, 7B + ViT-L weights | ~14.6 GiB |
+| HF cache, 7B + ViT-L weights | **~28 GB** (fp32 checkpoints) |
 | `ongole_1km.tif` | 235 MB |
 | checkpoints, frozen backbone omitted | a few hundred MB per run |
 
@@ -66,7 +66,7 @@ throughput through DDP.
 
 | | what it is | status |
 |---|---|---|
-| **DINOv3 ViT-7B** | `vit_7b_patch16_dinov3.sat493m`, 6716 M params, satellite-pretrained | train, frozen backbone |
+| **DINOv3 ViT-7B** | `vit_7b_patch16_dinov3.sat493m`, 6716 M params, satellite-pretrained, 26.9 GB download | train, frozen backbone |
 | **DINOv3 ViT-L** | `vit_large_patch16_dinov3.sat493m`, 300 M, satellite-pretrained | train, the controlled baseline |
 | **ACPV-Net** | VMamba-S + UPerNet + latent vertex heatmap, multi-class polygons | fine-tune from Deventer-512 |
 
@@ -283,7 +283,9 @@ unzip /scratch/$USER/data/centre_part_Rd_v1.zip -d /scratch/$USER/data/
 bash setup_param.sh all        # both conda envs + caches the 7B and ViT-L weights
 ```
 
-That pulls 13.4 GB for the 7B. Check it landed:
+That pulls **26.9 GB** for the 7B - the Hub checkpoint is fp32. The 13.4 GB
+often quoted is the bf16 size *on the card*, which is a different number.
+Check it landed:
 
 ```bash
 du -sh /scratch/$USER/hf

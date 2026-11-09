@@ -11,12 +11,22 @@ HF_HUB_OFFLINE=1 so a missing file is reported immediately instead.
     python prefetch_weights.py vit_large_patch16_dinov3.sat493m
     python prefetch_weights.py vit_7b_patch16_dinov3.sat493m     # 13 GB
 
-Sizes, so nobody is surprised by the download:
-    vit_small_patch16_dinov3        21 M      ~0.1 GB
-    vit_base_patch16_dinov3         86 M      ~0.3 GB
-    vit_large_patch16_dinov3       300 M      ~1.2 GB
-    vit_huge_plus_patch16_dinov3   840 M      ~3.4 GB
-    vit_7b_patch16_dinov3         6716 M     ~13.4 GB
+Two different numbers, and they are easy to confuse - I confused them:
+
+                                params   DOWNLOAD (fp32)   ON THE CARD (bf16)
+    vit_small_patch16_dinov3      21 M        0.09 GB            0.04 GB
+    vit_base_patch16_dinov3       86 M        0.34 GB            0.17 GB
+    vit_large_patch16_dinov3     303 M        1.21 GB            0.61 GB
+    vit_huge_plus_patch16_dinov3 840 M        3.36 GB            1.68 GB
+    vit_7b_patch16_dinov3       6716 M       26.90 GB           13.43 GB
+
+The checkpoints on the Hub are fp32, so the 7B is a **26.9 GB** download -
+twice what you need in VRAM, because training loads it and casts to bf16.
+Measured, not estimated: that is what the progress bar reported.
+
+Budget /scratch accordingly. The full cache for ViT-L + 7B is about 28 GB
+against a 200 GB quota, and the Hub's xet storage may hold a download blob
+and the reconstructed file at once, so allow headroom while it runs.
 """
 import os
 import sys
