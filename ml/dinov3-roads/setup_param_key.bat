@@ -12,6 +12,17 @@ rem  PARAM advertises `publickey` among its accepted methods, so
 rem  this is allowed. Nothing secret leaves your machine: only the
 rem  PUBLIC half of the key is uploaded. The private key stays in
 rem  %USERPROFILE%\.ssh\id_ed25519 - do not copy it anywhere.
+rem
+rem  Honest caveat: PARAM puts a captcha in front of the password
+rem  (manual page 15). Whether a key removes that depends on how the
+rem  cluster chains its authentication, and the manual does not say.
+rem  If publickey alone satisfies the server you will stop being
+rem  asked; if the server also requires keyboard-interactive you will
+rem  still get the captcha, and the key will have bought you nothing.
+rem  Installing it costs one login to find out, and it is a sanctioned
+rem  method either way - this does not try to answer the captcha for
+rem  you, and nothing here should. Run it, or skip it; the upload
+rem  script works with the password regardless.
 rem ============================================================
 setlocal
 

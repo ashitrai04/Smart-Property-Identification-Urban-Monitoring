@@ -11,6 +11,16 @@ rem      means starting over.
 rem    - sftp's `reput` resumes from wherever it stopped, and one
 rem      batch session means ONE password prompt for everything.
 rem
+rem  PARAM asks for a CAPTCHA and THEN the password - see the user
+rem  manual, page 15 ("Enter the captcha when prompted, then input
+rem  your password") and Figure 7 on page 22. Both arrive as
+rem  keyboard-interactive prompts, so expect two things to type, not
+rem  one, and type the captcha exactly as shown including its case.
+rem
+rem  That captcha is why this has to be one session: every separate
+rem  scp is another captcha. Here you answer it once and all four
+rem  transfers follow.
+rem
 rem  Safe to re-run. reput continues a partial file, and the
 rem  directory creations are prefixed `-` so an existing directory
 rem  is not an error.
@@ -97,10 +107,15 @@ echo   chips    %UPLOAD%\ongole_roads_lean.tar   (5.4 GiB)
 echo   clip     %UPLOAD%\ongole_1km.tif          (235 MB)
 echo   labels   %LABELS%
 echo.
-echo   One password prompt. The big file resumes if the link drops -
-echo   just run this again.
+echo   You will be asked for a CAPTCHA first, then your password.
+echo   Type the captcha exactly as shown, case included.
 echo.
-echo   Tired of typing the password? Run setup_param_key.bat once.
+echo   One challenge for all four transfers. The big file resumes if
+echo   the link drops - just run this again.
+echo.
+echo   If no captcha prompt appears and it fails straight away, use
+echo   WinSCP instead - the manual recommends it, page 21. Protocol
+echo   SFTP, host paramrudra.iitp.ac.in, PORT 4422 not 22.
 echo ============================================================
 echo.
 
@@ -117,7 +132,18 @@ del "%BATCH%" 2>nul
 echo.
 if not "%RC%"=="0" (
     echo   sftp exited %RC% - the transfer did not finish.
-    echo   Re-run this file: reput picks up where it stopped.
+    echo.
+    if "%RC%"=="255" (
+        echo   255 is an authentication or connection failure, not a
+        echo   transfer failure. If you were never shown a captcha, this
+        echo   build of sftp will not do keyboard-interactive auth here;
+        echo   use WinSCP ^(manual page 21^) with protocol SFTP, host
+        echo   paramrudra.iitp.ac.in, port 4422. It holds one session
+        echo   open, so one captcha covers every file, and it resumes a
+        echo   broken transfer.
+        echo.
+    )
+    echo   Otherwise just re-run this file: reput picks up where it stopped.
     pause
     exit /b %RC%
 )
