@@ -121,9 +121,22 @@ if [ "$WHICH" = "acpv" ] || [ "$WHICH" = "all" ]; then
       imagecodecs "yacs==0.1.8" omegaconf einops "pytorch-lightning<2.0" \
       pycocotools shapely multiprocess timm fvcore iopath taming-transformers-rom1504 \
       rasterio geopandas pyogrio
-  # mmcv's build needs torch already importable, so isolation has to be off.
-  # Only mmcv.cnn.ConvModule is ever used, so the lite package is enough.
+  # mmcv 1.7.2's setup.py does `import pkg_resources`, which setuptools 81
+  # removed. With --no-build-isolation the build runs against THIS env's
+  # setuptools, so a current one fails with:
+  #     ModuleNotFoundError: No module named 'pkg_resources'
+  # Pinning setuptools below 81 puts pkg_resources back. wheel is needed too,
+  # since without build isolation nothing else provides it.
+  #
+  # Isolation stays off because mmcv's build imports torch, and an isolated
+  # build environment would not have it.
+  #
+  # This is the lite `mmcv`, not `mmcv-full`: no compiled CUDA ops, so it is a
+  # pure-Python build that takes seconds. Only mmcv.cnn.ConvModule is ever
+  # used by the backbone, and that is pure Python.
+  pip install --no-cache-dir "setuptools<81" wheel
   pip install --no-cache-dir --no-build-isolation "mmcv==1.7.2"
+  python -c "from mmcv.cnn import ConvModule; print('mmcv ok:', ConvModule.__module__)"
   # triton has no wheel for some setups; the backbone falls back to a pure
   # torch scan when it is absent, so this is allowed to fail.
   pip install --no-cache-dir triton==2.1.0 || \
