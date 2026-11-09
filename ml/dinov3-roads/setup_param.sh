@@ -2,8 +2,9 @@
 # One-time setup on the PARAM Rudra LOGIN node. Not an sbatch script - run it
 # directly, because it needs the internet and compute nodes have none.
 #
-#   bash setup_param.sh            # the DINOv3 environment
-#   bash setup_param.sh acpv       # the ACPV-Net environment as well
+#   bash setup_param.sh            # the DINOv3 environment (ViT-7B + ViT-L)
+#   bash setup_param.sh acpv       # the ACPV-Net environment
+#   bash setup_param.sh all        # both
 #
 # Creates the conda env, installs torch for A100 (sm_80), and caches the
 # DINOv3 weights under /scratch so the training job can run offline.
@@ -13,9 +14,25 @@ WHICH="${1:-dinov3}"
 SCRATCH="/scratch/$USER"
 mkdir -p "$SCRATCH/hf" "$SCRATCH/torch" "$SCRATCH/data" "$SCRATCH/runs" "$SCRATCH/infer"
 
+module purge
 module load mldl/Miniconda
 # shellcheck disable=SC1091
 source "$(conda info --base)/etc/profile.d/conda.sh"
+
+# Put the environments on /scratch, not in /home/$USER/.conda.
+#
+# /home is 50 GB soft, 60 GB hard (manual p39) and these two environments are
+# a torch+cu121 build each - roughly 10 GB apiece. Adding the weights cache
+# would take it past the limit, and a quota breach has a 7-day grace period
+# and then starts failing writes, which is a miserable way to lose a training
+# run. /scratch is 200 GB.
+#
+# envs_dirs rather than `conda create -p`: the environments keep their plain
+# names, so `conda activate dinov3` still works in the SLURM scripts and
+# nothing downstream needs to know where they live.
+mkdir -p "$SCRATCH/envs"
+conda config --add envs_dirs "$SCRATCH/envs" 2>/dev/null || true
+echo "environments will be created under $SCRATCH/envs"
 
 if [ "$WHICH" = "dinov3" ] || [ "$WHICH" = "all" ]; then
   echo "=== dinov3 environment ==="
