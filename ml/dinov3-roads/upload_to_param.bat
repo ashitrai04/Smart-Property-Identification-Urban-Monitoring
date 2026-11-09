@@ -84,6 +84,29 @@ if "%MISSING%"=="1" (
 
 :checked
 
+rem ---------- refuse to run from the wrong folder ----------
+rem This uploads whatever sits in its OWN directory (%~dp0). Copy it somewhere
+rem else - Downloads, the Desktop - and it will cheerfully upload that folder
+rem instead, which is how one run ended with:
+rem     lcd "C:/Users/asash/Downloads"
+rem     put *.py
+rem     stat *.py: No such file or directory
+rem after the captcha and the password had already been typed. So check for a
+rem file only the real code directory has, and fail before the prompts.
+if not exist "%CODE%\slurm_train.sh" (
+    echo.
+    echo   FATAL: this is not the dinov3-roads directory.
+    echo.
+    echo     running from : %CODE%
+    echo     expected     : the folder holding slurm_train.sh and train_roads.py
+    echo.
+    echo   This script uploads the folder it lives in, so a stray copy in
+    echo   Downloads uploads Downloads. Delete the copy and run the original.
+    echo.
+    pause
+    exit /b 1
+)
+
 where sftp >nul 2>nul
 if errorlevel 1 (
     echo   FATAL: no sftp on PATH. Install the Windows OpenSSH client:
