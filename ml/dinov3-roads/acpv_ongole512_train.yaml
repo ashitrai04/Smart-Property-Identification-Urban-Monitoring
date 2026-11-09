@@ -1,0 +1,146 @@
+# ACPV-Net fine-tuned on the Ongole road chips.
+#
+# Copy into the repo as config-files/ongole512_train.yaml.
+#
+# Derived from deventer512_vmamba-s_m_vh-ldm_kl4_b8.yaml. Only the things that
+# have to change for this data are changed; everything architectural is left
+# alone so the Deventer checkpoint transfers.
+#
+# What changed and why:
+#
+#   NUM_CLASSES 5 -> 2   Deventer-512 labels five land-cover classes. Ongole
+#                        has road labels only, so it is background + road.
+#                        This resizes the final classifier in both heads, so
+#                        those two layers cannot load from the Deventer
+#                        checkpoint and start fresh - everything behind them
+#                        does transfer, which is the point of fine-tuning.
+#
+#   PIXEL_MEAN/STD       Measured on the Ongole chips, not Deventer's. Run
+#                        verify_dataset.py and it prints the numbers; the ones
+#                        below are from the 20 cm chip set. Deventer's values
+#                        are for Dutch aerial imagery and are visibly wrong
+#                        for red-earth Andhra tracks.
+#
+#   BASE_LR 6e-5 -> 2e-5 Fine-tuning from a converged checkpoint, not training
+#                        from scratch. The original ran 160k iterations from
+#                        ImageNet init; this starts from a model that already
+#                        does the task and only has to move domain.
+#
+#   TOTAL_ITERS          40k rather than 160k, with a shorter warmup, for the
+#                        same reason. At batch 8 on two A100s that is roughly
+#                        a day. Watch the validation curve and stop early.
+#
+#   IMS_PER_BATCH        8 is the published value and fits an 80 GB card with
+#                        room to spare. Raise it if preflight-style headroom
+#                        allows; the LR above assumes 8.
+
+SOLVER:
+  IMS_PER_BATCH: 8
+  CHECKPOINT_PERIOD: 2500
+
+  BASE_LR: 2e-5
+  BACKBONE_LR_MULT: 0.1        # the VMamba trunk moves slower than the heads
+  LR_SCHEDULER: 'linear_poly'
+  WARMUP_ITERS: 500
+  TOTAL_ITERS: 40000
+  POLY_POWER: 1.0
+  ETA_MIN: 0.0
+
+  OPTIMIZER: "ADAMW"
+  BETAS: (0.9, 0.999)
+  WEIGHT_DECAY: 0.01
+
+USE_EMA: True
+EMA_DECAY: 0.9999
+EMA_USE_NUM_UPDATES: True
+
+DATALOADER:
+  NUM_WORKERS: 12
+
+DATASETS:
+  IMAGE:
+    # Measured on the Ongole 512 px / 0.20 m chips by verify_dataset.py.
+    PIXEL_MEAN: [152.2, 140.5, 118.6]
+    PIXEL_STD: [31.1, 28.6, 32.6]
+    TO_255: True
+    HEIGHT: 512
+    WIDTH: 512
+  TARGET:
+    HEIGHT: 128
+    WIDTH: 128
+  ORIGIN:
+    HEIGHT: 512
+    WIDTH: 512
+  TRAIN: ("ongole_512_train_with_latent_vertex_heatmap",)
+  VAL: ("ongole_512_test_with_latent_vertex_heatmap",)
+  TEST: ("ongole_512_test_with_latent_vertex_heatmap",)
+  FACTORY: 'LatentVertexHeatmapTrainDataset'
+  NUM_CLASSES: 2
+  AUGMENTATIONS: ['flip_h', 'flip_v']
+
+MODEL:
+  NAME: "VMamba"
+  BACKBONE:
+    OUT_INDICES: [ 0, 1, 2, 3 ]
+    PRETRAINED: "./pretrained/vssm_small_0229_ckpt_epoch_222.pth"
+    DIMS: 96
+    DEPTHS: [ 2, 2, 15, 2 ]
+    SSM_D_STATE: 1
+    SSM_DT_RANK: "auto"
+    SSM_RATIO: 2.0
+    SSM_CONV: 3
+    SSM_CONV_BIAS: False
+    FORWARD_TYPE: "v05_noz"
+    MLP_RATIO: 4.0
+    DOWNSAMPLE_VERSION: "v3"
+    PATCHEMBED_VERSION: "v2"
+    DROP_PATH_RATE: 0.3
+    NORM_LAYER: "ln2d"
+
+  DECODE_HEAD:
+    IN_CHANNELS: [ 96, 192, 384, 768 ]
+    IN_INDEX: [ 0, 1, 2, 3 ]
+    POOL_SCALES: [ 1, 2, 3, 6 ]
+    CHANNELS: 512
+    DROPOUT_RATIO: 0.1
+    NUM_CLASSES: 2
+    ALIGN_CORNERS: False
+
+  AUX_HEAD:
+    IN_CHANNELS: 384
+    IN_INDEX: 2
+    CHANNELS: 256
+    NUM_CONVS: 1
+    CONCAT_INPUT: False
+    DROPOUT_RATIO: 0.1
+    NUM_CLASSES: 2
+    ALIGN_CORNERS: False
+
+  unet_config:
+    target: topomapper.modules.diffusionmodules.openaimodel.UNetModel
+    params:
+      image_size: 128
+      out_channels: 3
+      in_channels: 640
+      model_channels: 128
+      attention_resolutions:
+        - 8
+        - 4
+      num_res_blocks: 1
+      channel_mult:
+        - 1
+        - 2
+        - 2
+      num_head_channels: 32
+
+  conditioning_key: "concat"
+
+  LOSS_WEIGHTS:
+    loss_vertex_heatmap_l1: 10.0
+    loss_mask: 1.0
+    loss_mask_aux: 0.4
+
+# Start from the Deventer weights. Point this at a fresh directory and copy
+# model_iter_0160000.pth into it, so the run resumes from Deventer but writes
+# its own checkpoints instead of overwriting the ones you downloaded.
+OUTPUT_DIR: "./outputs/ongole512_vmamba-s_m_vh-ldm_kl4_b8"
