@@ -32,8 +32,20 @@ set PHOST=paramrudra.iitp.ac.in
 set PPORT=4422
 set UPLOAD=C:\param_upload
 
+rem `reput` resumes an upload; it CANNOT start one. It stats the remote
+rem file to find where to continue from, so against a file that is not
+rem there yet it fails with "stat remote: No such file or directory"
+rem and transfers nothing. (Same for `put -a` - identical code path.)
+rem So: `put` for a first run, `reput` only to pick up a broken one.
+set XFER=put
+if /i "%~1"=="resume" (
+    set XFER=reput
+    shift
+)
+
 rem Optional overrides, so nothing here needs editing:
 rem   upload_to_param.bat vaibhavt_iitp 4422
+rem   upload_to_param.bat resume            <- continue a broken transfer
 if not "%~1"=="" set PUSER=%~1
 if not "%~2"=="" set PPORT=%~2
 if not "%~3"=="" set PHOST=%~3
@@ -90,11 +102,11 @@ rem --- code: lcd first so the globs below carry no spaces ---
 rem --- the chips: reput, so a broken transfer resumes ---
 >>"%BATCH%" echo lcd "%UPLOADF%"
 >>"%BATCH%" echo cd /scratch/%PUSER%
->>"%BATCH%" echo reput ongole_roads_lean.tar
->>"%BATCH%" echo reput ongole_roads_lean.tar.sha256
+>>"%BATCH%" echo %XFER% ongole_roads_lean.tar
+>>"%BATCH%" echo put ongole_roads_lean.tar.sha256
 rem --- inference clip and labels ---
 >>"%BATCH%" echo cd /scratch/%PUSER%/data
->>"%BATCH%" echo reput ongole_1km.tif
+>>"%BATCH%" echo %XFER% ongole_1km.tif
 >>"%BATCH%" echo put "%LABELS%"
 >>"%BATCH%" echo bye
 
@@ -110,8 +122,12 @@ echo.
 echo   You will be asked for a CAPTCHA first, then your password.
 echo   Type the captcha exactly as shown, case included.
 echo.
-echo   One challenge for all four transfers. The big file resumes if
-echo   the link drops - just run this again.
+echo   One challenge for all four transfers.
+echo.
+echo   mode: %XFER%   ^(use "upload_to_param.bat resume" after a drop^)
+echo.
+echo   Several "remote mkdir ... Failure" lines at the start are
+echo   EXPECTED and harmless - they mean the directory already exists.
 echo.
 echo   If no captcha prompt appears and it fails straight away, use
 echo   WinSCP instead - the manual recommends it, page 21. Protocol
@@ -143,7 +159,9 @@ if not "%RC%"=="0" (
         echo   broken transfer.
         echo.
     )
-    echo   Otherwise just re-run this file: reput picks up where it stopped.
+    echo   If it broke part way through the big file, resume it with:
+    echo       upload_to_param.bat resume
+    echo   Starting over from scratch is just: upload_to_param.bat
     pause
     exit /b %RC%
 )
