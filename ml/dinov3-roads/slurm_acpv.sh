@@ -30,6 +30,7 @@ REPO="${REPO:-/scratch/$USER/ACPV-Net}"
 CONFIG="${CONFIG:-config-files/ongole512_train.yaml}"
 ENVNAME="${ENVNAME:-acpvnet}"
 
+module purge
 module load mldl/Miniconda
 # shellcheck disable=SC1091
 source "$(conda info --base)/etc/profile.d/conda.sh"

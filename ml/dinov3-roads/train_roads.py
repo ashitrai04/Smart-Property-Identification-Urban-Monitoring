@@ -47,10 +47,10 @@ right place.
 Usage
 -----
   single GPU, quick:
-    python train_roads.py --data /scratch/ongole_roads --backbone vit_large_patch16_dinov3.sat493m
+    python train_roads.py --data /scratch/ongole_roads_v2 --backbone vit_large_patch16_dinov3.sat493m
 
   7B on one A100-80, features cached first:
-    python train_roads.py --data /scratch/ongole_roads \
+    python train_roads.py --data /scratch/ongole_roads_v2 \
         --backbone vit_7b_patch16_dinov3.sat493m --cache-features --batch 8
 
   multi-GPU:

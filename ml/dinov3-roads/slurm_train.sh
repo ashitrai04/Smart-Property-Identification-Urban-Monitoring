@@ -2,10 +2,23 @@
 # Train the road segmenter on PARAM Rudra (IIT Patna).
 #
 # Configuration taken from the PARAM Rudra user manual, not guessed:
-#   partition "gpu"   8 nodes, 2 x NVIDIA A100 80 GB HBM2e per node
-#   walltime          default 2 h, maximum 4 days; 8-node jobs up to 4 days
-#   conda             module load mldl/Miniconda
-#   filesystem        Lustre, /home/<user> and /scratch
+#   partition "gpu"   8 nodes; per node 2 x A100 80 GB HBM2e, 2 x Xeon
+#                     G-6240R = 48 cores, 192 GB RAM, 800 GB local SSD  (p9)
+#   walltime          default 2 h, max 4 days per job; up to 10 jobs at once;
+#                     8 nodes for 4 days / 16 for 2 / 32 for 1          (p24)
+#   gres              "User must specify #SBATCH --gres=gpu:1/2"        (p39)
+#   conda             module purge; module load mldl/Miniconda          (p80)
+#   quota             /home 50 GB soft, 60 hard; /scratch 200 GB soft,
+#                     220 hard, 7-day grace                             (p39)
+#   filesystem        Lustre, 1.0 PiB, 25 GB/s                          (p9)
+#
+# Validate before you ever queue this for real - it costs nothing and it is
+# the one thing that protects your slot:
+#
+#   sbatch --test-only slurm_train.sh
+#
+# It parses every directive, rejects a bad one, and estimates when the job
+# would start, without submitting anything (manual p31).
 #
 # The scheduler uses backfill, so an honest -t gets you started sooner: a job
 # that asks for 4 days when it needs 6 hours waits behind everything.
@@ -31,7 +44,7 @@ set -euo pipefail
 mkdir -p logs
 
 BACKBONE="${BACKBONE:-vit_large_patch16_dinov3.sat493m}"
-DATA="${DATA:-/scratch/$USER/ongole_roads}"
+DATA="${DATA:-/scratch/$USER/ongole_roads_v2}"
 OUT="${OUT:-/scratch/$USER/runs/$(date +%Y%m%d-%H%M)-${BACKBONE%%.*}}"
 # Sized for an 80 GB A100, not a laptop card. The frozen 7B is 13.4 GB of bf16
 # weights, so most of the card is free for activations. These are starting
@@ -51,6 +64,11 @@ GPUS="${GPUS:-2}"
 ACCUM="${ACCUM:-1}"
 ENVNAME="${ENVNAME:-dinov3}"
 
+# module purge first: this inherits the login shell's modules, where conda
+# (base) is already active, and stacking another conda on top of that is how
+# you end up running the wrong interpreter. The manual's own DL example
+# purges (p80).
+module purge
 module load mldl/Miniconda
 # shellcheck disable=SC1091
 source "$(conda info --base)/etc/profile.d/conda.sh"
@@ -72,6 +90,44 @@ export NCCL_DEBUG=WARN
 # for this partition. Remove both lines if you ever go multi-node.
 export NCCL_IB_DISABLE=${NCCL_IB_DISABLE:-1}
 export NCCL_P2P_DISABLE=${NCCL_P2P_DISABLE:-0}
+
+# ---------- stage the chips onto the node's local SSD ----------
+# /scratch is Lustre, and this dataset is ~35,000 small files read in random
+# order every epoch. Lustre is excellent at streaming big files and poor at
+# metadata-heavy random access, which is exactly this access pattern; the GPU
+# nodes each have an 800 GB local SSD that is very good at it. Copying once at
+# job start costs a couple of minutes and buys it back every epoch.
+#
+# Entirely optional and fully guarded: any failure here leaves DATA pointing
+# at Lustre and the job runs as before. Set STAGE_LOCAL=0 to skip it.
+STAGE_LOCAL="${STAGE_LOCAL:-1}"
+LOCAL_BASE="${SLURM_TMPDIR:-${TMPDIR:-/tmp}}"
+if [ "$STAGE_LOCAL" = "1" ] && [ -d "$LOCAL_BASE" ] && [ -w "$LOCAL_BASE" ]; then
+    need_kb=$(( 12 * 1024 * 1024 ))          # 12 GB, against 9.4 GB of chips
+    free_kb=$(df -Pk "$LOCAL_BASE" | awk 'NR==2{print $4}')
+    if [ "${free_kb:-0}" -gt "$need_kb" ]; then
+        STAGE="$LOCAL_BASE/ongole_chips.$SLURM_JOB_ID"
+        echo "staging chips -> $STAGE"
+        mkdir -p "$STAGE"
+        # One big sequential read beats 35,000 small ones, so prefer the tar.
+        if [ -f "/scratch/$USER/ongole_roads_lean.tar" ]; then
+            tar -xf "/scratch/$USER/ongole_roads_lean.tar" -C "$STAGE" || true
+        else
+            cp -r "$DATA" "$STAGE/" || true
+        fi
+        staged="$STAGE/$(basename "$DATA")"
+        if [ -f "$staged/dataset.json" ]; then
+            DATA="$staged"
+            echo "staged ok, training from local SSD"
+            trap 'rm -rf "$STAGE"' EXIT
+        else
+            echo "staging incomplete - falling back to Lustre, which is fine"
+            rm -rf "$STAGE"
+        fi
+    else
+        echo "local SSD has only ${free_kb:-0} KB free - using Lustre"
+    fi
+fi
 
 echo "node      : $(hostname)"
 echo "gpus      : $(nvidia-smi --query-gpu=name,memory.total --format=csv,noheader | paste -sd'; ')"

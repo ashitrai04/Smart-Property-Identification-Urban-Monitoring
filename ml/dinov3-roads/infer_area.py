@@ -17,7 +17,10 @@ Outputs
     mask.tif          uint8 0/1, georeferenced
     mask.png          plain PNG
     overlay.png       mask drawn over the imagery
-    roads.gpkg        smoothed polygons + centrelines, EPSG:4326
+    roads.gpkg        smoothed polygons + centrelines, projected (UTM)
+    roads_4326.gpkg   the same in WGS84
+    shp/roads_utm.shp, shp/roads_4326.shp              polygons
+    shp/road_centrelines_utm.shp, ..._4326.shp         centrelines
     report.json       settings, timings, and the score if labels were given
 """
 import argparse
@@ -123,7 +126,8 @@ def main():
     ap.add_argument("--image", required=True)
     ap.add_argument("--ckpt", required=True)
     ap.add_argument("--out", required=True)
-    ap.add_argument("--area-km2", type=float, default=1.0)
+    ap.add_argument("--area-km2", type=float, default=1.0,
+                    help="0 = the whole image, however big it is")
     ap.add_argument("--centre", nargs=2, type=float, default=None,
                     metavar=("X", "Y"), help="centre in the image CRS; default = mosaic centre")
     ap.add_argument("--gsd", type=float, default=0.20)
@@ -149,8 +153,21 @@ def main():
     if not src.crs or not src.crs.is_projected:
         sys.exit("needs a projected (metre) CRS")
     native = src.res[0]
-    side_m = (a.area_km2 ** 0.5) * 1000.0
-    span = int(round(side_m / native))          # source pixels
+    if a.area_km2 <= 0:
+        # Whole image. Worth having as its own path rather than a very large
+        # --area-km2: the pre-cut clip is exactly 1000 m a side, so asking for
+        # 1.0 km2 of it lands on the full extent to the pixel, and one pixel
+        # of rounding either way silently crops it or runs off the edge.
+        span = min(src.width, src.height)
+        side_m = span * native
+    else:
+        side_m = (a.area_km2 ** 0.5) * 1000.0
+        span = int(round(side_m / native))      # source pixels
+        if span > min(src.width, src.height):
+            span = min(src.width, src.height)
+            side_m = span * native
+            print(f"  image is smaller than the area asked for - using all of "
+                  f"it, {side_m:.0f} m a side")
     H = W = int(round(side_m / a.gsd))          # working pixels
 
     if a.centre:
@@ -164,7 +181,7 @@ def main():
     win = Window(c0, r0, span, span)
     t = src.window_transform(win) * rasterio.Affine.scale(span / W, span / H)
 
-    print(f"area {a.area_km2} km2 = {side_m:.0f} m a side")
+    print(f"area {side_m*side_m/1e6:.3f} km2 = {side_m:.0f} m a side")
     print(f"  source window {span}x{span} px @ {native:.3f} m")
     print(f"  working grid  {W}x{H} px @ {a.gsd} m, tiles of {a.tile} with {a.overlap} overlap")
 
@@ -204,14 +221,35 @@ def main():
         m = [t.a, t.b, t.d, t.e, t.xoff, t.yoff]
         geoms = [affine_transform(p, m) for p in polys]
         cls = [affine_transform(l, m) for l in lines]
+        # Written in BOTH the projected CRS and WGS84, and as GeoPackage AND
+        # Shapefile.
+        #
+        # Projected (UTM) is the one to measure in: area_m2 and length_m are
+        # computed there, and in EPSG:4326 a polygon's "area" comes out in
+        # square degrees, which is not an area. GeoPackage is the better
+        # container - one file, real field names, many layers - but shapefile
+        # is what most GIS workflows still expect, so write both and let the
+        # user choose. A shapefile cannot hold two layers, hence the separate
+        # roads and road_centrelines files, and its field names are capped at
+        # 10 characters, which area_m2 and length_m already satisfy.
+        shpdir = out / "shp"
+        shpdir.mkdir(exist_ok=True)
+
+        def write_vec(gdf, stem, layer):
+            gdf.to_file(out / "roads.gpkg", layer=layer, driver="GPKG")
+            gdf.to_file(shpdir / f"{stem}_utm.shp", driver="ESRI Shapefile")
+            wgs = gdf.to_crs(4326)
+            wgs.to_file(out / "roads_4326.gpkg", layer=layer, driver="GPKG")
+            wgs.to_file(shpdir / f"{stem}_4326.shp", driver="ESRI Shapefile")
+
         if geoms:
-            gpd.GeoDataFrame({"area_m2": [round(g.area, 2) for g in geoms]},
-                             geometry=geoms, crs=src.crs).to_crs(4326) \
-               .to_file(out / "roads.gpkg", layer="roads", driver="GPKG")
+            write_vec(gpd.GeoDataFrame(
+                {"area_m2": [round(g.area, 2) for g in geoms]},
+                geometry=geoms, crs=src.crs), "roads", "roads")
         if cls:
-            gpd.GeoDataFrame({"length_m": [round(g.length, 2) for g in cls]},
-                             geometry=cls, crs=src.crs).to_crs(4326) \
-               .to_file(out / "roads.gpkg", layer="road_centrelines", driver="GPKG")
+            write_vec(gpd.GeoDataFrame(
+                {"length_m": [round(g.length, 2) for g in cls]},
+                geometry=cls, crs=src.crs), "road_centrelines", "road_centrelines")
         stats.update(polygons=len(geoms), centrelines=len(cls), applied=how,
                      road_ha=round(sum(g.area for g in geoms) / 1e4, 2))
         print(f"vector: {len(geoms)} polygons ({stats['road_ha']} ha), "
@@ -239,7 +277,7 @@ def main():
 
     (out / "report.json").write_text(json.dumps({
         "image": a.image, "ckpt": a.ckpt, "backbone": backbone,
-        "area_km2": a.area_km2, "gsd_m": a.gsd, "tile": a.tile,
+        "area_km2": round(side_m * side_m / 1e6, 4), "gsd_m": a.gsd, "tile": a.tile,
         "overlap": a.overlap, "threshold": a.threshold,
         "crs": str(src.crs), "window_px": [c0, r0, span, span],
         "seconds": round(secs, 1), "vector": stats, "score": score,

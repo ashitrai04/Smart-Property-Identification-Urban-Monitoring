@@ -60,4 +60,4 @@ conda env list | grep -E "dinov3|acpvnet" || true
 echo
 echo "Next: upload the data, then run preflight inside a debug allocation:"
 echo "  salloc -p gpu --gres=gpu:1 -t 00:30:00"
-echo "  python preflight.py --data $SCRATCH/ongole_roads --backbone vit_7b_patch16_dinov3.sat493m --batch 8"
+echo "  python preflight.py --data $SCRATCH/ongole_roads_v2 --backbone vit_7b_patch16_dinov3.sat493m --batch 8"

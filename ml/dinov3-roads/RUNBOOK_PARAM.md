@@ -3,16 +3,58 @@
 Every setting below comes from the PARAM Rudra (IIT Patna) user manual, not
 from guesswork:
 
+| | | manual |
+|---|---|---|
+| login host | `paramrudra.iitp.ac.in` | p16 |
+| SSH / SFTP port | **4422** from outside IITP, 22 inside | p16, p22 |
+| login | **captcha first, then password** | p15, fig 7 |
+| GPU partition | `gpu` — 8 nodes | p24 |
+| per GPU node | **2 x A100 80 GB HBM2e**, 2 x Xeon G-6240R = **48 cores**, **192 GB RAM**, **800 GB local SSD** | p9 |
+| other partitions | `standard` (154, default), `cpu` (122), `hm` (32, 768 GB) | p23-24 |
+| walltime | default **2 h**, max **4 days**; 10 jobs at once; 8 nodes 4 d / 16 nodes 2 d / 32 nodes 1 d | p24 |
+| GPUs | **must** be requested: `#SBATCH --gres=gpu:1` or `:2` | p39 |
+| account | omit it — "if only one account is allocated, it will be set as the default" | p30 |
+| scheduler | SLURM **backfill** — an honest `-t` starts sooner | p24 |
+| conda | `module purge` then `module load mldl/Miniconda` | p76, p80 |
+| provided envs | `mldl/Pytorch` 2.2.0, `mldl/Pytorch-gpu` 2.2.1, TF 2.15 | p77 |
+| **quota /home** | **50 GB soft, 60 GB hard**, 7-day grace | p39 |
+| **quota /scratch** | **200 GB soft, 220 GB hard**, 7-day grace | p39 |
+| scratch purge | anything not accessed for **3 months is deleted** | p17 |
+| filesystem | Lustre, 1.0 PiB usable, 25 GB/s | p9 |
+
+`df -h` on /scratch shows 607 TB free, which is the *filesystem*, not your
+allowance. Your allowance is 200 GB. What this work needs:
+
 | | |
 |---|---|
-| login host | `paramrudra.iitp.ac.in` |
-| SSH / SCP port | **4422** from outside IITP, 22 inside |
-| GPU partition | `gpu` — 8 nodes, **2 × NVIDIA A100 80 GB HBM2e per node** |
-| other partitions | `standard` (154, default), `cpu` (122), `hm` (32) |
-| walltime | default **2 h**, maximum **4 days**; up to 10 jobs at once |
-| scheduler | SLURM with **backfill** — an honest `-t` starts sooner |
-| conda | `module load mldl/Miniconda` |
-| filesystem | Lustre: `/home/vaibhavt_iitp` (quota'd) and `/scratch` |
+| `ongole_roads_lean.tar` | 5.4 GiB (delete after extracting) |
+| extracted chips | 9.2 GiB |
+| HF cache, 7B + ViT-L weights | ~14.6 GiB |
+| `ongole_1km.tif` | 235 MB |
+| checkpoints, frozen backbone omitted | a few hundred MB per run |
+
+About 30 GB, comfortably inside 200. Keep the big outputs in /scratch and
+copy only what you want to keep into /home, which is the smaller quota — the
+manual says exactly this on p39.
+
+## Validate before you queue — this is the whole answer to "don't lose my slot"
+
+```bash
+sbatch --test-only slurm_train.sh
+```
+
+`--test-only` parses every directive, rejects a bad one, and prints an
+estimate of when the job *would* start. Nothing is submitted (p31). Run it
+after any edit to a SLURM script. It costs nothing and it is the only check
+that catches a typo in a `#SBATCH` line before the typo costs you a place in
+the queue.
+
+Then the real gate, which checks the things SLURM cannot:
+
+```bash
+salloc -p gpu --gres=gpu:1 -t 00:30:00        # a short interactive slot
+python preflight.py --data /scratch/$USER/ongole_roads_v2     --backbone vit_7b_patch16_dinov3.sat493m --batch 8
+```
 
 Two A100-80 per node is comfortable. The 7B frozen is 13.4 GB of weights, so
 it fits on **one** card with room for a real batch; the second card doubles
@@ -45,21 +87,58 @@ Measured baselines on this ground, so you know what to beat:
 
 ---
 
-## Chip size and resolution — decided
+## Chip size and resolution — why 0.20 m
 
-**512 px at 0.20 m**, 50% overlap.
+**512 px at 0.20 m**, 50% overlap. Two independent reasons, one measured on
+this imagery and one that is arithmetic.
 
-- 0.20 m is where this imagery measures best: swept at 10/20/30/50/100 cm, F1
-  peaked at 20 cm (0.653 on the first reference layer, 0.786–0.790 against
-  `centre_part_Rd_v1`).
-- 512 px at 0.20 m covers 102 m, which holds a whole junction — important,
-  because a chip narrower than a junction teaches the model that roads end.
-- 512 / 16 = a 32 × 32 token grid, the size DINOv3 is comfortable at, and the
+**1. It is where this imagery measures best.** Swept at 10 / 20 / 30 / 50 /
+100 cm against the hand-drawn labels, F1 peaked at 20 cm — 0.786 against
+`centre_part_Rd_v1`, with a raw-mask ceiling of 0.790. Finer did not help and
+coarser lost edges.
+
+**2. It is the coarsest resolution at which a road is still one token wide.**
+The labels' median road is 3.60 m (measured: distance transform on the
+centreline, 238,437 samples). DINOv3 is patch-16, so what the backbone sees
+per output cell is 16 px of whatever GSD you feed it:
+
+| GSD | road is | = tokens | chip covers | px per km² | rel. compute |
+|---|---|---|---|---|---|
+| 0.05 m | 72.0 px | 4.50 | 26 m | 400 M | 1.00x |
+| 0.10 m | 36.0 px | 2.25 | 51 m | 100 M | 0.25x |
+| **0.20 m** | **18.0 px** | **1.12** | **102 m** | **25 M** | **0.06x** |
+| 0.30 m | 12.0 px | 0.75 | 154 m | 11 M | 0.03x |
+| 0.50 m | 7.2 px | 0.45 | 256 m | 4 M | 0.01x |
+| 1.00 m | 3.6 px | 0.23 | 512 m | 1 M | 0.003x |
+
+Below 0.20 m the typical road is **thinner than one token**. At 0.30 m it is
+0.75 of a token, meaning the backbone has no cell that lies inside the road —
+every token straddles road and not-road, and no decoder can recover an edge
+that was never resolved. That is the hard floor, and it is why 30 cm scored
+worse rather than merely cheaper.
+
+Above 0.20 m, 0.10 m buys 2.25 tokens — genuinely better representation — but
+at **4x the compute** and a chip that covers only 51 m. 51 m is narrower than
+a junction, and a chip narrower than a junction teaches the model that roads
+end at the chip edge. 102 m holds a whole junction with context around it.
+
+So 0.20 m is the knee: the last resolution that still resolves the road, with
+a field of view that still contains the structure being learned.
+
+The two other numbers follow from it:
+
+- 512 / 16 = a **32 x 32 token grid**, the shape DINOv3 is trained at, and the
   same 512 input ACPV-Net's Deventer-512 config expects. One chip set feeds
   all three models, so the comparison is clean.
 - Yield, measured: **9,258 chips** (7,389 / 1,086 / 783).
 
----
+**1.12 tokens is still thin, and that is the real limit on sharpness — not the
+backbone.** An 8x bilinear upsample of a 32x32 grid is a blur kernel; it is
+exactly how the earlier ViT-L run produced blobs. `SharpDecoder` answers it by
+not relying on the token grid for fine detail at all: a convolutional stem
+reads the image at strides 1, 2, 4 and 8 and is fused in on the way up, so
+edges come from full-resolution pixels while semantics come from the
+backbone. Training adds an explicit edge loss and reports boundary F1.
 
 ## 1. Chip locally, then upload — the 45 GB mosaic never needs to go
 
@@ -342,8 +421,13 @@ below).
 ## 7. Inference on 1 km², on PARAM
 
 ```bash
-sbatch --export=ALL,CKPT=/scratch/$USER/runs/<run>/best.pth slurm_infer.sh
+sbatch --test-only --export=ALL,CKPT=/scratch/$USER/runs/<run>/best.pth slurm_infer.sh
+sbatch           --export=ALL,CKPT=/scratch/$USER/runs/<run>/best.pth slurm_infer.sh
 ```
+
+It runs on `ongole_1km.tif`, the clip that was uploaded, over its whole extent
+(`AREA=0`). It used to default to the 45 GB mosaic, which is not on PARAM at
+all, so it would have queued and then died on its first line.
 
 One GPU, one hour — 1 km² at 20 cm is 5000 × 5000 px, about 150 tiles. Writes:
 
@@ -351,8 +435,15 @@ One GPU, one hour — 1 km² at 20 cm is 5000 × 5000 px, about 150 tiles. Write
 probability.tif   float32, georeferenced
 mask.tif          uint8, georeferenced
 mask.png          overlay.png
-roads.gpkg        smoothed polygons + centrelines, EPSG:4326
+roads.gpkg        polygons + centrelines, projected (UTM 44N)
+roads_4326.gpkg   the same, WGS84
+shp/roads_utm.shp            shp/roads_4326.shp
+shp/road_centrelines_utm.shp shp/road_centrelines_4326.shp
 report.json       settings, timing, and F1/precision/recall/IoU vs your labels
+
+Shapefile as well as GeoPackage, and both CRS. Measure in the UTM one:
+`area_m2` and `length_m` are computed there, and a polygon's area in EPSG:4326
+comes out in square degrees, which is not an area.
 ```
 
 Tested end to end locally on real Ongole imagery with an untrained checkpoint:

@@ -6,6 +6,7 @@
 # One GPU and one hour is plenty: a 1 km2 area at 20 cm is 5000 x 5000 px,
 # which is about 150 tiles of 512 with overlap.
 
+# Validate first:  sbatch --test-only slurm_infer.sh
 #SBATCH --job-name=roads-infer
 #SBATCH --partition=gpu
 #SBATCH --nodes=1
@@ -20,13 +21,20 @@ set -euo pipefail
 mkdir -p logs
 
 CKPT="${CKPT:?set CKPT=/scratch/$USER/runs/<run>/best.pth}"
-IMAGE="${IMAGE:-/scratch/$USER/data/Ongole_ORI_V3_jpeg92.tif}"
+# The 45 GB mosaic is NOT on PARAM - only the pre-cut 1 km2 clip is.
+# This used to default to the mosaic, which does not exist here, so the
+# job would have died on its first line after waiting in the queue.
+IMAGE="${IMAGE:-/scratch/$USER/data/ongole_1km.tif}"
 LABELS="${LABELS:-/scratch/$USER/data/centre_part_Rd.shp}"
 OUT="${OUT:-/scratch/$USER/infer/$(basename "$(dirname "$CKPT")")-1km}"
-AREA="${AREA:-1.0}"
+# 0 = the whole image. The clip is 33333 x 33333 at 0.03 m, exactly
+# 1000 m a side, so --area-km2 1.0 also lands on it - but to the pixel,
+# and a rounding change either way would crop or overrun it.
+AREA="${AREA:-0}"
 GSD="${GSD:-0.20}"
 ENVNAME="${ENVNAME:-dinov3}"
 
+module purge
 module load mldl/Miniconda
 # shellcheck disable=SC1091
 source "$(conda info --base)/etc/profile.d/conda.sh"

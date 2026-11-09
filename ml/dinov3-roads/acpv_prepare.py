@@ -12,7 +12,7 @@ those reads **COCO polygon annotations**, which chip_dataset.py does not emit:
 it writes GeoJSON, because that is what a GIS wants. This bridges the two,
 then prints the exact three commands to finish the job.
 
-    python acpv_prepare.py --chips C:/ongole_roads --repo /scratch/$USER/ACPV-Net
+    python acpv_prepare.py --chips C:/ongole_roads_v2 --repo /scratch/$USER/ACPV-Net
 
 Classes: Deventer-512 is five-class. Ongole labels are roads only, so the
 config written here is two-class (background + road). That means the Deventer

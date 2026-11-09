@@ -8,7 +8,7 @@ enough steps to estimate the walltime. Two minutes on a login node or a short
 debug allocation, and it either prints a green summary with the batch size and
 walltime to request, or it names exactly what is missing.
 
-    python preflight.py --data $SCRATCH/ongole_roads \
+    python preflight.py --data $SCRATCH/ongole_roads_v2 \
         --backbone vit_7b_patch16_dinov3.sat493m --batch 2
 
 Exit code is 0 only if every check passed, so it can gate a submission:
