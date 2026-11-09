@@ -69,28 +69,67 @@ ENVNAME="${ENVNAME:-dinov3}"
 # you end up running the wrong interpreter. The manual's own DL example
 # purges (p80).
 # ---------- find conda, whatever this cluster calls it ----------
-# The manual (p76, p80) says `module load mldl/Miniconda`. On this system Lmod
-# answers "The following module(s) are unknown: mldl/Miniconda" - the manual is
-# out of date, or that module sits behind a hierarchy. So look for one rather
-# than hardcode a name, and fall back to the conda already active in the login
-# shell, which is what the (base) in the prompt means.
+# Three things are true here and each one breaks the obvious approach:
 #
-# CONDA_BASE is captured BEFORE `module purge`: if conda did come from a
-# module, purging would take it away too.
-CONDA_BASE="$(conda info --base 2>/dev/null || true)"
-module purge 2>/dev/null || true
-for _m in mldl/Miniconda mldl/miniconda mldl/Anaconda miniconda Miniconda           anaconda Anaconda conda python/conda; do
-    if module load "$_m" 2>/dev/null; then
-        echo "conda module: $_m"
-        CONDA_BASE="$(conda info --base 2>/dev/null || echo "$CONDA_BASE")"
-        break
+#   1. `module load mldl/Miniconda` - straight from the manual, p76 and p80 -
+#      fails on this system: "The following module(s) are unknown".
+#   2. conda IS already active at login; the prompt says (base).
+#   3. but `conda` is a shell FUNCTION, not a program. `which conda` prints a
+#      function body. Functions are not exported, and a script run as
+#      `bash setup_param.sh` is a new non-interactive shell that never sources
+#      ~/.bashrc - so inside here, `conda` does not exist at all.
+#
+# What does survive is the environment: conda's init exports CONDA_EXE (the
+# real binary) and CONDA_PREFIX (the active environment). Those cross the
+# process boundary, and SLURM exports the submitting environment by default,
+# so they reach the compute nodes too. So: find the binary, not the function.
+CONDA_BASE=""
+_try() { [ -n "${1:-}" ] && [ -f "$1/etc/profile.d/conda.sh" ]; }
+
+# 1. CONDA_EXE - the most reliable, set by conda's own init.
+if [ -n "${CONDA_EXE:-}" ] && [ -x "${CONDA_EXE:-}" ]; then
+    _b="$("$CONDA_EXE" info --base 2>/dev/null || true)"
+    _try "$_b" && CONDA_BASE="$_b"
+fi
+# 2. CONDA_PREFIX - the active env. If it is an env rather than the base
+#    install, it sits at <base>/envs/<name>, so strip that.
+if [ -z "$CONDA_BASE" ] && [ -n "${CONDA_PREFIX:-}" ]; then
+    _try "$CONDA_PREFIX" && CONDA_BASE="$CONDA_PREFIX"
+    if [ -z "$CONDA_BASE" ]; then
+        _b="${CONDA_PREFIX%/envs/*}"
+        _try "$_b" && CONDA_BASE="$_b"
     fi
-done
-if [ -z "$CONDA_BASE" ] || [ ! -f "$CONDA_BASE/etc/profile.d/conda.sh" ]; then
-    echo "FATAL: no conda found. Run 'module avail' and send me the list." >&2
+fi
+# 3. a real conda on PATH (not the function - this is a new shell).
+if [ -z "$CONDA_BASE" ] && command -v conda >/dev/null 2>&1; then
+    _b="$(conda info --base 2>/dev/null || true)"
+    _try "$_b" && CONDA_BASE="$_b"
+fi
+# 4. only now bother with modules, and try several names.
+if [ -z "$CONDA_BASE" ]; then
+    for _m in mldl/Miniconda mldl/miniconda mldl/Anaconda miniconda Miniconda               anaconda Anaconda conda python/conda; do
+        module load "$_m" 2>/dev/null || continue
+        echo "conda module: $_m"
+        _b="$(conda info --base 2>/dev/null || true)"
+        _try "$_b" && { CONDA_BASE="$_b"; break; }
+    done
+fi
+# 5. last resort: the usual places.
+if [ -z "$CONDA_BASE" ]; then
+    for _b in /home/apps/miniconda3 /home/apps/anaconda3 /opt/miniconda3               /opt/anaconda3 "$HOME/miniconda3" "$HOME/anaconda3"; do
+        _try "$_b" && { CONDA_BASE="$_b"; break; }
+    done
+fi
+if [ -z "$CONDA_BASE" ]; then
+    echo "FATAL: cannot find a conda installation." >&2
+    echo "  CONDA_EXE=${CONDA_EXE:-<unset>}" >&2
+    echo "  CONDA_PREFIX=${CONDA_PREFIX:-<unset>}" >&2
+    echo "  Run 'module avail' and 'echo \$CONDA_EXE' and send me both." >&2
     exit 1
 fi
 echo "conda base  : $CONDA_BASE"
+# Sourcing this is what defines `conda` in THIS shell - without it,
+# `conda activate` fails with "run 'conda init' before 'conda activate'".
 # shellcheck disable=SC1091
 source "$CONDA_BASE/etc/profile.d/conda.sh"
 conda activate "$ENVNAME"
