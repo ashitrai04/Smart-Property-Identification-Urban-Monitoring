@@ -12,7 +12,7 @@ from guesswork:
 | walltime | default **2 h**, maximum **4 days**; up to 10 jobs at once |
 | scheduler | SLURM with **backfill** — an honest `-t` starts sooner |
 | conda | `module load mldl/Miniconda` |
-| filesystem | Lustre: `/home/<user>` (quota'd) and `/scratch` |
+| filesystem | Lustre: `/home/vaibhavt_iitp` (quota'd) and `/scratch` |
 
 Two A100-80 per node is comfortable. The 7B frozen is 13.4 GB of weights, so
 it fits on **one** card with room for a real batch; the second card doubles
@@ -57,7 +57,7 @@ Measured baselines on this ground, so you know what to beat:
 - 512 / 16 = a 32 × 32 token grid, the size DINOv3 is comfortable at, and the
   same 512 input ACPV-Net's Deventer-512 config expects. One chip set feeds
   all three models, so the comparison is clean.
-- Yield: **2,557 chips on road**, about **10,227** at 50% overlap.
+- Yield, measured: **9,258 chips** (7,389 / 1,086 / 783).
 
 ---
 
@@ -66,12 +66,40 @@ Measured baselines on this ground, so you know what to beat:
 The only thing on PARAM that would need the full orthomosaic is the final
 1 km² inference, and that area can be cut here too. So nothing large travels:
 
-| | size |
-|---|---|
-| ~~`Ongole_ORI_V3_jpeg92.tif`~~ | ~~45 GB~~ — not uploaded |
-| `ongole_roads.tar` (the chips) | **~9 GB** |
-| `ongole_1km.tif` (inference area) | **~300 MB** |
-| `dinov3-roads/` (code) | < 1 MB |
+| | size | actual |
+|---|---|---|
+| ~~`Ongole_ORI_V3_jpeg92.tif`~~ | ~~45 GB~~ | not uploaded |
+| `ongole_roads_lean.tar` (chips, no duplicate PNGs) | **5.4 GiB** | upload this |
+| ~~`ongole_roads.tar`~~ (chips incl. image PNGs) | ~~9.25 GiB~~ | superseded |
+| `ongole_1km.tif` (inference area) | **235 MB** | upload |
+| `dinov3-roads/` (code) | < 1 MB | upload |
+
+The lean tar drops `images/*/*.png`. `train_roads.py:92` globs `images/*/*.tif`
+only, so those PNGs - 3.82 GiB, 41% of the archive - were never read by
+training. Mask PNGs and both vector files per chip are kept; they are needed.
+
+Measured contents of the chip set as built:
+
+| | train | val | test | total |
+|---|---|---|---|---|
+| chips | 7,389 | 1,086 | 783 | **9,258** |
+| road pixels | 8.15% | 7.02% | 5.31% | ~7.9% |
+| all-zero masks | 14.5% | 23.3% | 31.0% | 16.9% |
+
+9.21 GiB on disk, 44,727 files. 512 px at 0.20 m = 102.4 m chips, 50% overlap,
+EPSG:32644, split by 800 m spatial blocks (nearest train chip to any val chip:
+154 m, median 311 m).
+
+Of the candidate grid, 24,396 positions were dropped: 19,232 with under 1%
+road (bar 10% of the fully road-free ones, kept as negatives - 1,564 chips, so
+the model learns what is *not* road), 2,256 under 95% valid imagery, 2,908
+straddling a split-block boundary.
+
+**The test split is systematically sparser than train** - 5.31% road pixels
+against 8.15%, a third of its masks empty against a seventh. Not a bug in the
+split; the 800 m blocks the hash sent to test are genuinely more rural. So
+test scores are not comparable to val scores. Report val as the headline and
+treat test as its own, harder question.
 
 ### Build the chips (on your laptop)
 
@@ -120,30 +148,30 @@ stream.
 ```bash
 # code
 scp -r -P 4422 "D:/React folder/Smart-Property-Identification-Urban-Monitoring/ml/dinov3-roads" \
-    <user>@paramrudra.iitp.ac.in:/home/<user>/
+    vaibhavt_iitp@paramrudra.iitp.ac.in:/home/vaibhavt_iitp/
 
-ssh -p 4422 <user>@paramrudra.iitp.ac.in "mkdir -p /scratch/\$USER/data"
+ssh -p 4422 vaibhavt_iitp@paramrudra.iitp.ac.in "mkdir -p /scratch/\$USER/data"
 
 # chips + checksum + inference clip + labels
-scp -P 4422 C:/param_upload/ongole_roads.tar     <user>@paramrudra.iitp.ac.in:/scratch/<user>/
-scp -P 4422 C:/param_upload/ongole_roads.tar.sha256 <user>@paramrudra.iitp.ac.in:/scratch/<user>/
-scp -P 4422 C:/param_upload/ongole_1km.tif       <user>@paramrudra.iitp.ac.in:/scratch/<user>/data/
+scp -P 4422 C:/param_upload/ongole_roads_lean.tar        vaibhavt_iitp@paramrudra.iitp.ac.in:/scratch/vaibhavt_iitp/
+scp -P 4422 C:/param_upload/ongole_roads_lean.tar.sha256 vaibhavt_iitp@paramrudra.iitp.ac.in:/scratch/vaibhavt_iitp/
+scp -P 4422 C:/param_upload/ongole_1km.tif       vaibhavt_iitp@paramrudra.iitp.ac.in:/scratch/vaibhavt_iitp/data/
 scp -P 4422 "<path>/centre_part_Rd_v1.zip" \
-    <user>@paramrudra.iitp.ac.in:/scratch/<user>/data/
+    vaibhavt_iitp@paramrudra.iitp.ac.in:/scratch/vaibhavt_iitp/data/
 ```
 
-Use `rsync -avP -e "ssh -p 4422" <file> <user>@paramrudra.iitp.ac.in:/scratch/<user>/`
+Use `rsync -avP -e "ssh -p 4422" <file> vaibhavt_iitp@paramrudra.iitp.ac.in:/scratch/vaibhavt_iitp/`
 if the link drops — rsync resumes, `scp` starts over.
 
 ### Unpack and verify
 
 ```bash
-ssh -p 4422 <user>@paramrudra.iitp.ac.in
+ssh -p 4422 vaibhavt_iitp@paramrudra.iitp.ac.in
 cd /scratch/$USER
-sha256sum -c ongole_roads.tar.sha256     # catches a truncated transfer now,
-tar -xf ongole_roads.tar                 # not halfway through epoch 1
+sha256sum -c ongole_roads_lean.tar.sha256   # catches a truncated transfer now,
+tar -xf ongole_roads_lean.tar               # not halfway through epoch 1
 unzip data/centre_part_Rd_v1.zip -d data/
-python -c "import json;d=json.load(open('ongole_roads/dataset.json'));print(d['counts'])"
+python -c "import json;d=json.load(open('ongole_roads_v2/dataset.json'));print(d['counts'])"
 ```
 
 ---
@@ -154,7 +182,7 @@ The login node has internet; **compute nodes do not**. Weights must be cached
 here or every job hangs on a connection it will never get.
 
 ```bash
-ssh -p 4422 <user>@paramrudra.iitp.ac.in
+ssh -p 4422 vaibhavt_iitp@paramrudra.iitp.ac.in
 cd ~/dinov3-roads
 unzip /scratch/$USER/data/centre_part_Rd_v1.zip -d /scratch/$USER/data/
 
@@ -169,7 +197,11 @@ du -sh /scratch/$USER/hf
 
 ---
 
-## 3. Build the chips — CPU partition, no GPU needed
+## 3. Build the chips — ONLY IF you need to rebuild
+
+Skip this. The chips are built and uploaded in step 1; the 45 GB mosaic is not
+on PARAM, so this step cannot run as written unless you upload it. Kept for the
+record, and in case you ever re-chip at a different GSD there.
 
 ```bash
 sbatch --partition=cpu --time=04:00:00 --cpus-per-task=16 \
@@ -333,8 +365,8 @@ and predicting confident nonsense.
 ## 8. Bring the results home
 
 ```bash
-scp -r -P 4422 <user>@paramrudra.iitp.ac.in:/scratch/<user>/runs/<run>/best.pth .
-scp -r -P 4422 <user>@paramrudra.iitp.ac.in:/scratch/<user>/infer/<run>-1km .
+scp -r -P 4422 vaibhavt_iitp@paramrudra.iitp.ac.in:/scratch/vaibhavt_iitp/runs/<run>/best.pth .
+scp -r -P 4422 vaibhavt_iitp@paramrudra.iitp.ac.in:/scratch/vaibhavt_iitp/infer/<run>-1km .
 ```
 
 A frozen-backbone checkpoint is a few hundred MB. It drops straight into
@@ -343,19 +375,57 @@ deliberately the same shape.
 
 ---
 
-## The thing that will actually limit your accuracy
+## What the labels actually are — measured, not inferred
 
-`centre_part_Rd_v1` is OSM centrelines buffered to a fixed width per road
-class — it carries `BUFF_DIST`, `width_m`, `width_fcla`, `fclass`. Cut chips
-and look: the label is a constant-width ribbon over a track whose width varies,
-staying straight where the track bends.
+I owe you a correction here. An earlier version of this file said
+`centre_part_Rd_v1` was "OSM centrelines buffered to a fixed width per road
+class", citing its `BUFF_DIST`, `width_m`, `width_fcla` and `fclass` columns.
+I had read the column *names* and not their contents. Read the contents:
 
-A model learns the function it is shown. Trained on constant-width ribbons it
-returns constant-width ribbons, whatever the backbone. The current model is
-already at F1 0.786 against a 0.790 ceiling — there is almost nothing left to
-win against this ground truth. **What a 7B can win is shape, and shape is the
-one thing these labels cannot teach.** A few hundred chips with the carriageway
-edge genuinely digitised would move the result further than the 7B will.
+```
+features: 1          <- the whole network is ONE dissolved polygon
+BUFF_DIST  0.0       width_m     0.0      area_m2  0.0
+osm_id     <null>    fclass      <null>   width_src <null>
+```
 
-Worth running the 7B anyway — it is the experiment you want, and a frozen 7B
-is cheap. Just do not expect the F1 to move much, and judge it on the shapes.
+Every one of those fields is empty or zero. It is a leftover schema from some
+earlier tool, carrying no information. The claim was unfounded.
+
+What the layer really is: **258.2 ha of hand-digitised road area**, dissolved
+into a single connected polygon, with no attributes.
+
+And the widths are not constant. Distance transform on the centreline of 250
+chips, 238,437 samples:
+
+| | width |
+|---|---|
+| p5 | 1.44 m |
+| p25 | 2.91 m |
+| **median** | **3.60 m** |
+| p75 | 4.95 m |
+| p95 | 10.52 m |
+
+mean 4.34 m, **coefficient of variation 0.62**. A constant-width buffer would
+sit near zero. These labels track the real carriageway — narrow where the lane
+narrows, wide at the junctions and the main roads.
+
+**This matters for what you should expect.** The earlier version of this note
+told you not to hope for much, because constant-width ribbons cannot teach
+shape. That was advice built on a false premise. Shape *is* in this ground
+truth, so the decoder work has something real to learn from and the experiment
+has genuine headroom.
+
+The honest constraint is a different one, and it is about resolution rather
+than labels. A 3.60 m median road at 0.20 m GSD is 18 px. At patch 16 that is
+**1.1 tokens** — the typical road is thinner than one token of the backbone's
+output grid. No amount of backbone capacity fixes that, and an 8x bilinear
+upsample of a 32x32 grid is a blur kernel. It is why `SharpDecoder` carries a
+convolutional stem at strides 1/2/4/8 straight off the image and fuses it on
+the way up, and why training adds an explicit edge loss. Judge the 7B on
+boundary F1, which is reported, not on IoU, which road interiors dominate and
+which barely moves when the edges go soft.
+
+One question still open, and only you can answer it: does the digitising
+deliberately exclude plot-access tracks and informal lanes? It changes how to
+read recall on the 1 km2 test - a "miss" on something never labelled is not a
+miss.
