@@ -92,10 +92,18 @@ echo   labels   %LABELS%
 echo.
 echo   One password prompt. The big file resumes if the link drops -
 echo   just run this again.
+echo.
+echo   Tired of typing the password? Run setup_param_key.bat once.
 echo ============================================================
 echo.
 
-sftp -P %PPORT% -b "%BATCH%" %PUSER%@%PHOST%
+rem -o BatchMode=no MUST come before -b. `-b` appends "-obatchmode yes"
+rem to the ssh arguments, and ssh takes the FIRST value it is given for
+rem any option - so an override has to be on the command line earlier
+rem than the -b that causes it. With batchmode on, ssh is forbidden from
+rem prompting, so a password login dies as "Permission denied" without
+rem ever asking for the password. That is what happened the first time.
+sftp -P %PPORT% -o BatchMode=no -b "%BATCH%" %PUSER%@%PHOST%
 set RC=%ERRORLEVEL%
 del "%BATCH%" 2>nul
 
