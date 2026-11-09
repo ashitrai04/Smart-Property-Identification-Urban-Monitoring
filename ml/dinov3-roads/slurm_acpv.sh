@@ -30,10 +30,31 @@ REPO="${REPO:-/scratch/$USER/ACPV-Net}"
 CONFIG="${CONFIG:-config-files/ongole512_train.yaml}"
 ENVNAME="${ENVNAME:-acpvnet}"
 
-module purge
-module load mldl/Miniconda
+# ---------- find conda, whatever this cluster calls it ----------
+# The manual (p76, p80) says `module load mldl/Miniconda`. On this system Lmod
+# answers "The following module(s) are unknown: mldl/Miniconda" - the manual is
+# out of date, or that module sits behind a hierarchy. So look for one rather
+# than hardcode a name, and fall back to the conda already active in the login
+# shell, which is what the (base) in the prompt means.
+#
+# CONDA_BASE is captured BEFORE `module purge`: if conda did come from a
+# module, purging would take it away too.
+CONDA_BASE="$(conda info --base 2>/dev/null || true)"
+module purge 2>/dev/null || true
+for _m in mldl/Miniconda mldl/miniconda mldl/Anaconda miniconda Miniconda           anaconda Anaconda conda python/conda; do
+    if module load "$_m" 2>/dev/null; then
+        echo "conda module: $_m"
+        CONDA_BASE="$(conda info --base 2>/dev/null || echo "$CONDA_BASE")"
+        break
+    fi
+done
+if [ -z "$CONDA_BASE" ] || [ ! -f "$CONDA_BASE/etc/profile.d/conda.sh" ]; then
+    echo "FATAL: no conda found. Run 'module avail' and send me the list." >&2
+    exit 1
+fi
+echo "conda base  : $CONDA_BASE"
 # shellcheck disable=SC1091
-source "$(conda info --base)/etc/profile.d/conda.sh"
+source "$CONDA_BASE/etc/profile.d/conda.sh"
 conda activate "$ENVNAME"
 
 cd "$REPO"
