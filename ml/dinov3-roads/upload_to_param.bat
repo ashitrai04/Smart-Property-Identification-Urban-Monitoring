@@ -27,6 +27,15 @@ rem  is not an error.
 rem ============================================================
 setlocal
 
+rem FIRST, before any `shift`: cmd's SHIFT copies %1 into %0, so after it runs
+rem %~dp0 no longer names this script - it resolves the leftover argument
+rem against the CURRENT directory. That is what made a correctly invoked
+rem "D:\...\upload_to_param.bat code" report "running from C:\Users\asash\
+rem Downloads": not a stray copy, just %0 having been shifted out from under
+rem it. Capture it here and nothing downstream can move it.
+set "CODE=%~dp0"
+if "%CODE:~-1%"=="\" set "CODE=%CODE:~0,-1%"
+
 set PUSER=vaibhavt_iitp
 set PHOST=paramrudra.iitp.ac.in
 set PPORT=4422
@@ -41,14 +50,14 @@ set XFER=put
 set DATAFILES=1
 if /i "%~1"=="resume" (
     set XFER=reput
-    shift
+    shift /1
 )
 rem "code" sends ONLY the scripts and skips the 5.4 GiB of data. Use it
 rem after a code change: the data is already there, and re-putting it
 rem would start again from byte zero.
 if /i "%~1"=="code" (
     set DATAFILES=0
-    shift
+    shift /1
 )
 
 rem Optional overrides, so nothing here needs editing:
@@ -58,8 +67,6 @@ if not "%~1"=="" set PUSER=%~1
 if not "%~2"=="" set PPORT=%~2
 if not "%~3"=="" set PHOST=%~3
 
-set "CODE=%~dp0"
-if "%CODE:~-1%"=="\" set "CODE=%CODE:~0,-1%"
 rem sftp reads a backslash as an escape character, so lcd gets forward slashes.
 set "CODEF=%CODE:\=/%"
 set "UPLOADF=%UPLOAD:\=/%"
