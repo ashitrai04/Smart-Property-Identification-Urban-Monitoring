@@ -60,7 +60,17 @@ BATCH="${BATCH:-$DEF_BATCH}"
 EPOCHS="${EPOCHS:-60}"
 # Both A100s are yours for the whole allocation; there is no reason to leave
 # one idle. Effective batch = BATCH x GPUS x ACCUM.
-GPUS="${GPUS:-2}"
+# Take the GPU count from the allocation, not from a constant. Submit with
+# --gres=gpu:1 to catch an earlier backfill slot and a hardcoded 2 would have
+# torchrun spawn two ranks onto one card: both fail, or worse, one silently
+# runs at half speed. SLURM_GPUS_ON_NODE is authoritative; nvidia-smi is the
+# fallback; 1 is the safe floor.
+if [ -z "${GPUS:-}" ]; then
+    GPUS="${SLURM_GPUS_ON_NODE:-}"
+    [ -z "$GPUS" ] && GPUS="$(nvidia-smi --list-gpus 2>/dev/null | wc -l)"
+    [ -z "$GPUS" ] || [ "$GPUS" -lt 1 ] 2>/dev/null && GPUS=1
+fi
+echo "gpus      : $GPUS (allocated)"
 ACCUM="${ACCUM:-1}"
 ENVNAME="${ENVNAME:-dinov3}"
 
@@ -143,7 +153,8 @@ export TORCH_HOME="${TORCH_HOME:-/scratch/$USER/torch}"
 export HF_HUB_OFFLINE=1
 export TRANSFORMERS_OFFLINE=1
 
-export OMP_NUM_THREADS=$(( SLURM_CPUS_PER_TASK / GPUS ))
+export OMP_NUM_THREADS=$(( ${SLURM_CPUS_PER_TASK:-8} / GPUS ))
+[ "$OMP_NUM_THREADS" -lt 1 ] && export OMP_NUM_THREADS=1
 export NCCL_DEBUG=WARN
 # Single node: the two A100s talk over NVLink/PCIe, not the fabric. Disabling
 # IB avoids a known NCCL stall on nodes where it is present but not configured
@@ -205,7 +216,7 @@ torchrun --standalone --nproc_per_node="$GPUS" train_roads.py \
     --epochs "$EPOCHS" \
     --batch "$BATCH" \
     --accum "$ACCUM" \
-    --workers $(( SLURM_CPUS_PER_TASK / GPUS )) \
+    --workers $(( ${SLURM_CPUS_PER_TASK:-8} / GPUS )) \
     --amp bf16 \
     --grad-ckpt
 
