@@ -242,18 +242,33 @@ scp -P 4422 "<path>/centre_part_Rd_v1.zip" \
 Use `rsync -avP -e "ssh -p 4422" <file> vaibhavt_iitp@paramrudra.iitp.ac.in:/scratch/vaibhavt_iitp/`
 if the link drops — rsync resumes, `scp` starts over.
 
-### Unpack and verify
+### Unpack and verify — on a COMPUTE node
 
 ```bash
-ssh -p 4422 vaibhavt_iitp@paramrudra.iitp.ac.in
 cd /scratch/$USER
-sha256sum -c ongole_roads_lean.tar.sha256   # catches a truncated transfer now,
-tar -xf ongole_roads_lean.tar               # not halfway through epoch 1
-unzip data/centre_part_Rd_v1.zip -d data/
-python -c "import json;d=json.load(open('ongole_roads_v2/dataset.json'));print(d['counts'])"
+sha256sum -c ongole_roads_lean.tar.sha256     # wait for OK before anything else
+cd ~/dinov3-roads && sbatch slurm_extract.sh
+squeue --me
 ```
 
----
+**Do not run `tar -xf` on the login node.** It stops part way with no error.
+Measured here: 3,915 of 35,469 files, prompt returned, looked like success.
+The manual says why on page 7 — "there will be a limit on the CPU time that
+can be used on a Login Node by a user and there is a limit/user on the memory
+as well. If any of these are exceeded, the job will get terminated." Writing
+35,000 small files to Lustre is tens of thousands of metadata operations and
+it crosses that limit. The archive was fine; `sha256sum -c` had already said
+`OK`. Only the place the work ran was wrong.
+
+`slurm_extract.sh` checks the archive, removes any half-extracted tree rather
+than unpacking on top of it, extracts on the `cpu` partition, and fails loudly
+unless it ends with exactly 35,469 files.
+
+One more thing about the login node, learned the same way: **do not paste a
+multi-line block when one of the commands is slow.** `sha256sum` on 5.4 GiB
+takes about a minute, and the rest of the pasted block sits in the terminal's
+input buffer getting mangled, then runs as something you did not type. Paste
+one line at a time, or chain with `&&` so a failure stops the rest.
 
 ## 2. Environments and weights — login node, once
 
