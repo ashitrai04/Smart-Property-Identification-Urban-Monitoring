@@ -90,8 +90,8 @@ PY
 
 # ---------- 2. vertex heatmaps ----------
 banner "vertex heatmaps"
-if [ -d "$DATA/train/heatmap" ] && [ "$(ls -1 "$DATA/train/heatmap" 2>/dev/null | wc -l)" -gt 0 ]; then
-    echo "already done: $(ls -1 "$DATA/train/heatmap" | wc -l) files"
+if [ -d "$DATA/train/heatmap" ] && [ "$(find "$DATA/train/heatmap" -type f 2>/dev/null | wc -l)" -gt 0 ]; then
+    echo "already done: $(find "$DATA/train/heatmap" -type f | wc -l) files"
 else
     [ -f data/generate_coco_vertex_heatmaps.py ] \
         || die "repo has no data/generate_coco_vertex_heatmaps.py - check its name with: ls data/*.py"
@@ -100,14 +100,14 @@ else
         --output-dir      "$DATA/train/heatmap" --sigma 3.0 \
         || die "generate_coco_vertex_heatmaps.py"
 fi
-n_hm=$(ls -1 "$DATA/train/heatmap" 2>/dev/null | wc -l)
+n_hm=$(find "$DATA/train/heatmap" -type f 2>/dev/null | wc -l)
 echo "  heatmaps: $n_hm"
 [ "$n_hm" -gt 0 ] || die "no heatmaps produced"
 
 # ---------- 3. D4 augmentation ----------
 banner "D4 augmentation (expect about 8x the heatmaps)"
-if [ -d "$DATA/train/heatmap_augmented" ] && [ "$(ls -1 "$DATA/train/heatmap_augmented" 2>/dev/null | wc -l)" -gt "$n_hm" ]; then
-    echo "already done: $(ls -1 "$DATA/train/heatmap_augmented" | wc -l) files"
+if [ -d "$DATA/train/heatmap_augmented" ] && [ "$(find "$DATA/train/heatmap_augmented" -type f 2>/dev/null | wc -l)" -ge "$n_hm" ]; then
+    echo "already done: $(find "$DATA/train/heatmap_augmented" -type f | wc -l) files"
 else
     [ -f data/augment_heatmap_d4.py ] || die "repo has no data/augment_heatmap_d4.py"
     python data/augment_heatmap_d4.py \
@@ -115,7 +115,10 @@ else
         --output_dir "$DATA/train/heatmap_augmented" \
         || die "augment_heatmap_d4.py"
 fi
-n_aug=$(ls -1 "$DATA/train/heatmap_augmented" 2>/dev/null | wc -l)
+# Recursive. D4 augmentation writes one subdirectory per transform, so a
+# top-level entry count reports "8" for what is really tens of thousands
+# of files, and a stage that succeeded looks like it produced nothing.
+n_aug=$(find "$DATA/train/heatmap_augmented" -type f 2>/dev/null | wc -l)
 echo "  augmented: $n_aug"
 [ "$n_aug" -gt 0 ] || die "no augmented heatmaps"
 
@@ -126,20 +129,36 @@ echo "  augmented: $n_aug"
 # a clean, early failure and the fix is a GPU job, not a code change.
 banner "kl-4 latent encoding (the slow stage - hours on CPU)"
 LAT="$DATA/train/heatmap_augmented_latent_kl-4"
-if [ -d "$LAT" ] && [ "$(ls -1 "$LAT" 2>/dev/null | wc -l)" -ge "$n_aug" ]; then
-    echo "already done: $(ls -1 "$LAT" | wc -l) latents"
+if [ -d "$LAT" ] && [ "$(find "$LAT" -type f 2>/dev/null | wc -l)" -ge "$n_aug" ]; then
+    echo "already done: $(find "$LAT" -type f | wc -l) latents"
 else
     [ -f latent_encoder_accelerated.py ] || die "repo has no latent_encoder_accelerated.py"
-    [ -f models/first_stage_models/kl-f4/config.yaml ] \
-        || die "kl-f4 config.yaml missing - the autoencoder zip may be only partly unpacked"
+    # The ommer-lab zip does not reliably put config.yaml beside model.ckpt,
+    # and the repo ships autoencoder configs of its own. Look for it.
+    KLCFG=""
+    # Verified against the repo at HEAD, not guessed: the autoencoder config
+    # ships IN the repo as config-files/autoencoder_kl_f4.yaml. It is not in
+    # the ommer-lab zip, which carries only model.ckpt - which is why
+    # models/first_stage_models/kl-f4/config.yaml never existed.
+    for c in config-files/autoencoder_kl_f4.yaml \
+             models/first_stage_models/kl-f4/config.yaml \
+             models/first_stage_models/kl-f4/*/config.yaml; do
+        [ -f "$c" ] && { KLCFG="$c"; break; }
+    done
+    if [ -z "$KLCFG" ]; then
+        KLCFG="$(find . -maxdepth 5 -iname "*.yaml" 2>/dev/null \
+                 | grep -iE "kl.?f4|autoencoder" | head -1)"
+    fi
+    [ -n "$KLCFG" ] || die "no autoencoder config found - run: find $REPO -iname '*.yaml' | grep -i auto"
+    echo "  autoencoder config: $KLCFG"
     python latent_encoder_accelerated.py \
-        --config models/first_stage_models/kl-f4/config.yaml \
+        --config "$KLCFG" \
         --input      "$DATA/train/heatmap_augmented" \
         --output_dir "$LAT" \
         --type heatmap --batch-size 8 \
         || die "latent_encoder_accelerated.py (if it demands CUDA, rerun this stage as a GPU job)"
 fi
-n_lat=$(ls -1 "$LAT" 2>/dev/null | wc -l)
+n_lat=$(find "$LAT" -type f 2>/dev/null | wc -l)
 echo "  latents: $n_lat"
 [ "$n_lat" -gt 0 ] || die "no latents produced"
 
