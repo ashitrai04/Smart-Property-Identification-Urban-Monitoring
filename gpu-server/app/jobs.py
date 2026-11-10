@@ -735,12 +735,13 @@ def run_job(job):
         elif job["task"] == "hisup":
             res = _run_hisup(job, img, out_dir)
         elif job["task"] in ("roadnet", "roadnet_v2", "roadnet_param"):
+            # The older names are kept so jobs queued before the retirement
+            # still run; they all resolve to the one remaining checkpoint.
             # One runner, two checkpoints. The task name carries the version so
             # a result is traceable to the weights that produced it; nothing
             # else about the run differs.
             res = _run_roadnet(job, img, out_dir,
-                               version={"roadnet_v2": "v2",
-                                        "roadnet_param": "param"}.get(job["task"], "v1"))
+                               version="param")
         elif job["task"] == "pothole":
             res = _run_pothole(job, img, out_dir)
         elif job["task"] == "refine":

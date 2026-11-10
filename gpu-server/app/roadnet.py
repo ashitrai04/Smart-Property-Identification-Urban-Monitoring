@@ -53,11 +53,47 @@ WEIGHTS_V2 = os.environ.get("ROADNET_WEIGHTS_V2",
 # other two. It is ~34 MB rather than 632 because the frozen backbone is left
 # out - see roadnet_sharp.py. Absent until someone downloads it, which /health
 # reports rather than failing at pick time.
-WEIGHTS_PARAM = os.environ.get(
-    "ROADNET_WEIGHTS_PARAM",
-    os.path.join(HERE, "weights", "param-vitl", "best.pth"))
-MODELS = {"v1": WEIGHTS, "v2": WEIGHTS_V2, "param": WEIGHTS_PARAM}
-DEFAULT_VERSION = os.environ.get("ROADNET_VERSION", "v1")
+def _find_param_weights():
+    """Locate the PARAM checkpoint, wherever scp happened to drop it.
+
+    `scp -r <run-dir> dest/` copies the DIRECTORY into dest, so the file lands
+    at weights/param-vitl/<run-name>/best.pth rather than
+    weights/param-vitl/best.pth - and a half-finished earlier attempt can sit
+    at the shallower path looking exactly like the real thing. Both happened
+    here. So: take the LARGEST best.pth under the folder, which a truncated
+    partial never is.
+    """
+    root = os.path.join(HERE, "weights", "param-vitl")
+    best, size = os.path.join(root, "best.pth"), -1
+    if os.path.isdir(root):
+        for dirpath, _, files in os.walk(root):
+            for f in files:
+                if f.endswith(".pth"):
+                    q = os.path.join(dirpath, f)
+                    try:
+                        n = os.path.getsize(q)
+                    except OSError:
+                        continue
+                    if n > size:
+                        best, size = q, n
+    return best
+
+
+WEIGHTS_PARAM = os.environ.get("ROADNET_WEIGHTS_PARAM") or _find_param_weights()
+# One road model: the PARAM-trained DINOv3 + SharpDecoder. v1 and v2 were
+# retired after measuring all three over the same 1 km2 of Ongole against the
+# same labels at the same threshold:
+#
+#     param   F1 0.8372   P 0.809   R 0.868   IoU 0.720
+#     v1      F1 0.8011   P 0.741   R 0.872   IoU 0.668
+#     v2      F1 0.7521
+#
+# param wins by 0.036 over v1 and the whole of it is precision at matched
+# recall - it finds the same roads and paints less of what is not road, which
+# is the blobbiness, measured. The loader still handles both architectures, so
+# putting a v1-style checkpoint back is a path in this dict and nothing else.
+MODELS = {"param": WEIGHTS_PARAM}
+DEFAULT_VERSION = os.environ.get("ROADNET_VERSION", "param")
 
 
 def _resolve(version):

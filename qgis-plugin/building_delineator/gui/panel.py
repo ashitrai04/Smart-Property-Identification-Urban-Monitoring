@@ -43,6 +43,9 @@ SETTLE_MS = 700
 # a task returns; this list only decides which controls make sense to offer and
 # what to call the things that come back. Keep it in step with AREA_TASKS in
 # gpu-server/app/buildings.py.
+# Only one road model remains - the PARAM-trained DINOv3 + sharp decoder.
+# The retired names stay here so a job queued under them is still shown
+# with road controls rather than building ones.
 ROAD_TASKS = ("roadnet", "roadnet_v2", "roadnet_param")
 
 # The road regularizer's modes, measured against the project's own labels.

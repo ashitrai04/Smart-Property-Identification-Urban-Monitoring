@@ -650,18 +650,8 @@ AREA_TASKS = {
     "hisup":   {"label": "Building delineation", "kind": "vector",
                 "note": "individual footprints - our Ongole model"},
     "roadnet": {"label": "Road extraction", "kind": "vector",
-                "note": "carriageway surface and centrelines - DINOv3 ViT-L"},
-    # Same architecture and the same code path, a different checkpoint. Offered
-    # beside v1 rather than replacing it: v2's recorded val_f1 is 0.744 against
-    # v1's 0.799, so on the numbers it is behind, and which one wins on a given
-    # piece of ground is a question for the imagery rather than the file date.
-    "roadnet_v2": {"label": "Road extraction v2", "kind": "vector",
-                   "note": "newer DINOv3 ViT-L checkpoint - compare against v1"},
-    # A different network, not just different weights: DINOv3 + SharpDecoder,
-    # trained on PARAM Rudra against the hand-drawn Ongole labels. Listed
-    # whether or not the file is present; /roadnet/health says which.
-    "roadnet_param": {"label": "Road extraction (PARAM)", "kind": "vector",
-                      "note": "DINOv3 + sharp decoder, trained on PARAM Rudra"},
+                "note": "carriageway surface and centrelines - DINOv3 ViT-L + "
+                        "sharp decoder, trained on PARAM Rudra (F1 0.837)"},
     "segment": {"label": "Land-use segmentation", "kind": "vector",
                 "note": "buildings / roads / water / open ground"},
     "fusion":  {"label": "Segmentation + SAM", "kind": "vector",
