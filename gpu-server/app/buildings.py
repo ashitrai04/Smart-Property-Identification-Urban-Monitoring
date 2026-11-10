@@ -657,6 +657,11 @@ AREA_TASKS = {
     # piece of ground is a question for the imagery rather than the file date.
     "roadnet_v2": {"label": "Road extraction v2", "kind": "vector",
                    "note": "newer DINOv3 ViT-L checkpoint - compare against v1"},
+    # A different network, not just different weights: DINOv3 + SharpDecoder,
+    # trained on PARAM Rudra against the hand-drawn Ongole labels. Listed
+    # whether or not the file is present; /roadnet/health says which.
+    "roadnet_param": {"label": "Road extraction (PARAM)", "kind": "vector",
+                      "note": "DINOv3 + sharp decoder, trained on PARAM Rudra"},
     "segment": {"label": "Land-use segmentation", "kind": "vector",
                 "note": "buildings / roads / water / open ground"},
     "fusion":  {"label": "Segmentation + SAM", "kind": "vector",

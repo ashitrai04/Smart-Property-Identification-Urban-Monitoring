@@ -33,6 +33,7 @@ class DetectInAreaAlgorithm(QgsProcessingAlgorithm):
         self._tasks = [("hisup", "Building delineation"),
                        ("roadnet", "Road extraction (DINOv3)"),
                        ("roadnet_v2", "Road extraction v2 (DINOv3)"),
+                       ("roadnet_param", "Road extraction (PARAM, sharp decoder)"),
                        ("segment", "Land-use segmentation"),
                        ("fusion", "Segmentation + SAM")]
 

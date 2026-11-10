@@ -734,12 +734,13 @@ def run_job(job):
             res = _run_segmentation(job, img, out_dir, fusion=job["task"] == "fusion")
         elif job["task"] == "hisup":
             res = _run_hisup(job, img, out_dir)
-        elif job["task"] in ("roadnet", "roadnet_v2"):
+        elif job["task"] in ("roadnet", "roadnet_v2", "roadnet_param"):
             # One runner, two checkpoints. The task name carries the version so
             # a result is traceable to the weights that produced it; nothing
             # else about the run differs.
             res = _run_roadnet(job, img, out_dir,
-                               version="v2" if job["task"] == "roadnet_v2" else "v1")
+                               version={"roadnet_v2": "v2",
+                                        "roadnet_param": "param"}.get(job["task"], "v1"))
         elif job["task"] == "pothole":
             res = _run_pothole(job, img, out_dir)
         elif job["task"] == "refine":

@@ -49,7 +49,14 @@ WEIGHTS = os.environ.get("ROADNET_WEIGHTS",
                          os.path.join(HERE, "weights", "roadnet_dinov3.pth"))
 WEIGHTS_V2 = os.environ.get("ROADNET_WEIGHTS_V2",
                             os.path.join(HERE, "weights", "roadnet_dinov3_v2.pth"))
-MODELS = {"v1": WEIGHTS, "v2": WEIGHTS_V2}
+# Trained on PARAM Rudra: DINOv3 + SharpDecoder, a different network from the
+# other two. It is ~34 MB rather than 632 because the frozen backbone is left
+# out - see roadnet_sharp.py. Absent until someone downloads it, which /health
+# reports rather than failing at pick time.
+WEIGHTS_PARAM = os.environ.get(
+    "ROADNET_WEIGHTS_PARAM",
+    os.path.join(HERE, "weights", "param-vitl", "best.pth"))
+MODELS = {"v1": WEIGHTS, "v2": WEIGHTS_V2, "param": WEIGHTS_PARAM}
 DEFAULT_VERSION = os.environ.get("ROADNET_VERSION", "v1")
 
 
@@ -123,10 +130,16 @@ def _load(version=None):
         if not os.path.exists(WEIGHTS):
             raise HTTPException(503, f"road model weights not found at {WEIGHTS}")
         size = os.path.getsize(WEIGHTS)
-        if size < MIN_BYTES:
+        # The floor exists to catch a truncated 632 MB download. A PARAM
+        # checkpoint is ~34 MB by design - the frozen backbone is not in it -
+        # so applying the same floor would reject every one of them as
+        # incomplete.
+        floor = 1_000_000 if version == "param" else MIN_BYTES
+        if size < floor:
             raise HTTPException(503,
-                f"road model weights at {WEIGHTS} are {size/1e6:.0f} MB; the "
-                f"checkpoint is about 632 MB, so this copy is incomplete. "
+                f"road model weights at {WEIGHTS} are {size/1e6:.0f} MB, below "
+                f"the {floor/1e6:.0f} MB floor for this kind of checkpoint, so "
+                f"this copy is incomplete. "
                 f"Delete it and let the sync pull it again.")
         print(f"[roadnet] loading {version} from {WEIGHTS} on {DEVICE}…", flush=True)
         t0 = time.time()
@@ -147,8 +160,15 @@ def _load(version=None):
         # is imported inside the architecture module, so without it the failure
         # arrives as a bare ModuleNotFoundError with no hint of the remedy.
         try:
-            import roadnet_arch
-            m, miss, unexp = roadnet_arch.verify(sd)
+            import roadnet_sharp
+            if roadnet_sharp.is_param_checkpoint(ck):
+                # Self-describing: the file says which backbone, decoder and
+                # taps it was trained with, so nothing here has to guess.
+                m, miss, unexp = roadnet_sharp.build(ck)
+                meta.update(roadnet_sharp.describe(ck))
+            else:
+                import roadnet_arch
+                m, miss, unexp = roadnet_arch.verify(sd)
         except ModuleNotFoundError as e:
             raise HTTPException(503,
                 f"the road model needs the '{e.name}' package, which is not "
