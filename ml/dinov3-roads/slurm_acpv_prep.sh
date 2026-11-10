@@ -43,7 +43,12 @@ DATA="$REPO/data/ongole_512"
 STAGE=0
 
 banner() { STAGE=$((STAGE+1)); echo; echo "=============== STAGE $STAGE: $* ==============="; date; }
-die()    { echo; echo "XXXXXXX FAILED AT STAGE $STAGE: $* XXXXXXX"; echo "Nothing after this ran."; exit 1; }
+die()    { echo; echo "XXXXXXX FAILED AT STAGE $STAGE: $* XXXXXXX";
+           # stderr goes to the .err file, which is a second place to look
+           # when the whole point of this log is to be read on its own.
+           echo "--- last 15 lines of stderr ---";
+           tail -15 "${SLURM_SUBMIT_DIR:-.}/logs/acpv-prep-${SLURM_JOB_ID:-x}.err" 2>/dev/null;
+           echo "Nothing after this ran."; exit 1; }
 
 echo "node  : $(hostname)"
 echo "repo  : $REPO"
@@ -133,6 +138,28 @@ if [ -d "$LAT" ] && [ "$(find "$LAT" -type f 2>/dev/null | wc -l)" -ge "$n_aug" 
     echo "already done: $(find "$LAT" -type f | wc -l) latents"
 else
     [ -f latent_encoder_accelerated.py ] || die "repo has no latent_encoder_accelerated.py"
+    # Find the autoencoder config. This block was lost when stage 4 was
+    # rewritten to loop over the D4 directories - the loop below still
+    # referenced $KLCFG, and under `set -u` an unset variable is fatal:
+    #   slurm_script: line 164: KLCFG: unbound variable
+    # Ten seconds in, after stages 1-3 had been re-verified for nothing.
+    #
+    # Verified against the repo at HEAD: the config ships IN the repo as
+    # config-files/autoencoder_kl_f4.yaml. The ommer-lab zip carries only
+    # model.ckpt, which is why models/first_stage_models/kl-f4/config.yaml
+    # never existed.
+    KLCFG=""
+    for c in config-files/autoencoder_kl_f4.yaml \
+             models/first_stage_models/kl-f4/config.yaml \
+             models/first_stage_models/kl-f4/*/config.yaml; do
+        [ -f "$c" ] && { KLCFG="$c"; break; }
+    done
+    if [ -z "$KLCFG" ]; then
+        KLCFG="$(find . -maxdepth 5 -iname "*.yaml" 2>/dev/null \
+                 | grep -iE "kl.?f4|autoencoder" | head -1)"
+    fi
+    [ -n "$KLCFG" ] || die "no autoencoder config found - run: find $REPO -iname '*.yaml' | grep -i auto"
+    echo "  autoencoder config: $KLCFG"
     # Verified against the repo, not assumed:
     #   augment_heatmap_d4.py writes output_dir/<transform>/<file>.npy - eight
     #     named subdirectories (line 84-86).
