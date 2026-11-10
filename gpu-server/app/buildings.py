@@ -651,6 +651,12 @@ AREA_TASKS = {
                 "note": "individual footprints - our Ongole model"},
     "roadnet": {"label": "Road extraction", "kind": "vector",
                 "note": "carriageway surface and centrelines - DINOv3 ViT-L"},
+    # Same architecture and the same code path, a different checkpoint. Offered
+    # beside v1 rather than replacing it: v2's recorded val_f1 is 0.744 against
+    # v1's 0.799, so on the numbers it is behind, and which one wins on a given
+    # piece of ground is a question for the imagery rather than the file date.
+    "roadnet_v2": {"label": "Road extraction v2", "kind": "vector",
+                   "note": "newer DINOv3 ViT-L checkpoint - compare against v1"},
     "segment": {"label": "Land-use segmentation", "kind": "vector",
                 "note": "buildings / roads / water / open ground"},
     "fusion":  {"label": "Segmentation + SAM", "kind": "vector",

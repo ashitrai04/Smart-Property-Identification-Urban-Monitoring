@@ -44,6 +44,7 @@ import jobs
 WEIGHTS = os.environ.get("WEIGHTS_PATH", str(config.WEIGHTS / "best_model.pth"))
 os.environ.setdefault("POTHOLE_WEIGHTS", str(config.WEIGHTS / "final_best.pt"))
 os.environ.setdefault("ROADNET_WEIGHTS", str(config.WEIGHTS / "roadnet_dinov3.pth"))
+os.environ.setdefault("ROADNET_WEIGHTS_V2", str(config.WEIGHTS / "roadnet_dinov3_v2.pth"))
 
 import pothole  # noqa: E402  (reads POTHOLE_WEIGHTS at import)
 import buildings  # noqa: E402  (HiSup delineation; loads weights lazily)
@@ -156,7 +157,12 @@ def health():
                   "loaded": buildings.LOAD_INFO.get("loaded", False)},
         "roadnet": {"present": os.path.exists(roadnet.WEIGHTS),
                     "weights": os.path.basename(roadnet.WEIGHTS),
-                    "loaded": roadnet.LOAD_INFO.get("loaded", False)},
+                    "loaded": roadnet.LOAD_INFO.get("loaded", False),
+                    # Every checkpoint, so a missing v2 shows up here rather
+                    # than as a 503 the first time someone picks it on the map.
+                    "versions": {v: {"present": os.path.exists(p),
+                                     "loaded": roadnet.LOADS.get(v, {}).get("loaded", False)}
+                                 for v, p in sorted(roadnet.MODELS.items())}},
     }
 
 

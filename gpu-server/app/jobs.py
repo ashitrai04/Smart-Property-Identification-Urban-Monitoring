@@ -459,7 +459,7 @@ def _run_hisup(job, img, out_dir):
 ROADNET_MAXPIX = int(os.environ.get("ROADNET_MAX_PIXELS", str(80_000_000)))
 
 
-def _run_roadnet(job, img, out_dir):
+def _run_roadnet(job, img, out_dir, version="v1"):
     import roadnet as R
     import roadreg
 
@@ -519,7 +519,7 @@ def _run_roadnet(job, img, out_dir):
             if valid.mean() < 0.02:
                 _progress(job["id"], 0.85 * done / n)
                 continue
-            prob = _on_gpu(job["id"], lambda: R.probability(rgb))
+            prob = _on_gpu(job["id"], lambda: R.probability(rgb, version))
             prob = np.asarray(prob, np.float32)
             prob[~valid] = 0.0
             # Feather the window edges so neighbouring windows blend instead of
@@ -734,8 +734,12 @@ def run_job(job):
             res = _run_segmentation(job, img, out_dir, fusion=job["task"] == "fusion")
         elif job["task"] == "hisup":
             res = _run_hisup(job, img, out_dir)
-        elif job["task"] == "roadnet":
-            res = _run_roadnet(job, img, out_dir)
+        elif job["task"] in ("roadnet", "roadnet_v2"):
+            # One runner, two checkpoints. The task name carries the version so
+            # a result is traceable to the weights that produced it; nothing
+            # else about the run differs.
+            res = _run_roadnet(job, img, out_dir,
+                               version="v2" if job["task"] == "roadnet_v2" else "v1")
         elif job["task"] == "pothole":
             res = _run_pothole(job, img, out_dir)
         elif job["task"] == "refine":

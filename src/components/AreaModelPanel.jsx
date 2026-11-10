@@ -163,6 +163,10 @@ const ring = (coords) => ({ type: "Polygon", coordinates: [coords] });
 export default function AreaModelPanel({ map, aoiFeatures }) {
     const [tasks, setTasks] = useState([]);
     const [task, setTask] = useState("hisup");
+    // Both road checkpoints take the same parameters and show the same
+    // controls, so ask "is this a road task" once rather than naming the
+    // versions in every branch - that is how a v3 ends up with no controls.
+    const isRoad = task === "roadnet" || task === "roadnet_v2";
     const [job, setJob] = useState(null);
     const [count, setCount] = useState(0);
     const [done, setDone] = useState(false);
@@ -605,7 +609,7 @@ export default function AreaModelPanel({ map, aoiFeatures }) {
                     scales: q.scales, min_votes: q.votes,
                     // Only meaningful to the road model; the server hands each
                     // task the parameters it knows and ignores the rest.
-                    ...(task === "roadnet"
+                    ...(isRoad
                         ? { reg_mode: roadReg, regularize: roadReg !== "none" }
                         : {}),
                 }),
@@ -739,7 +743,7 @@ export default function AreaModelPanel({ map, aoiFeatures }) {
                 </>
             )}
 
-            {task === "roadnet" && (
+            {isRoad && (
                 <>
                     <select value={roadReg} onChange={(e) => setRoadReg(e.target.value)} disabled={running}
                             className="w-full rounded-md px-2 py-1.5 text-[11px]"

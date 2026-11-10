@@ -181,6 +181,11 @@ goto after_gpu
 :gpu_up
 echo       ready on :8800
 for /f "delims=" %%r in ('curl -s -m 5 http://127.0.0.1:8800/hisup/health') do echo       hisup: %%r
+rem Both road checkpoints. They load lazily - the first request pays for it -
+rem so this reports which weight FILES are on disk. A missing one shows up
+rem here, in a console someone is looking at, rather than as a 503 the first
+rem time it is picked on the map.
+for /f "delims=" %%r in ('curl -s -m 5 http://127.0.0.1:8800/roadnet/health') do echo       roads: %%r
 if not "%HEIGHT_SERVER%"=="" (
     for /f "delims=" %%r in ('curl -s -m 8 http://127.0.0.1:8800/height/health') do echo       height: %%r
 )

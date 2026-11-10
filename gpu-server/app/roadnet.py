@@ -39,8 +39,29 @@ if os.path.dirname(os.path.abspath(__file__)) not in sys.path:
 
 router = APIRouter(prefix="/roadnet", tags=["roadnet"])
 
+# Two checkpoints of the SAME architecture - v2 loads into roadnet_arch.RoadNet
+# with strict=True, 439/439 tensors, nothing missing or unexpected - so this is
+# a weights registry, not a second model. Keep it that way: if a future
+# checkpoint needs different code, give it its own module rather than widening
+# this one, because a head that silently flexes to fit whatever it is handed is
+# how a mismatched pair ends up predicting confident nonsense.
 WEIGHTS = os.environ.get("ROADNET_WEIGHTS",
                          os.path.join(HERE, "weights", "roadnet_dinov3.pth"))
+WEIGHTS_V2 = os.environ.get("ROADNET_WEIGHTS_V2",
+                            os.path.join(HERE, "weights", "roadnet_dinov3_v2.pth"))
+MODELS = {"v1": WEIGHTS, "v2": WEIGHTS_V2}
+DEFAULT_VERSION = os.environ.get("ROADNET_VERSION", "v1")
+
+
+def _resolve(version):
+    """Name -> weights path, refusing an unknown name rather than guessing."""
+    v = (version or DEFAULT_VERSION).strip().lower()
+    if v in ("", "default"):
+        v = DEFAULT_VERSION
+    if v not in MODELS:
+        raise HTTPException(400, f"unknown road model version {version!r}; "
+                                 f"available: {', '.join(sorted(MODELS))}")
+    return v, MODELS[v]
 DEVICE = os.environ.get("SEG_DEVICE") or ("cuda" if torch.cuda.is_available() else "cpu")
 FP16 = os.environ.get("ROADNET_FP16", "1") == "1" and DEVICE.startswith("cuda")
 
@@ -79,18 +100,26 @@ MAX_SIDE = int(os.environ.get("ROADNET_MAX_SIDE", "8192"))
 # and the file is incomplete rather than merely a different build.
 MIN_BYTES = 550_000_000
 
-_model = None
+# One entry per version. Both can be resident at once - each is 632 MB fp16,
+# so two is 1.3 GB of VRAM, which the card this runs on can hold alongside the
+# other models. They load lazily, so a version nobody asks for costs nothing.
+_models = {}
 _lock = threading.Lock()
 LOAD_INFO = {"loaded": False, "weights": WEIGHTS, "device": DEVICE}
+LOADS = {v: {"loaded": False, "weights": p, "device": DEVICE}
+         for v, p in MODELS.items()}
 
 
-def _load():
-    global _model
-    if _model is not None:
-        return _model
+def _load(version=None):
+    version, weights = _resolve(version)
+    m = _models.get(version)
+    if m is not None:
+        return m
     with _lock:
-        if _model is not None:
-            return _model
+        m = _models.get(version)
+        if m is not None:
+            return m
+        WEIGHTS = weights          # local: every message below names the file
         if not os.path.exists(WEIGHTS):
             raise HTTPException(503, f"road model weights not found at {WEIGHTS}")
         size = os.path.getsize(WEIGHTS)
@@ -99,7 +128,7 @@ def _load():
                 f"road model weights at {WEIGHTS} are {size/1e6:.0f} MB; the "
                 f"checkpoint is about 632 MB, so this copy is incomplete. "
                 f"Delete it and let the sync pull it again.")
-        print(f"[roadnet] loading {WEIGHTS} on {DEVICE}…", flush=True)
+        print(f"[roadnet] loading {version} from {WEIGHTS} on {DEVICE}…", flush=True)
         t0 = time.time()
         try:
             ck = torch.load(WEIGHTS, map_location="cpu", weights_only=True)
@@ -131,7 +160,7 @@ def _load():
         # from the weights, which makes this check the thing that would catch a
         # checkpoint from a different model generation.
         if miss or unexp:
-            _model = None
+            _models.pop(version, None)
             raise HTTPException(503,
                 f"road checkpoint does not match this architecture: "
                 f"{len(miss)} tensors missing, {len(unexp)} unexpected "
@@ -140,13 +169,18 @@ def _load():
         m = m.to(DEVICE).eval()
         if FP16:
             m = m.half()
-        _model = m
-        LOAD_INFO.update(loaded=True, seconds=round(time.time() - t0, 1),
-                         tensors=len(sd), fp16=FP16,
-                         mtime=os.path.getmtime(WEIGHTS), **meta)
-        print(f"[roadnet] ready — {len(sd)} tensors in {LOAD_INFO['seconds']}s"
-              f"{' (fp16)' if FP16 else ''}", flush=True)
-        return _model
+        _models[version] = m
+        info = dict(loaded=True, weights=WEIGHTS, device=DEVICE,
+                    seconds=round(time.time() - t0, 1), tensors=len(sd),
+                    fp16=FP16, mtime=os.path.getmtime(WEIGHTS), **meta)
+        LOADS[version] = info
+        if version == DEFAULT_VERSION:
+            LOAD_INFO.update(info)      # kept for older callers of /health
+        print(f"[roadnet] {version} ready — {len(sd)} tensors in "
+              f"{info['seconds']}s{' (fp16)' if FP16 else ''}"
+              f"{', val_f1 ' + format(meta['val_f1'], '.4f') if 'val_f1' in meta else ''}",
+              flush=True)
+        return m
 
 
 def _norm(rgb):
@@ -155,7 +189,7 @@ def _norm(rgb):
     return np.ascontiguousarray(x.transpose(2, 0, 1))
 
 
-def probability(rgb):
+def probability(rgb, version=None):
     """Road probability for an RGB array, tiled with a feathered blend.
 
     Tiles are blended with a cosine window rather than averaged on a hard
@@ -163,7 +197,7 @@ def probability(rgb):
     thresholding that grid becomes real notches in the road edge - exactly the
     blobbiness this model is meant to avoid.
     """
-    m = _load()
+    m = _load(version)
     h, w = rgb.shape[:2]
     if max(h, w) > MAX_SIDE:
         raise HTTPException(413, f"image is {w}x{h}; the limit is {MAX_SIDE} px "
@@ -220,6 +254,16 @@ def health():
         "weights_present": os.path.exists(WEIGHTS),
         "device": DEVICE,
         "load": LOAD_INFO,
+        "default_version": DEFAULT_VERSION,
+        "versions": {
+            v: {"weights": os.path.basename(p),
+                "present": os.path.exists(p),
+                "size_mb": round(os.path.getsize(p) / 1e6) if os.path.exists(p) else 0,
+                "loaded": LOADS.get(v, {}).get("loaded", False),
+                "val_f1": LOADS.get(v, {}).get("val_f1"),
+                "epoch": LOADS.get(v, {}).get("epoch")}
+            for v, p in sorted(MODELS.items())
+        },
         "defaults": {"work_gsd_m": WORK_GSD, "threshold": THRESH, "tile": TILE,
                      "overlap": OVERLAP, "fp16": FP16,
                      "mean": MEAN.tolist(), "std": STD.tolist()},
@@ -235,13 +279,15 @@ def health():
 @router.post("/reload")
 def reload_weights():
     """Drop the loaded model so the next request picks up a new file."""
-    global _model
     with _lock:
-        _model = None
+        _models.clear()
         LOAD_INFO.update(loaded=False)
-    present = os.path.exists(WEIGHTS)
-    return {"reloaded": True, "weights": WEIGHTS, "present": present,
-            "note": "the next request loads it"}
+        for v, pth in MODELS.items():
+            LOADS[v] = {"loaded": False, "weights": pth, "device": DEVICE}
+    return {"reloaded": True,
+            "versions": {v: {"weights": pth, "present": os.path.exists(pth)}
+                         for v, pth in sorted(MODELS.items())},
+            "note": "the next request loads whichever version it asks for"}
 
 
 @router.post("/predict")
@@ -251,8 +297,15 @@ async def predict(
     threshold: float = Form(0.0),
     regularize: str = Form("smooth"),
     want_centrelines: bool = Form(True),
+    version: str = Form(""),
 ):
     """Extract roads from an uploaded image.
+
+    `version` picks the checkpoint: "v1" (the default, val_f1 0.799) or "v2"
+    (val_f1 0.744, epoch 9). Same architecture, different training; v2 is the
+    newer run and is offered beside v1 rather than replacing it, because the
+    recorded validation score is lower and which one is better on YOUR ground
+    is a question for the imagery, not for the file date.
 
     `gsd` is metres per pixel. A GeoTIFF states its own; for anything else pass
     it, because this model is resolution-sensitive and guessing wrong is the
@@ -279,7 +332,7 @@ async def predict(
         work = cv2.resize(img, (max(64, int(round(img.shape[1] * f))),
                                 max(64, int(round(img.shape[0] * f)))),
                           interpolation=(cv2.INTER_AREA if f < 1 else cv2.INTER_CUBIC))
-    prob = probability(work)
+    prob = probability(work, version)
     mask = prob >= thr
 
     import roadreg
