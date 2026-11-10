@@ -17,7 +17,7 @@ import random
 
 from qgis.core import (QgsApplication, QgsCoordinateReferenceSystem, QgsCoordinateTransform,
                        QgsFeature, QgsField, QgsFillSymbol, QgsGeometry, QgsPointXY,
-                       QgsProject, QgsVectorLayer)
+                       QgsLineSymbol, QgsProject, QgsVectorLayer)
 from qgis.core import QgsWkbTypes
 from qgis.gui import QgsRubberBand
 from qgis.PyQt.QtCore import Qt, QTimer
@@ -39,6 +39,22 @@ ICON = os.path.join(os.path.dirname(os.path.dirname(__file__)), "icon.svg")
 # busy window does not look stalled.
 SETTLE_MS = 700
 
+# Task ids whose result is roads rather than buildings. The server decides what
+# a task returns; this list only decides which controls make sense to offer and
+# what to call the things that come back. Keep it in step with AREA_TASKS in
+# gpu-server/app/buildings.py.
+ROAD_TASKS = ("roadnet", "roadnet_v2")
+
+# The road regularizer's modes, measured against the project's own labels.
+ROAD_REG = [("Smooth — follow the road edge (F1 0.786)", "smooth"),
+            ("Corridor — centreline + width (F1 0.783)", "corridor"),
+            ("Raw — no regularization", "none")]
+
+# Colours for the layers a road run returns, so the two read apart at a glance.
+LAYER_STYLE = {"roads": ("235,100,40", "polygon"),
+               "road_centrelines": ("255,220,60", "line"),
+               "centrelines": ("255,220,60", "line")}
+
 # The presets that matter, measured rather than guessed - see PIPELINE.md.
 # "Best" is four resolutions with a 2-vote agreement filter, worth about five
 # points of F1 over a single pass for roughly four times the time.
@@ -57,6 +73,8 @@ class DelineatorPanel(QWidget):
         self.resolved = None          # the address "auto" resolved to
         self.task = None
         self.layer = None
+        self.job_id = None            # set as soon as the server issues one
+        self.result_layers = []       # layers built from a non-streamed result
         self.pending = []             # [(fid, reg_ring, due_ms)]
         self.tool = None
         self.prev_tool = None
@@ -158,7 +176,22 @@ class DelineatorPanel(QWidget):
             "Ground resolution the model reads at, m/px. 0.125 measured best; "
             "this is the single most sensitive setting.")
         f.addRow("Working resolution", self.gsd)
+
+        # Road controls. Hidden for building tasks and vice versa: the previous
+        # version showed "Seed confidence" and "Square off to rectilinear
+        # outlines" while Road extraction was selected, which are meaningless
+        # there and were quietly sent to a model that ignores them.
+        self.road_reg = QComboBox()
+        self.road_reg.addItems([lbl for lbl, _ in ROAD_REG])
+        self.road_reg.setToolTip(
+            "Smooth follows the model's own outline. Corridor rebuilds the "
+            "carriageway from a smoothed centreline - cleaner to look at, "
+            "marginally worse against the labels. Centrelines come back "
+            "either way.")
+        self.row_road_reg = f.addRow("Road shape", self.road_reg) or self.road_reg
+        self._rows = f
         v.addWidget(opt)
+        self.model.currentIndexChanged.connect(self._model_changed)
 
         # run
         self.btn_run = QPushButton(QIcon(ICON), "Run on this area")
@@ -186,6 +219,16 @@ class DelineatorPanel(QWidget):
         self.opacity.valueChanged.connect(self._set_opacity)
         row.addWidget(self.opacity, 1)
         rl.addLayout(row)
+        self.btn_height = QPushButton("Measure heights")
+        self.btn_height.clicked.connect(self.measure_heights)
+        self.btn_height.setEnabled(False)
+        self.btn_height.setToolTip(
+            "Asks the DSM machine for a height per building, through the model "
+            "server - the same route the web app uses, so the two cannot "
+            "disagree. Needs that second machine to be on; if it is not, this "
+            "says so and the footprints are unaffected.")
+        rl.addWidget(self.btn_height)
+
         self.btn_export = QPushButton("Export…")
         self.btn_export.clicked.connect(self.export)
         self.btn_export.setEnabled(False)
@@ -199,6 +242,37 @@ class DelineatorPanel(QWidget):
         v.addStretch(1)
 
     # ── server ──────────────────────────────────────────────────
+    # ── which controls belong to which model ───────────────────
+    def _is_road(self):
+        return (self.model.currentData() or "") in ROAD_TASKS
+
+    def _noun(self):
+        return "roads" if self._is_road() else "buildings"
+
+    def _model_changed(self):
+        """Show only the parameters the selected model actually reads.
+
+        The server hands each task the parameters it knows and ignores the
+        rest, so sending the wrong ones is harmless - but showing them is not.
+        A "Seed confidence" spinner beside Road extraction says the number does
+        something, and it does not.
+        """
+        road = self._is_road()
+        for w in (self.quality, self.regularize, self.core, self.gsd):
+            w.setVisible(not road)
+            lbl = self._rows.labelForField(w)
+            if lbl is not None:
+                lbl.setVisible(not road)
+        self.road_reg.setVisible(road)
+        lbl = self._rows.labelForField(self.road_reg)
+        if lbl is not None:
+            lbl.setVisible(road)
+        # Heights come from a DSM of rooftops; a road has none.
+        if hasattr(self, "btn_height"):
+            self.btn_height.setVisible(not road)
+        if self.layer is None:
+            self.count.setText(f"0 {self._noun()}")
+
     def refresh_models(self):
         asked = self.server.currentText().strip()
         self.model.clear()
@@ -222,6 +296,7 @@ class DelineatorPanel(QWidget):
             return
         for t in tasks:
             self.model.addItem(t["label"], t["id"])
+        self._model_changed()
         gpu = (h.get("gpu") or {}).get("name")
         where = f"\n{url}" if asked.lower() in ("", "auto") else ""
         self.server_note.setText(f"✓ {h.get('device', '?')}"
@@ -323,15 +398,27 @@ class DelineatorPanel(QWidget):
         # QGIS and the server share a machine.
         url = client.resolve(self.server.currentText())
         self.resolved = url
-        scales, votes = QUALITY[self.quality.currentIndex()][1:]
-        params = {
-            "scales": [float(x) for x in scales.split(",")],
-            "min_votes": votes,
-            "core": self.core.value(),
-            "work_gsd_m": self.gsd.value(),
-            "regularize": self.regularize.isChecked(),
-        }
+        if self._is_road():
+            mode = ROAD_REG[self.road_reg.currentIndex()][1]
+            params = {"reg_mode": mode, "regularize": mode != "none"}
+        else:
+            scales, votes = QUALITY[self.quality.currentIndex()][1:]
+            params = {
+                "scales": [float(x) for x in scales.split(",")],
+                "min_votes": votes,
+                "core": self.core.value(),
+                "work_gsd_m": self.gsd.value(),
+                "regularize": self.regularize.isChecked(),
+            }
 
+        # Drop the previous run's result layers. Leaving them behind is how a
+        # second road run reads as twice as many roads.
+        for lyr in self.result_layers:
+            try:
+                QgsProject.instance().removeMapLayer(lyr.id())
+            except Exception:
+                pass
+        self.result_layers = []
         self._new_layer()
         self.log.clear()
         self.bar.setValue(0)
@@ -339,7 +426,9 @@ class DelineatorPanel(QWidget):
         self.btn_run.setVisible(False)
         self.btn_stop.setVisible(True)
 
+        self.job_id = None
         self.task = AreaJobTask(url, self.model.currentData(), self._aoi_geojson(), params)
+        self.task.started_job.connect(self._job_started)
         self.task.found.connect(self._add_buildings)
         self.task.note.connect(self._log)
         self.task.failed.connect(self._failed)
@@ -354,6 +443,80 @@ class DelineatorPanel(QWidget):
             self.task.cancel()
             self._log("Stopping…")
 
+    def _job_started(self, jid):
+        self.job_id = jid
+
+    def _load_result(self):
+        """Fetch a result the job never streamed.
+
+        Building runs publish each window as it finishes, so the map fills in
+        while the model works. The road model does not - it writes its layers
+        once, at the end - so the panel sat at "0 buildings" through a run that
+        had in fact succeeded, and showed nothing when it finished. This is the
+        other half: when nothing arrived live, ask for the finished result.
+        """
+        if not self.job_id:
+            return 0
+        try:
+            fc = client.area_result(self.job_id, server=self.resolved)
+        except client.ServerError as e:
+            self._log(f"Could not fetch the result: {e}")
+            return 0
+        feats = fc.get("features") or []
+        if not feats:
+            return 0
+
+        # Split by the layer each feature names - a road run returns polygons
+        # and centrelines together, and a line in a polygon layer is dropped
+        # silently by the provider, which is its own kind of invisible failure.
+        groups = {}
+        for ft in feats:
+            name = str((ft.get("properties") or {}).get("layer") or "result").lower()
+            groups.setdefault(name, []).append(ft)
+
+        total = 0
+        for name, items in sorted(groups.items()):
+            colour, kind = LAYER_STYLE.get(name, ("235,100,40", "polygon"))
+            geom_kinds = {(f.get("geometry") or {}).get("type", "") for f in items}
+            if kind != "line" and geom_kinds & {"LineString", "MultiLineString"}:
+                kind = "line"
+            wkb = "MultiLineString" if kind == "line" else "MultiPolygon"
+            lyr = QgsVectorLayer(f"{wkb}?crs=EPSG:4326",
+                                 f"Urbanly {name.replace('_', ' ')}", "memory")
+            dp = lyr.dataProvider()
+            dp.addAttributes([QgsField("fid", 2), QgsField("area_m2", 6),
+                              QgsField("length_m", 6), QgsField("layer", 10)])
+            lyr.updateFields()
+            made = []
+            for i, ft in enumerate(items):
+                g = QgsGeometry.fromWkt(_geojson_wkt(ft.get("geometry")))
+                if g is None or g.isEmpty():
+                    continue
+                f = QgsFeature(lyr.fields())
+                f.setGeometry(g)
+                props = ft.get("properties") or {}
+                f["fid"] = i + 1
+                f["area_m2"] = float(props.get("area_m2") or 0)
+                f["length_m"] = float(props.get("length_m") or 0)
+                f["layer"] = name[:10]
+                made.append(f)
+            if not made:
+                continue
+            dp.addFeatures(made)
+            if kind == "line":
+                lyr.renderer().setSymbol(
+                    QgsLineSymbol.createSimple({"color": colour, "width": "0.6"}))
+            else:
+                lyr.renderer().setSymbol(QgsFillSymbol.createSimple(
+                    {"color": colour + ",90", "outline_color": colour,
+                     "outline_width": "0.3"}))
+            lyr.updateExtents()
+            QgsProject.instance().addMapLayer(lyr)
+            self.result_layers.append(lyr)
+            total += len(made)
+            self._log(f"{len(made)} {name.replace('_', ' ')}")
+        return total
+
     def _done(self):
         self.bar.setVisible(False)
         self.btn_run.setVisible(True)
@@ -361,9 +524,76 @@ class DelineatorPanel(QWidget):
         self.settle_timer.stop()
         self._settle(force=True)
         n = self.layer.featureCount() if self.layer else 0
+        if n == 0:
+            # Nothing streamed. Either the task publishes only at the end - the
+            # road model does - or it genuinely found nothing. Asking costs one
+            # request and is the difference between a result and a blank map.
+            n = self._load_result()
+            if self.layer is not None and self.layer.featureCount() == 0:
+                QgsProject.instance().removeMapLayer(self.layer.id())
+                self.layer = None
         self.btn_export.setEnabled(n > 0)
-        self._log(f"Finished — {n} buildings.")
+        self.count.setText(f"{n} {self._noun()}")
+        self._log(f"Finished — {n} {self._noun()}." if n
+                  else "Finished — nothing found in this area.")
+        if hasattr(self, "btn_height"):
+            self.btn_height.setEnabled(bool(self.job_id) and n > 0
+                                       and not self._is_road())
         self.task = None
+
+    def measure_heights(self):
+        """Join DSM heights onto the footprints of the run just finished."""
+        if not (self.job_id and self.layer):
+            return
+        self.btn_height.setEnabled(False)
+        self._log("Asking the height server…")
+        try:
+            res = client.enrich_area_heights(self.job_id, server=self.resolved)
+        except client.ServerError as e:
+            self._log(f"No heights: {e}")
+            QMessageBox.information(
+                self, "Height server",
+                f"Could not measure heights:\n\n{e}\n\n"
+                "This needs the second machine - the one holding the DSM and "
+                "DTM - to be running and reachable. The footprints are "
+                "unaffected.")
+            self.btn_height.setEnabled(True)
+            return
+
+        feats = (res.get("features") or res.get("result") or {}) or {}
+        items = feats.get("features") if isinstance(feats, dict) else res.get("items")
+        items = items or res.get("heights") or []
+        if not items:
+            self._log("The height server returned nothing for this run.")
+            self.btn_height.setEnabled(True)
+            return
+
+        # Add the fields once, then write by position: the server returns the
+        # same features in the same order it was given them.
+        dp = self.layer.dataProvider()
+        names = {f.name() for f in self.layer.fields()}
+        new = [QgsField(n, 6) for n in ("height_m", "floors") if n not in names]
+        if new:
+            dp.addAttributes(new)
+            self.layer.updateFields()
+        idx_h = self.layer.fields().indexOf("height_m")
+        idx_f = self.layer.fields().indexOf("floors")
+        changes, n = {}, 0
+        for fid, item in zip([f.id() for f in self.layer.getFeatures()], items):
+            props = (item.get("properties") or item) if isinstance(item, dict) else {}
+            h = props.get("height_m", props.get("height"))
+            if h is None:
+                continue
+            changes[fid] = {idx_h: float(h)}
+            fl = props.get("floors", props.get("floor_count"))
+            if fl is not None and idx_f >= 0:
+                changes[fid][idx_f] = float(fl)
+            n += 1
+        if changes:
+            dp.changeAttributeValues(changes)
+            self.layer.triggerRepaint()
+        self._log(f"Heights measured for {n} of {self.layer.featureCount()} buildings.")
+        self.btn_height.setEnabled(True)
 
     def _failed(self, message):
         self._log(f"Failed: {message}")
@@ -390,7 +620,7 @@ class DelineatorPanel(QWidget):
         self._set_opacity(self.opacity.value())
         QgsProject.instance().addMapLayer(self.layer)
         self.pending = []
-        self.count.setText("0 buildings")
+        self.count.setText(f"0 {self._noun()}")
 
     def _add_buildings(self, items):
         if self.layer is None:
@@ -414,7 +644,7 @@ class DelineatorPanel(QWidget):
             self.pending.append((made.id(), reg, due))
         self.layer.updateExtents()
         self.layer.triggerRepaint()
-        self.count.setText(f"{self.layer.featureCount()} buildings")
+        self.count.setText(f"{self.layer.featureCount()} {self._noun()}")
 
     def _settle(self, force=False):
         """Replace detector outlines with the regularized ones once they are due."""
@@ -467,6 +697,38 @@ class DelineatorPanel(QWidget):
         self.aoi_band.reset(QgsWkbTypes.PolygonGeometry)
         if self.tool and self.canvas.mapTool() is self.tool:
             self.canvas.unsetMapTool(self.tool)
+
+
+def _geojson_wkt(geom):
+    """GeoJSON geometry -> WKT.
+
+    QgsGeometry has no GeoJSON constructor in every QGIS this plugin supports,
+    and json->WKT by hand is short enough that pulling in a dependency for it
+    would be worse. Handles the four types the server actually emits.
+    """
+    if not geom:
+        return ""
+    t = geom.get("type")
+    c = geom.get("coordinates") or []
+
+    def pts(seq):
+        return ", ".join(f"{p[0]} {p[1]}" for p in seq)
+
+    def ring(r):
+        return "(" + pts(r) + ")"
+
+    def poly(p):
+        return "(" + ", ".join(ring(r) for r in p) + ")"
+
+    if t == "Polygon":
+        return "MULTIPOLYGON((" + ", ".join(ring(r) for r in c) + "))"
+    if t == "MultiPolygon":
+        return "MULTIPOLYGON(" + ", ".join(poly(p) for p in c) + ")"
+    if t == "LineString":
+        return "MULTILINESTRING(" + ring(c) + ")"
+    if t == "MultiLineString":
+        return "MULTILINESTRING(" + ", ".join(ring(r) for r in c) + ")"
+    return ""
 
 
 def _ring_geom(ring):

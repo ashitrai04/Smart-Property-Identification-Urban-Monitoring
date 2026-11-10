@@ -193,6 +193,22 @@ def area_result(jid, server=DEFAULT_SERVER):
     return _request(server, f"/area/{jid}/result.geojson", timeout=TIMEOUT)
 
 
+def height_health(server=DEFAULT_SERVER, timeout=8):
+    """Is a DSM laptop reachable? Its absence is normal, not an error."""
+    return _request(server, "/height/health", timeout=timeout)
+
+
+def enrich_area_heights(jid, server=DEFAULT_SERVER, timeout=180):
+    """Measure building heights for a finished area job.
+
+    The heights come from a second machine holding the DSM and DTM, reached
+    through the model server - the same path the web app uses, so the QGIS
+    plugin cannot disagree with it about what a building's height is.
+    """
+    return _request(server, f"/height/area/{jid}", data=b"", method="POST",
+                    timeout=timeout)
+
+
 def run_area(aoi_geojson, task="hisup", server=DEFAULT_SERVER,
              on_progress=None, is_cancelled=None, poll=2.0, **params):
     """Start an area job and wait, reporting progress.

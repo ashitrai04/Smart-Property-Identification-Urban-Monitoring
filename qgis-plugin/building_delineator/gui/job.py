@@ -19,6 +19,10 @@ class AreaJobTask(QgsTask):
     found = pyqtSignal(list)
     note = pyqtSignal(str)
     failed = pyqtSignal(str)
+    # The job id, as soon as the server issues it. The panel needs it to fetch
+    # a result that was never streamed, and to ask the height server about the
+    # same run - neither of which it could do while the id lived only here.
+    started_job = pyqtSignal(str)
 
     def __init__(self, server, task, aoi, params, description="Delineating buildings"):
         super().__init__(description, QgsTask.CanCancel)
@@ -35,6 +39,7 @@ class AreaJobTask(QgsTask):
             self._error = str(e)
             return False
         self.job_id = job["id"]
+        self.started_job.emit(self.job_id)
         self.note.emit(f"Job {self.job_id} queued on {job['imagery']['name']}")
 
         since = 0
