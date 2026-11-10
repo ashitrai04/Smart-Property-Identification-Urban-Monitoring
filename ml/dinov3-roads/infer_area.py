@@ -133,8 +133,25 @@ def main():
     ap.add_argument("--gsd", type=float, default=0.20)
     ap.add_argument("--tile", type=int, default=512)
     ap.add_argument("--overlap", type=int, default=128)
-    ap.add_argument("--threshold", type=float, default=0.45)
+    # 0.45 was tuned on the earlier model, whose problem was recall. This one
+    # recalls 0.87, so it can afford a tighter cut - and tightening is what
+    # removes the soft fringe that reads as blobby. Measured on the 1 km2:
+    #   0.45  F1 0.8372  bF1 0.5994
+    #   0.55  F1 0.8373  bF1 0.6101   <- here: boundary agreement up 0.011 free
+    #   0.60  F1 0.8368  bF1 0.6137
+    ap.add_argument("--threshold", type=float, default=0.55)
     ap.add_argument("--regularize", default="smooth", choices=["smooth", "corridor", "none"])
+    # Both measured on the 1 km2 clip with tune_postproc.py, not chosen by eye.
+    ap.add_argument("--min-area-m2", type=float, default=50.0,
+                    help="drop connected components smaller than this. 50 was "
+                         "the best F1 of everything tried (0.8377 vs 0.8374 "
+                         "raw); a 50 m2 blob is not a road.")
+    ap.add_argument("--simplify-m", type=float, default=0.2,
+                    help="Douglas-Peucker tolerance. 0.2 m costs 0.001 of F1 "
+                         "and removes 87%% of the vertices (153,875 -> 20,278). "
+                         "At 1.0 m it costs 0.011 and the outline degrades, "
+                         "which is the 'increases defects and irregularity' "
+                         "the ISPRS 2026 paper warns about.")
     ap.add_argument("--labels", default=None, help="optional, to score the result")
     ap.add_argument("--amp", default="bf16", choices=["bf16", "fp16", "off"])
     a = ap.parse_args()
@@ -197,6 +214,20 @@ def main():
         d.write(prob.astype(np.float32), 1)
 
     mask = (prob >= a.threshold) & valid
+    # Drop specks before anything else sees them. Measured as the single best
+    # F1 of every cleanup tried; morphological closing, which the standard
+    # pipelines include, measured WORSE at every radius and is not applied.
+    if a.min_area_m2 > 0:
+        from scipy import ndimage as _nd
+        min_px = max(1, int(a.min_area_m2 / (a.gsd * a.gsd)))
+        lab_, n_ = _nd.label(mask)
+        if n_:
+            sizes = _nd.sum(mask, lab_, range(1, n_ + 1))
+            keep = np.zeros(n_ + 1, bool)
+            keep[1:] = sizes >= min_px
+            dropped = int(n_ - keep.sum())
+            mask = keep[lab_]
+            print(f"  dropped {dropped} components under {a.min_area_m2:.0f} m2")
     with rasterio.open(out / "mask.tif", "w", dtype="uint8", **prof) as d:
         d.write(mask.astype(np.uint8), 1)
 
@@ -220,6 +251,14 @@ def main():
         polys, lines, how = roadreg.regularize_roads(mask, a.gsd, mode=a.regularize)
         m = [t.a, t.b, t.d, t.e, t.xoff, t.yoff]
         geoms = [affine_transform(p, m) for p in polys]
+        if a.simplify_m > 0:
+            before = sum(len(g.exterior.coords) for g in geoms)
+            # preserve_topology: a road network that self-intersects after
+            # simplification is worse than one with more vertices.
+            geoms = [g.simplify(a.simplify_m, preserve_topology=True) for g in geoms]
+            geoms = [g for g in geoms if not g.is_empty and g.is_valid]
+            after = sum(len(g.exterior.coords) for g in geoms)
+            print(f"  simplify {a.simplify_m} m: {before:,} -> {after:,} vertices")
         cls = [affine_transform(l, m) for l in lines]
         # Written in BOTH the projected CRS and WGS84, and as GeoPackage AND
         # Shapefile.

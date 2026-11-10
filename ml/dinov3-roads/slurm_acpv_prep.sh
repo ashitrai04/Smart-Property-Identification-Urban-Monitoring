@@ -176,13 +176,45 @@ else
     # it separately per directory would give eight slightly different scalings
     # of what must be one latent space, and the model would see the same road
     # at eight magnitudes. Estimate once, reuse everywhere.
+    # Encode only the transforms the training config actually reads.
+    #
+    # latent_vertexheatmap_dataset.py:48 picks a transform per sample from
+    # cfg.DATASETS.AUGMENTATIONS, and falls back to rot0 only when that list is
+    # EMPTY. The Ongole config lists flip_h and flip_v, following Deventer's.
+    # So encoding all eight D4 directories writes 59,112 latents of which
+    # 44,334 are never opened - four times the CPU for nothing, on the stage
+    # that dominates this job's runtime.
+    #
+    # Set TRANSFORMS="rot0 rot90 ..." to override, e.g. before widening
+    # AUGMENTATIONS. The job is resumable, so adding more later re-encodes only
+    # what is missing.
+    if [ -z "${TRANSFORMS:-}" ]; then
+        TRANSFORMS="$(python - <<PYEOF 2>/dev/null || echo ""
+import yaml
+try:
+    d = yaml.safe_load(open("$CODE/acpv_ongole512_train.yaml", encoding="utf-8"))
+    a = (d.get("DATASETS") or {}).get("AUGMENTATIONS") or []
+except Exception:
+    a = []
+print(" ".join(str(x) for x in a))
+PYEOF
+)"
+    fi
+    [ -z "$TRANSFORMS" ] && TRANSFORMS="rot0"
+    echo "  encoding transforms: $TRANSFORMS"
+    for t in $TRANSFORMS; do
+        [ -d "$DATA/train/heatmap_augmented/$t" ] \
+            || die "the config asks for transform '$t' but $DATA/train/heatmap_augmented/$t does not exist - run: ls $DATA/train/heatmap_augmented"
+    done
+
     SCALE=""
-    for d in "$DATA/train/heatmap_augmented"/*/; do
+    for t in $TRANSFORMS; do
+        d="$DATA/train/heatmap_augmented/$t/"
         [ -d "$d" ] || continue
         tname="$(basename "$d")"
         nin=$(find "$d" -maxdepth 1 -name "*.npy" | wc -l)
         [ "$nin" -gt 0 ] || { echo "  $tname: no .npy, skipped"; continue; }
-        if [ -d "$LAT/$tname" ] && [ "$(find "$LAT/$tname" -maxdepth 1 -name "*.npy" | wc -l)" -ge "$nin" ]; then
+        if [ -d "$LAT/$tname/z" ] && [ "$(find "$LAT/$tname/z" -maxdepth 1 -name "*.pt" | wc -l)" -ge "$nin" ]; then
             echo "  $tname: already encoded"
             continue
         fi
@@ -204,7 +236,11 @@ else
                 --scale_factor "$SCALE" \
                 || die "latent_encoder_accelerated.py on $tname"
         fi
-        nout=$(find "$LAT/$tname" -maxdepth 1 -name "*.npy" | wc -l)
+        # .pt under z/, not .npy beside it: that is what the encoder writes
+        # (latent_encoder_accelerated.py:243-258) and what the dataset loader
+        # reads (latent_vertexheatmap_dataset.py:85). Counting the wrong thing
+        # here failed a stage that had in fact succeeded.
+        nout=$(find "$LAT/$tname/z" -maxdepth 1 -name "*.pt" 2>/dev/null | wc -l)
         echo "  $tname: $nout latents"
         [ "$nout" -ge "$nin" ] || die "$tname produced $nout latents from $nin inputs"
     done
