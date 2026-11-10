@@ -173,8 +173,17 @@ def main():
             if i == 1:
                 torch.cuda.synchronize(); t0 = time.time()
             with torch.autocast("cuda", dtype=amp):
-                logit = model(x)
-                loss, _ = tr.total_loss(logit.float(), y)
+                # RoadNet returns (logit, edge_logit) in train mode - the
+                # auxiliary boundary head - and a bare logit in eval. This used
+                # to call .float() straight on the result, which failed with
+                # "'tuple' object has no attribute 'float'" and took the whole
+                # preflight with it. Mirror train_roads.py's loop exactly, so
+                # what is measured here is the step that will actually run,
+                # edge head included - it costs memory and time too.
+                out = model(x)
+                logit, edge = out if isinstance(out, tuple) else (out, None)
+                loss, _ = tr.total_loss(logit.float(), y,
+                                        edge_logit=None if edge is None else edge.float())
             loss.backward()
             opt.step(); opt.zero_grad(set_to_none=True)
         torch.cuda.synchronize()

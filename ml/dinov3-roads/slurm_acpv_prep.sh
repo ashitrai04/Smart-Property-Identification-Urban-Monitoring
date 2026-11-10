@@ -133,30 +133,54 @@ if [ -d "$LAT" ] && [ "$(find "$LAT" -type f 2>/dev/null | wc -l)" -ge "$n_aug" 
     echo "already done: $(find "$LAT" -type f | wc -l) latents"
 else
     [ -f latent_encoder_accelerated.py ] || die "repo has no latent_encoder_accelerated.py"
-    # The ommer-lab zip does not reliably put config.yaml beside model.ckpt,
-    # and the repo ships autoencoder configs of its own. Look for it.
-    KLCFG=""
-    # Verified against the repo at HEAD, not guessed: the autoencoder config
-    # ships IN the repo as config-files/autoencoder_kl_f4.yaml. It is not in
-    # the ommer-lab zip, which carries only model.ckpt - which is why
-    # models/first_stage_models/kl-f4/config.yaml never existed.
-    for c in config-files/autoencoder_kl_f4.yaml \
-             models/first_stage_models/kl-f4/config.yaml \
-             models/first_stage_models/kl-f4/*/config.yaml; do
-        [ -f "$c" ] && { KLCFG="$c"; break; }
+    # Verified against the repo, not assumed:
+    #   augment_heatmap_d4.py writes output_dir/<transform>/<file>.npy - eight
+    #     named subdirectories (line 84-86).
+    #   latent_encoder_accelerated.py lists its input with os.listdir (line
+    #     211), which is FLAT. Pointed at the parent it finds no .npy at all,
+    #     prints "Found 0 files." and exits successfully having done nothing.
+    #     That is what produced "latents: 1" from 59,112 inputs.
+    #   latent_vertexheatmap_dataset.py reads
+    #     heatmap_augmented_latent_kl-4/<transform>/<file>.npy, choosing a
+    #     transform at random per sample (line 48-49).
+    # So: encode each transform directory into a matching one.
+    #
+    # The scale factor is estimated from the data when not given. Estimating
+    # it separately per directory would give eight slightly different scalings
+    # of what must be one latent space, and the model would see the same road
+    # at eight magnitudes. Estimate once, reuse everywhere.
+    SCALE=""
+    for d in "$DATA/train/heatmap_augmented"/*/; do
+        [ -d "$d" ] || continue
+        tname="$(basename "$d")"
+        nin=$(find "$d" -maxdepth 1 -name "*.npy" | wc -l)
+        [ "$nin" -gt 0 ] || { echo "  $tname: no .npy, skipped"; continue; }
+        if [ -d "$LAT/$tname" ] && [ "$(find "$LAT/$tname" -maxdepth 1 -name "*.npy" | wc -l)" -ge "$nin" ]; then
+            echo "  $tname: already encoded"
+            continue
+        fi
+        echo "  $tname: encoding $nin files"
+        if [ -z "$SCALE" ]; then
+            python latent_encoder_accelerated.py \
+                --config "$KLCFG" --input "$d" --output_dir "$LAT/$tname" \
+                --type heatmap --batch-size 8 \
+                --num-workers "${SLURM_CPUS_PER_TASK:-8}" 2>&1 | tee /tmp/enc.$$.log
+            [ "${PIPESTATUS[0]}" = "0" ] || die "latent_encoder_accelerated.py on $tname"
+            SCALE=$(grep -oE "scale_factor = [0-9.]+" /tmp/enc.$$.log | tail -1 | awk "{print $3}")
+            rm -f /tmp/enc.$$.log
+            echo "  scale factor fixed at $SCALE for the remaining transforms"
+        else
+            python latent_encoder_accelerated.py \
+                --config "$KLCFG" --input "$d" --output_dir "$LAT/$tname" \
+                --type heatmap --batch-size 8 \
+                --num-workers "${SLURM_CPUS_PER_TASK:-8}" \
+                --scale_factor "$SCALE" \
+                || die "latent_encoder_accelerated.py on $tname"
+        fi
+        nout=$(find "$LAT/$tname" -maxdepth 1 -name "*.npy" | wc -l)
+        echo "  $tname: $nout latents"
+        [ "$nout" -ge "$nin" ] || die "$tname produced $nout latents from $nin inputs"
     done
-    if [ -z "$KLCFG" ]; then
-        KLCFG="$(find . -maxdepth 5 -iname "*.yaml" 2>/dev/null \
-                 | grep -iE "kl.?f4|autoencoder" | head -1)"
-    fi
-    [ -n "$KLCFG" ] || die "no autoencoder config found - run: find $REPO -iname '*.yaml' | grep -i auto"
-    echo "  autoencoder config: $KLCFG"
-    python latent_encoder_accelerated.py \
-        --config "$KLCFG" \
-        --input      "$DATA/train/heatmap_augmented" \
-        --output_dir "$LAT" \
-        --type heatmap --batch-size 8 \
-        || die "latent_encoder_accelerated.py (if it demands CUDA, rerun this stage as a GPU job)"
 fi
 n_lat=$(find "$LAT" -type f 2>/dev/null | wc -l)
 echo "  latents: $n_lat"
