@@ -542,7 +542,15 @@ class DelineatorPanel(QWidget):
         self.task = None
 
     def measure_heights(self):
-        """Join DSM heights onto the footprints of the run just finished."""
+        """Join DSM heights onto the footprints of the run just finished.
+
+        POST /height/area/<jid> answers with a GeoJSON FeatureCollection -
+        {"type", "features", "height_status", "layer"} - where every feature
+        carries the fields height.py's FIELDS names, in the order the job's
+        GeoPackage stores them. An earlier version of this method guessed at
+        that shape, looked for res["items"], found nothing, and reported "the
+        height server returned nothing" for responses that were complete.
+        """
         if not (self.job_id and self.layer):
             return
         self.btn_height.setEnabled(False)
@@ -560,39 +568,74 @@ class DelineatorPanel(QWidget):
             self.btn_height.setEnabled(True)
             return
 
-        feats = (res.get("features") or res.get("result") or {}) or {}
-        items = feats.get("features") if isinstance(feats, dict) else res.get("items")
-        items = items or res.get("heights") or []
-        if not items:
-            self._log("The height server returned nothing for this run.")
+        items = res.get("features") or []
+        status = res.get("height_status") or {}
+        state = status.get("state", "?")
+
+        # The server distinguishes "no DSM machine configured" from "measured
+        # nothing", and the difference is the whole of what to do next.
+        if state in ("not_configured", "error", "failed") or not items:
+            detail = status.get("detail") or status.get("reason") or ""
+            self._log(f"No heights ({state}){': ' + detail if detail else ''}")
+            QMessageBox.information(
+                self, "Height server",
+                {"not_configured":
+                     "No height server is configured. The machine holding the "
+                     "DSM and DTM has to be running, and this server has to "
+                     "know its address - see height-server/README.md.",
+                 "failed":
+                     "The height server was reached but measured nothing. "
+                     "Usually that means the DSM does not cover this area.",
+                 "empty":
+                     "That job has no footprints to measure."}.get(
+                     state, f"No heights came back (state: {state}).")
+                + (f"\n\n{detail}" if detail else ""))
             self.btn_height.setEnabled(True)
             return
 
-        # Add the fields once, then write by position: the server returns the
-        # same features in the same order it was given them.
+        # Add the fields once. Only the handful worth carrying into QGIS - the
+        # server returns sixteen, and a attribute table of diagnostics is worse
+        # than one of answers.
+        want = [("height_m", 6), ("floors", 6), ("floor_label", 10),
+                ("roof_elev_m", 6), ("ground_elev_m", 6), ("quality", 10)]
         dp = self.layer.dataProvider()
-        names = {f.name() for f in self.layer.fields()}
-        new = [QgsField(n, 6) for n in ("height_m", "floors") if n not in names]
-        if new:
-            dp.addAttributes(new)
+        have = {f.name() for f in self.layer.fields()}
+        add = [QgsField(n, t) for n, t in want if n not in have]
+        if add:
+            dp.addAttributes(add)
             self.layer.updateFields()
-        idx_h = self.layer.fields().indexOf("height_m")
-        idx_f = self.layer.fields().indexOf("floors")
+        idx = {n: self.layer.fields().indexOf(n) for n, _ in want}
+
+        # Position, not id: the server returns the same features, in the same
+        # order, as the GeoPackage this job wrote.
+        fids = [f.id() for f in self.layer.getFeatures()]
         changes, n = {}, 0
-        for fid, item in zip([f.id() for f in self.layer.getFeatures()], items):
-            props = (item.get("properties") or item) if isinstance(item, dict) else {}
-            h = props.get("height_m", props.get("height"))
-            if h is None:
+        for fid, item in zip(fids, items):
+            props = item.get("properties") or {}
+            if props.get("height_m") is None:
                 continue
-            changes[fid] = {idx_h: float(h)}
-            fl = props.get("floors", props.get("floor_count"))
-            if fl is not None and idx_f >= 0:
-                changes[fid][idx_f] = float(fl)
-            n += 1
+            row = {}
+            for name, _ in want:
+                v = props.get(name)
+                if v is None or idx[name] < 0:
+                    continue
+                row[idx[name]] = v if isinstance(v, str) else float(v)
+            if row:
+                changes[fid] = row
+                n += 1
         if changes:
             dp.changeAttributeValues(changes)
             self.layer.triggerRepaint()
-        self._log(f"Heights measured for {n} of {self.layer.featureCount()} buildings.")
+
+        total = len(fids)
+        summary = status.get("summary") or {}
+        mean = summary.get("mean_height_m")
+        self._log(f"Heights: {n} of {total} measured"
+                  + (f", mean {mean:.1f} m" if isinstance(mean, (int, float)) else "")
+                  + (f" ({state})" if state != "ok" else ""))
+        if len(items) != total:
+            self._log(f"  note: server returned {len(items)} features for "
+                      f"{total} on screen - matched by position, so check one.")
         self.btn_height.setEnabled(True)
 
     def _failed(self, message):
