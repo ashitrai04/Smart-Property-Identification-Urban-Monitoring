@@ -25,8 +25,14 @@ class DetectInAreaAlgorithm(QgsProcessingAlgorithm):
     # from what the server will actually run.
     def __init__(self):
         super().__init__()
+        # A fallback only. The dock panel asks the server for this list, so it
+        # cannot drift; Processing algorithms declare their enum before any
+        # server is known, so this one has to be written down. Keep it in step
+        # with AREA_TASKS in gpu-server/app/buildings.py - a name here that the
+        # server does not have fails at run time, not at selection.
         self._tasks = [("hisup", "Building delineation"),
                        ("roadnet", "Road extraction (DINOv3)"),
+                       ("roadnet_v2", "Road extraction v2 (DINOv3)"),
                        ("segment", "Land-use segmentation"),
                        ("fusion", "Segmentation + SAM")]
 
