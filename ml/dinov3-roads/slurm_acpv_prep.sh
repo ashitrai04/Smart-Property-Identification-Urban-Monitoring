@@ -225,7 +225,7 @@ PYEOF
                 --type heatmap --batch-size 8 \
                 --num-workers "${SLURM_CPUS_PER_TASK:-8}" 2>&1 | tee /tmp/enc.$$.log
             [ "${PIPESTATUS[0]}" = "0" ] || die "latent_encoder_accelerated.py on $tname"
-            SCALE=$(grep -oE "scale_factor = [0-9.]+" /tmp/enc.$$.log | tail -1 | awk "{print $3}")
+            SCALE=$(grep -oE "scale_factor = [0-9.]+" /tmp/enc.$$.log | tail -1 | awk '{print $3}')
             rm -f /tmp/enc.$$.log
             echo "  scale factor fixed at $SCALE for the remaining transforms"
         else
@@ -245,7 +245,7 @@ PYEOF
         [ "$nout" -ge "$nin" ] || die "$tname produced $nout latents from $nin inputs"
     done
 fi
-n_lat=$(find "$LAT" -type f 2>/dev/null | wc -l)
+n_lat=$(find "$LAT" -path "*/z/*" -name "*.pt" 2>/dev/null | wc -l)
 echo "  latents: $n_lat"
 [ "$n_lat" -gt 0 ] || die "no latents produced"
 
