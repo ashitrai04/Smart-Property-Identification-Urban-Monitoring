@@ -188,8 +188,9 @@ def enrich(features, edge_buffer_m=None, timeout=None):
     if edge_buffer_m is not None:
         params["edge_buffer_m"] = edge_buffer_m
 
-    done = 0
-    failed = 0
+    done = 0        # came back from the DSM machine
+    measured = 0    # came back WITH a height
+    failed = 0      # the request itself did not come back
     summaries = []
     for start in range(0, len(features), CHUNK):
         chunk = features[start:start + CHUNK]
@@ -222,12 +223,30 @@ def enrich(features, edge_buffer_m=None, timeout=None):
                 if k in p:
                     src["properties"][k] = p[k]
             done += 1
+            # A footprint can come back from the DSM machine with no height:
+            # it sits where the DSM has coverage but the DTM does not, or too
+            # few clean pixels survived the edge buffer. That is a normal
+            # answer, not a failure, but it is NOT a measurement - so count it
+            # separately. Reporting it as measured is what made "5 measured"
+            # sit above five blank height columns.
+            if isinstance(p.get("height_m"), (int, float)):
+                measured += 1
         if got.get("summary"):
             summaries.append(got["summary"])
 
-    status = {"state": "ok" if done and not failed else
-                       ("partial" if done else "failed"),
-              "server": url, "measured": done, "not_measured": failed,
+    # "ok" now means every footprint got a height, not merely that every
+    # request came back. A reply that measures three of five is partial, and
+    # the caller should say so rather than show three heights under a tick.
+    if measured and measured == len(features) and not failed:
+        state = "ok"
+    elif measured or done:
+        state = "partial"
+    else:
+        state = "failed"
+    status = {"state": state, "server": url,
+              "measured": measured,
+              "not_measured": len(features) - measured,
+              "returned": done, "unreachable": failed,
               "n": len(features)}
     if summaries:
         status["summary"] = _merge_summaries(summaries)

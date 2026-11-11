@@ -1,4 +1,4 @@
-"""Road extraction — DINOv3 ViT-L/16 (satellite-pretrained) with a UPerNet head.
+"""Road extraction — frozen DINOv3 ViT-L/16 (satellite-pretrained) + SharpDecoder.
 
 Sits beside buildings.py and follows the same shape, so everything that knows
 how to drive HiSup already knows how to drive this: lazy load, a /health that
@@ -39,20 +39,17 @@ if os.path.dirname(os.path.abspath(__file__)) not in sys.path:
 
 router = APIRouter(prefix="/roadnet", tags=["roadnet"])
 
-# Two checkpoints of the SAME architecture - v2 loads into roadnet_arch.RoadNet
-# with strict=True, 439/439 tensors, nothing missing or unexpected - so this is
-# a weights registry, not a second model. Keep it that way: if a future
+# This is a weights REGISTRY, not a model zoo: each entry names a checkpoint,
+# and the loader picks the architecture from what the file says it is
+# (roadnet_sharp.is_param_checkpoint). Keep it that way - if a future
 # checkpoint needs different code, give it its own module rather than widening
 # this one, because a head that silently flexes to fit whatever it is handed is
 # how a mismatched pair ends up predicting confident nonsense.
-WEIGHTS = os.environ.get("ROADNET_WEIGHTS",
-                         os.path.join(HERE, "weights", "roadnet_dinov3.pth"))
-WEIGHTS_V2 = os.environ.get("ROADNET_WEIGHTS_V2",
-                            os.path.join(HERE, "weights", "roadnet_dinov3_v2.pth"))
-# Trained on PARAM Rudra: DINOv3 + SharpDecoder, a different network from the
-# other two. It is ~34 MB rather than 632 because the frozen backbone is left
-# out - see roadnet_sharp.py. Absent until someone downloads it, which /health
-# reports rather than failing at pick time.
+#
+# The one entry is the PARAM Rudra run: frozen DINOv3 + SharpDecoder. It is
+# ~35 MB rather than 632 because the frozen backbone is left out and comes
+# from the HF cache instead - see roadnet_sharp.py. If the file is absent,
+# /health says so rather than failing at pick time.
 def _find_param_weights():
     """Locate the PARAM checkpoint, wherever scp happened to drop it.
 
@@ -94,6 +91,15 @@ WEIGHTS_PARAM = os.environ.get("ROADNET_WEIGHTS_PARAM") or _find_param_weights()
 # putting a v1-style checkpoint back is a path in this dict and nothing else.
 MODELS = {"param": WEIGHTS_PARAM}
 DEFAULT_VERSION = os.environ.get("ROADNET_VERSION", "param")
+if DEFAULT_VERSION not in MODELS:
+    DEFAULT_VERSION = "param"
+
+# The default version's file. This used to be its own constant naming
+# roadnet_dinov3.pth, which outlived the file: after v1 was retired /health
+# went on reporting `weights: roadnet_dinov3.pth, weights_present: false`
+# while roads worked perfectly. A health check that says a present thing is
+# absent is worse than no health check, so derive it instead of repeating it.
+WEIGHTS = MODELS[DEFAULT_VERSION]
 
 
 def _resolve(version):
@@ -299,12 +305,46 @@ def probability(rgb, version=None):
     return prob[:h, :w]
 
 
+_META_CACHE = {}
+
+
+def _peek(path):
+    """val_f1 / epoch straight out of the file, without building the model.
+
+    /health used to report these as null until something had triggered a
+    load, which made a freshly started server look like it was holding an
+    unidentified checkpoint. Reading the file is ~35 MB and a tenth of a
+    second, cached on (path, mtime), and it never touches the GPU or needs
+    the backbone - so the startup console can name what it is about to serve.
+    """
+    try:
+        key = (path, os.path.getmtime(path))
+    except OSError:
+        return {}
+    if key in _META_CACHE:
+        return _META_CACHE[key]
+    meta = {}
+    try:
+        ck = torch.load(path, map_location="cpu", weights_only=True)
+        if isinstance(ck, dict):
+            meta = {k: ck[k] for k in
+                    ("val_f1", "boundary_f1", "epoch", "backbone", "decoder")
+                    if k in ck and not hasattr(ck[k], "shape")}
+    except Exception as e:
+        # Never let a health check fail on a bad file - report the file as
+        # unreadable and let the load path produce the real error.
+        meta = {"unreadable": f"{type(e).__name__}: {str(e)[:120]}"}
+    _META_CACHE[key] = meta
+    return meta
+
+
 # ───────────────────────────── endpoints ─────────────────────────────
 @router.get("/health")
 def health():
     return {
         "status": "ok",
-        "model": "DINOv3 ViT-L/16 (sat493m) + UPerNet, binary road segmentation",
+        "model": "DINOv3 ViT-L/16 (sat493m, frozen) + SharpDecoder, "
+                 "binary road segmentation",
         "task": "road surface extraction",
         "weights": os.path.basename(WEIGHTS),
         "weights_present": os.path.exists(WEIGHTS),
@@ -316,8 +356,7 @@ def health():
                 "present": os.path.exists(p),
                 "size_mb": round(os.path.getsize(p) / 1e6) if os.path.exists(p) else 0,
                 "loaded": LOADS.get(v, {}).get("loaded", False),
-                "val_f1": LOADS.get(v, {}).get("val_f1"),
-                "epoch": LOADS.get(v, {}).get("epoch")}
+                **({} if not os.path.exists(p) else _peek(p))}
             for v, p in sorted(MODELS.items())
         },
         "defaults": {"work_gsd_m": WORK_GSD, "threshold": THRESH, "tile": TILE,
@@ -357,11 +396,10 @@ async def predict(
 ):
     """Extract roads from an uploaded image.
 
-    `version` picks the checkpoint: "v1" (the default, val_f1 0.799) or "v2"
-    (val_f1 0.744, epoch 9). Same architecture, different training; v2 is the
-    newer run and is offered beside v1 rather than replacing it, because the
-    recorded validation score is lower and which one is better on YOUR ground
-    is a question for the imagery, not for the file date.
+    `version` picks the checkpoint. There is one registered - "param", the
+    default - and an unknown name is refused rather than quietly served by
+    the default, because a caller that asks for a specific model and silently
+    gets another one has no way to notice. /health lists what is available.
 
     `gsd` is metres per pixel. A GeoTIFF states its own; for anything else pass
     it, because this model is resolution-sensitive and guessing wrong is the
