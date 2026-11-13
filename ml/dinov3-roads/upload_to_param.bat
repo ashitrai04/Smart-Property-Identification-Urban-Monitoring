@@ -141,10 +141,22 @@ set "BATCH=%TEMP%\param_upload.%RANDOM%%RANDOM%.sftp"
 >>"%BATCH%" echo -mkdir /scratch/%PUSER%/runs
 >>"%BATCH%" echo -mkdir /home/%PUSER%/dinov3-roads
 >>"%BATCH%" echo -mkdir /home/%PUSER%/dinov3-roads/logs
+rem roadreg.py lives in the server tree, not here, and infer_area.py imports it
+rem from ../../gpu-server/app. Without it the vector step raises ModuleNotFoundError,
+rem which infer_area catches - so the 1 km run on PARAM wrote a mask scoring
+rem F1 0.8375 and "polygons: 0", with the reason only in the job log.
+>>"%BATCH%" echo -mkdir /home/%PUSER%/gpu-server
+>>"%BATCH%" echo -mkdir /home/%PUSER%/gpu-server/app
 rem --- code: lcd first so the globs below carry no spaces ---
 >>"%BATCH%" echo lcd "%CODEF%"
 >>"%BATCH%" echo cd /home/%PUSER%/dinov3-roads
 >>"%BATCH%" echo put *.py
+rem --- the one file from the server tree that inference needs ---
+>>"%BATCH%" echo lcd "%CODEF%/../../gpu-server/app"
+>>"%BATCH%" echo cd /home/%PUSER%/gpu-server/app
+>>"%BATCH%" echo put roadreg.py
+>>"%BATCH%" echo lcd "%CODEF%"
+>>"%BATCH%" echo cd /home/%PUSER%/dinov3-roads
 >>"%BATCH%" echo put *.sh
 >>"%BATCH%" echo put *.yaml
 >>"%BATCH%" echo put *.md

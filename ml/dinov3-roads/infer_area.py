@@ -246,7 +246,26 @@ def main():
     from shapely.affinity import affine_transform
     stats = {"polygons": 0, "centrelines": 0, "road_ha": 0.0, "applied": a.regularize}
     try:
-        sys.path.insert(0, str(HERE.parent.parent / "gpu-server" / "app"))
+        # roadreg.py lives in the server tree, which is NOT part of what gets
+        # uploaded to a cluster: upload_to_param.bat sends this directory's
+        # *.py and nothing else. On PARAM that made `import roadreg` raise
+        # ModuleNotFoundError, which the handler below caught and turned into
+        # "polygons: 0" in report.json - a run whose mask scored F1 0.8375
+        # and whose vector output was silently empty. So look in every place
+        # it could reasonably be, and say which ones were tried if it is in
+        # none of them.
+        tried = [HERE.parent.parent / "gpu-server" / "app",   # the repo layout
+                 HERE.parent / "gpu-server" / "app",
+                 HERE / "gpu-server" / "app",                  # a flat upload
+                 HERE]                                         # beside this file
+        for cand in tried:
+            if (cand / "roadreg.py").is_file():
+                sys.path.insert(0, str(cand))
+                break
+        else:
+            raise ModuleNotFoundError(
+                "roadreg.py not found in any of: "
+                + ", ".join(str(c) for c in tried))
         import roadreg
         polys, lines, how = roadreg.regularize_roads(mask, a.gsd, mode=a.regularize)
         m = [t.a, t.b, t.d, t.e, t.xoff, t.yoff]
@@ -294,7 +313,11 @@ def main():
         print(f"vector: {len(geoms)} polygons ({stats['road_ha']} ha), "
               f"{len(cls)} centrelines, mode '{how}'")
     except Exception as e:
-        print(f"regularization skipped: {type(e).__name__}: {str(e)[:160]}")
+        # Record it in report.json too. The old version printed this to stdout
+        # only, so anyone reading the report later saw zero polygons with no
+        # hint that a step had failed rather than found nothing.
+        stats["error"] = f"{type(e).__name__}: {str(e)[:300]}"
+        print(f"regularization skipped: {stats['error']}")
 
     score = None
     if a.labels:
