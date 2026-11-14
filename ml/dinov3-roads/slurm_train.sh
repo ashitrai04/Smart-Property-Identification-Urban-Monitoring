@@ -43,6 +43,16 @@
 set -euo pipefail
 mkdir -p logs
 
+# Where THIS script lives, so the python beside it can be found from any
+# working directory. SLURM runs a batch script with cwd = the directory you
+# submitted FROM, not the script's own: `sbatch ~/dinov3-roads/slurm_train.sh`
+# issued from the home directory left cwd at ~, and `python preflight.py`
+# then failed with "can't open file '/home/<user>/preflight.py'" - job
+# 116777, five minutes of a 2-GPU slot and two days of queue, lost to a
+# relative path. $SLURM_SUBMIT_DIR is that same submit directory, so it is
+# no help; BASH_SOURCE is.
+CODE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
 BACKBONE="${BACKBONE:-vit_large_patch16_dinov3.sat493m}"
 DATA="${DATA:-/scratch/$USER/ongole_roads_v2}"
 OUT="${OUT:-/scratch/$USER/runs/$(date +%Y%m%d-%H%M)-${BACKBONE%%.*}}"
@@ -207,9 +217,9 @@ echo "data      : $DATA"
 echo "out       : $OUT"
 
 # Fail here rather than 40 minutes in. Costs about two minutes.
-python preflight.py --data "$DATA" --backbone "$BACKBONE" --batch "$BATCH" --steps 4
+python "$CODE/preflight.py" --data "$DATA" --backbone "$BACKBONE" --batch "$BATCH" --steps 4
 
-torchrun --standalone --nproc_per_node="$GPUS" train_roads.py \
+torchrun --standalone --nproc_per_node="$GPUS" "$CODE/train_roads.py" \
     --data "$DATA" \
     --backbone "$BACKBONE" \
     --out "$OUT" \

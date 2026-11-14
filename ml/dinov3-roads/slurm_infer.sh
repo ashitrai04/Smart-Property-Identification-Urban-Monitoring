@@ -20,6 +20,7 @@
 set -euo pipefail
 mkdir -p logs
 
+CODE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"   # see slurm_train.sh
 CKPT="${CKPT:?set CKPT=/scratch/$USER/runs/<run>/best.pth}"
 # The 45 GB mosaic is NOT on PARAM - only the pre-cut 1 km2 clip is.
 # This used to default to the mosaic, which does not exist here, so the
@@ -108,7 +109,7 @@ echo "ckpt  : $CKPT"
 echo "image : $IMAGE"
 echo "out   : $OUT"
 
-python infer_area.py \
+python "$CODE/infer_area.py" \
     --image "$IMAGE" \
     --ckpt  "$CKPT" \
     --out   "$OUT" \
