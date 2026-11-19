@@ -654,9 +654,11 @@ AREA_TASKS = {
                         "sharp decoder, trained on PARAM Rudra (F1 0.837)"},
     "landcover": {"label": "Land cover (9 class)", "kind": "raster",
                   "note": "bareland / rangeland / developed / road / tree / water / "
-                          "agriculture / building - DINOv3 ViT-L + UPerNet. Draws as a "
-                          "coloured overlay; building, road, water and tree also come "
-                          "out as vectors."},
+                          "agriculture / building - DINOv3 ViT-L + UPerNet. A raster "
+                          "product: every pixel is classified and drawn as a coloured "
+                          "overlay, downloadable as a GeoTIFF with its own colour "
+                          "table. No vectors - pass vectorize:[...] to get a "
+                          "GeoPackage as well."},
     "segment": {"label": "Land-use segmentation", "kind": "vector",
                 "note": "buildings / roads / water / open ground"},
     "fusion":  {"label": "Segmentation + SAM", "kind": "vector",

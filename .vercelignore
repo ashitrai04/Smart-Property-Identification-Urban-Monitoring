@@ -1,7 +1,55 @@
+# What NOT to upload when deploying the webapp.
+#
+# This matters more than it looks. When a .vercelignore exists the CLI stops
+# falling back to .gitignore, so anything not listed here is uploaded even if
+# git ignores it. That is how a deploy came to carry gpu-server/ - 50 GB of
+# model weights, COGs and job results - and fail with "Request Entity Too
+# Large" before it ever reached the build.
+#
+# The site needs: src/, public/, index.html, package.json, vite.config.js,
+# vercel.json and api/ (api/media/[name].js is a serverless function - do not
+# add it here). Everything else is server-side or local tooling.
+
+# ── heavy server-side trees: none of this is part of the web build ──
+gpu-server/
+ml/
+local-server/
+height-server/
+urbanly-node/
+qgis-plugin/
+keepalive-worker/
 backend/
 datasets/
+docs/
+
+# ── build output and dependencies: Vercel installs and builds remotely ──
+node_modules/
+dist/
+.venv/
 __pycache__/
+# The CLI reads .vercel/project.json off disk to know which project this is;
+# listing it here only keeps its 18 MB of cached build output out of the
+# upload, it does not unlink the project.
+.vercel/
+
+# ── bundles and logs ──
+*.zip
+*.log
+build_out*.txt
+build_output.txt
+error.txt
+
+# ── data files that belong on the GPU server, not the CDN ──
 *.gpkg
+*.pth
+*.pt
+
+# NSV source video. NSV.jsx reads it from VITE_NSV_MEDIA_BASE (R2), proxied
+# through api/media/[name].js - it has never been served from here, as a range
+# request for /nsv/drone_web.mp4 returning text/html (the SPA fallback) shows.
+# At 636 MB it was most of the failed upload.
+*.mp4
+
 # NOTE: don't blanket-ignore *.tif — the guided-tour sample chips live in
-# public/tour/ and must ship. The large dataset .tif files are already excluded
-# via backend/ and datasets/.
+# public/tour/ and must ship. The large dataset .tif files are already
+# excluded via backend/ and datasets/.
