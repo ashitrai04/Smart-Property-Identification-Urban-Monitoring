@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import mapboxgl from "mapbox-gl";
 import { Download, Play, Ruler, Square } from "lucide-react";
 import { Button, Pill } from "./ui";
-import { gpuOnlyFetch, useGpuStatus } from "../lib/modelApi";
+import { gpuBase, gpuOnlyFetch, useGpuStatus } from "../lib/modelApi";
 import {
     floorBin, heightFetch, heightsAvailable, lastHeightProbe, measureFeatures,
     summarise,
@@ -30,6 +30,13 @@ const FILL = "area-model-fill";
 const LINE = "area-model-line";
 const LABEL = "area-model-label";
 const CENTRE = "area-model-centreline";
+// Land cover is a raster result, not a vector one: nine classes over every
+// pixel of the AOI. Drawing it as polygons would be millions of them, so it
+// comes back as map tiles cut from the job's classes.tif, already coloured by
+// the server from the same palette the legend is built from.
+const LC_SRC = "area-landcover-src";
+const LC_LAYER = "area-landcover-raster";
+const LC_MIN_OPACITY = 0.8;
 
 /*
  * Height written on each roof.
@@ -167,6 +174,8 @@ export default function AreaModelPanel({ map, aoiFeatures }) {
     // controls, so ask "is this a road task" once rather than naming the
     // versions in every branch - that is how a v3 ends up with no controls.
     const isRoad = task === "roadnet" || task === "roadnet_v2";
+    const isLand = task === "landcover";
+    const [lcLegend, setLcLegend] = useState(null);   // rows, with this run's shares
     const [job, setJob] = useState(null);
     const [count, setCount] = useState(0);
     const [done, setDone] = useState(false);
@@ -186,6 +195,11 @@ export default function AreaModelPanel({ map, aoiFeatures }) {
 
     const featsRef = useRef([]);          // every feature drawn so far
     const pollRef = useRef(null);
+    // The task the RUNNING job was started with, frozen at start rather than
+    // following the select. The dropdown stays live while a job runs, so a
+    // poll tick that read the current value would finish one model's job by
+    // drawing another model's result.
+    const taskRef = useRef(task);
     // Bumped on every run. A poll tick that belongs to an older run checks this
     // and stops, so stale results can never land in a newer run's layer.
     const runRef = useRef(0);
@@ -373,8 +387,60 @@ export default function AreaModelPanel({ map, aoiFeatures }) {
         if (!map) return;
         for (const id of [LABEL, CENTRE, FILL, LINE]) { try { map.getLayer(id) && map.removeLayer(id); } catch { /* gone */ } }
         try { map.getSource(SRC) && map.removeSource(SRC); } catch { /* gone */ }
+        try { map.getLayer(LC_LAYER) && map.removeLayer(LC_LAYER); } catch { /* gone */ }
+        try { map.getSource(LC_SRC) && map.removeSource(LC_SRC); } catch { /* gone */ }
         featsRef.current = [];
+        setLcLegend(null);
     }, [map]);
+
+    /*
+     * Draw a finished land-cover job as map tiles, and fetch its key.
+     *
+     * The tiles are cut from the job's own classes.tif, so what is drawn is
+     * the saved result rather than anything re-derived here, and the colours
+     * come from the server's palette. The legend is fetched for the same
+     * reason: a key written in this file is a second copy of the palette that
+     * can drift out of step with the pixels under it.
+     */
+    const showLandcover = useCallback(async (id) => {
+        if (!map) return;
+        const base = gpuBase();
+        if (!base) { setErr("The GPU server address is not known, so the class tiles cannot be loaded."); return; }
+        try { map.getLayer(LC_LAYER) && map.removeLayer(LC_LAYER); } catch { /* gone */ }
+        try { map.getSource(LC_SRC) && map.removeSource(LC_SRC); } catch { /* gone */ }
+        map.addSource(LC_SRC, {
+            type: "raster",
+            tiles: [`${base}/results/${id}/classes/{z}/{x}/{y}.png`],
+            tileSize: 256,
+        });
+        map.addLayer({
+            id: LC_LAYER, type: "raster", source: LC_SRC,
+            // No fade: a class map is data, and cross-fading one zoom level
+            // into the next makes boundary pixels look like a third class.
+            paint: { "raster-opacity": Math.max(opacity, LC_MIN_OPACITY),
+                     "raster-fade-duration": 0, "raster-resampling": "nearest" },
+        });
+        // A land-cover overlay is the answer itself, not an annotation on top
+        // of one, so it starts strong enough to read as colour. The vector
+        // overlays can sit at 55 % because what matters there is the outline.
+        setOpacity((v) => Math.max(v, LC_MIN_OPACITY));
+        try {
+            const r = await gpuOnlyFetch(`/results/${id}/legend`);
+            if (r.ok) {
+                const d = await r.json();
+                setLcLegend((d.classes || []).filter((c) => c.name !== "unknown" && (c.percent ?? 0) > 0.05)
+                                             .sort((a, b) => (b.percent || 0) - (a.percent || 0)));
+            }
+        } catch { /* the tiles are drawn; only the key is missing */ }
+    }, [map, opacity]);
+
+    // The opacity slider drives the raster the same way it drives the fills.
+    useEffect(() => {
+        if (!map) return;
+        try {
+            if (map.getLayer(LC_LAYER)) map.setPaintProperty(LC_LAYER, "raster-opacity", opacity);
+        } catch { /* the layer went away between the check and the set */ }
+    }, [map, opacity, lcLegend]);
 
     // Swap settled buildings from the detector's outline to the regularized
     // one. Driven by a timer rather than by arrival so the change is visible
@@ -559,16 +625,20 @@ export default function AreaModelPanel({ map, aoiFeatures }) {
                     clearInterval(pollRef.current); pollRef.current = null;
                     if (d.status === "done") {
                         setDone(true);
+                        // Land cover's result is the class raster, not vectors:
+                        // loadResult would fetch an empty collection and the
+                        // panel would report a finished job with nothing drawn.
+                        if (taskRef.current === "landcover") await showLandcover(id);
                         // Nothing streamed means this task writes its result at
                         // the end rather than per window. Fetch it.
-                        if (!featsRef.current.length) await loadResult(id);
+                        else if (!featsRef.current.length) await loadResult(id);
                         logActivity?.({ kind: "model",
                                        label: `Area run — ${featsRef.current.length} features` });
                     }
                 }
             } catch { /* transient; the next tick retries */ }
         }, 1200);
-    }, [push, measureBatch, loadResult]);
+    }, [push, measureBatch, loadResult, showLandcover]);
 
     const start = async () => {
         if (!hasAoi) return;
@@ -584,6 +654,7 @@ export default function AreaModelPanel({ map, aoiFeatures }) {
             pollRef.current = null;
         }
         runRef.current += 1;
+        taskRef.current = task;          // this run's model, whatever the select does next
 
         setErr(""); setDone(false); setJob(null); setCount(0); setHandoff(null);
         setHeights(null); setByFloors(false); setHeightNote("");
@@ -796,6 +867,45 @@ export default function AreaModelPanel({ map, aoiFeatures }) {
                    style={{ background: "var(--danger-dim)", border: "1px solid var(--danger)", color: "var(--danger)" }}>
                     {err}
                 </p>
+            )}
+
+            {/* Land cover: a raster result, so there is no feature count to show.
+                What there is, is the share of the drawn area each class takes —
+                which is the answer a land-use survey wanted in the first place. */}
+            {lcLegend && lcLegend.length > 0 && (
+                <div className="space-y-2 rounded-md p-2"
+                     style={{ background: "var(--surface-2)", border: "1px solid var(--line)" }}>
+                    <div className="flex items-center justify-between text-[11px]">
+                        <span style={{ color: "var(--text-primary)" }}>Land cover</span>
+                        <div className="flex items-center gap-1.5">
+                            <a className="text-[10px] underline" style={{ color: "var(--text-dim)" }}
+                               href={`${gpuBase()}/results/${job?.id}/classes.tif`}>GeoTIFF</a>
+                            <a className="text-[10px] underline" style={{ color: "var(--text-dim)" }}
+                               href={`${gpuBase()}/results/${job?.id}/download`}>GeoPackage</a>
+                        </div>
+                    </div>
+                    <div className="space-y-1">
+                        {lcLegend.map((c) => (
+                            <div key={c.name} className="flex items-center gap-2 text-[10px]" title={c.note}>
+                                <span className="inline-block h-2.5 w-4 shrink-0 rounded-[2px]"
+                                      style={{ background: c.color, border: "1px solid var(--line)" }} />
+                                <span style={{ color: "var(--text-dim)" }}>{c.label || c.name}</span>
+                                <span className="mono ml-auto" style={{ color: "var(--text-mute)" }}>
+                                    {(c.percent ?? 0).toFixed(1)}%
+                                    {c.area_ha != null && <span className="ml-1.5">{c.area_ha.toFixed(1)} ha</span>}
+                                </span>
+                            </div>
+                        ))}
+                    </div>
+                    <label className="block">
+                        <div className="flex items-center justify-between text-[10px]" style={{ color: "var(--text-dim)" }}>
+                            <span>Overlay opacity</span><span className="mono">{Math.round(opacity * 100)}%</span>
+                        </div>
+                        <input type="range" min="0" max="1" step="0.05" value={opacity}
+                               onChange={(e) => setOpacity(Number(e.target.value))}
+                               className="w-full accent-[var(--accent)]" />
+                    </label>
+                </div>
             )}
 
             {count > 0 && (

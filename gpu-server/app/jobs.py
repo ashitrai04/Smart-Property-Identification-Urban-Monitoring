@@ -22,7 +22,7 @@ import numpy as np
 import rasterio
 import shapely
 from rasterio.enums import Resampling
-from rasterio.features import shapes
+from rasterio.features import geometry_mask, shapes
 from rasterio.transform import Affine
 from rasterio.windows import Window
 
@@ -704,6 +704,229 @@ def _run_pothole(job, img, out_dir):
                       "road_filter": bool(road_filter), "min_overlap": min_overlap}}
 
 
+# ── task: landcover ──────────────────────────────────────────────
+# Classes worth having as vectors. The other four (unknown, bareland,
+# rangeland, agriculture) are wide background regions whose polygons would be
+# enormous and are read far better as the raster overlay, so they stay in
+# classes.tif only. Add a name here and it starts coming out in the GeoPackage.
+#
+# EMPTY ON PURPOSE. Land cover is a raster product: every pixel gets one of
+# nine classes, and the class map shows all nine. Vectorising turned that into
+# outlines of four classes with anything under 20 m^2 dropped, so rangeland,
+# agriculture, bareland and developed vanished entirely and a field full of
+# rangeland drew as blank ground - the map looked like the model had found
+# almost nothing, when it had in fact classified every pixel.
+#
+# Pass vectorize: ["building", "road"] (or any class names) on the job to get a
+# GeoPackage as well; the raster is written either way.
+LANDCOVER_VECTOR = ()
+# Below this a polygon is a speck of class noise, not a feature. 20 m^2 is a
+# small shed at this resolution; dropping it keeps the GeoPackage usable
+# instead of carrying tens of thousands of single-blob artefacts.
+LANDCOVER_MIN_AREA_M2 = 20.0
+# Memory for the AOI-wide probability stack: nine float16 channels plus a
+# float32 weight plane, per pixel. The road job's equivalent ceiling is in
+# megapixels; this one is in megabytes because nine channels is what makes it
+# bite, and the message can then name the remedy in the same units.
+LANDCOVER_MAX_MB = int(os.environ.get("LANDCOVER_JOB_MAX_MB", "900"))
+# How far inside the survey's nodata edge to stop trusting the answer. 16 px
+# is 3.2 m at the 0.20 m working grid - about the distance over which black
+# padding in the window still pulls the global-pooled context around.
+LANDCOVER_EDGE_PX = int(os.environ.get("LANDCOVER_EDGE_PX", "16"))
+
+
+def _run_landcover(job, img, out_dir):
+    """9-class land cover over a drawn area or a whole mosaic.
+
+    Built the way _run_roadnet is, and for the same reason. The obvious
+    approach - classify each window, keep its centre, write it - leaves a
+    straight seam everywhere two windows meet, and this head makes that worse
+    than most: its PPM branch global-average-pools the whole window, so every
+    pixel's answer depends on what else was in frame. Two neighbouring windows
+    with different overall content therefore disagree slightly about the same
+    ground, and butting their argmaxes together turns that disagreement into a
+    ruled line across the map.
+
+    So the class PROBABILITIES are accumulated into one AOI-wide stack with
+    feathered window edges, and the argmax is taken once, at the end. Nothing
+    is ever cut and re-joined, so there is nothing to show a join. The vectors
+    come out of that same single raster, which also means a building that
+    crossed an old window boundary is now one polygon rather than two.
+
+    Pixels near the imagery's nodata edge are dropped rather than trusted: a
+    window straddling the edge of the survey has black in frame, that black is
+    in the global pooling, and the resulting band of confidently-wrong class
+    along the border was the most visible artefact in the first version.
+    """
+    import landcover as lc
+
+    params = job.get("params") or {}
+    want_vectors = params.get("vectorize")
+    if want_vectors is None:
+        names = list(LANDCOVER_VECTOR)
+    elif want_vectors in (False, 0, "none", []):
+        names = []
+    else:
+        names = [str(n) for n in want_vectors if str(n) in lc.CLASSES]
+    min_area = float(params.get("min_area_m2") or LANDCOVER_MIN_AREA_M2)
+
+    with rasterio.open(img["cog_path"]) as src:
+        native = abs(src.transform.a)
+        if not src.crs or not src.crs.is_projected:
+            raise ValueError("this area tool needs a projected raster (metre CRS)")
+        target = float(params.get("work_gsd_m") or 0) or lc.WORK_GSD
+        # Only ever downsample: upsampling invents no detail and costs
+        # quadratically more windows for it.
+        scale = max(target / native, 1.0)
+        W, H = int(src.width / scale), int(src.height / scale)
+        T = src.transform * Affine.scale(scale)
+        gsd = abs(T.a)
+
+        aoi = _aoi_in_crs(params.get("aoi"), src.crs)
+        if aoi is not None and aoi.is_empty:
+            raise ValueError("the drawn area is empty")
+
+        win = int(params.get("window") or 1024)
+        step = win - 2 * OVERLAP
+        cells = _aoi_cells(aoi, T, W, H, win, step)
+        if not cells:
+            raise ValueError("the drawn area does not overlap this imagery")
+
+        # The accumulator is the size of what was drawn, not of Ongole.
+        bx0 = min(c[0] for c in cells)
+        by0 = min(c[1] for c in cells)
+        bx1 = max(c[0] + c[2] for c in cells)
+        by1 = max(c[1] + c[3] for c in cells)
+        bw, bh = bx1 - bx0, by1 - by0
+        ncls = len(lc.CLASSES)
+
+        # Nine channels, so the ceiling is nine times tighter than the road
+        # job's. Stated in megabytes because that is the real constraint, and
+        # refused up front with the remedy rather than discovered as a
+        # MemoryError twenty minutes into a run.
+        need_mb = bw * bh * (ncls * 2 + 4) / 1e6
+        if need_mb > LANDCOVER_MAX_MB:
+            raise ValueError(
+                f"that area is {bw * bh / 1e6:.0f} megapixels at {gsd:.2f} m/px, which "
+                f"needs {need_mb:.0f} MB to classify in one piece (the limit is "
+                f"{LANDCOVER_MAX_MB} MB). Draw a smaller area, or pass a coarser "
+                f"work_gsd_m - 0.4 instead of 0.2 covers four times the ground for "
+                f"the same memory.")
+
+        # float16: argmax is invariant to the shared scale factor, so the
+        # accumulator never has to be normalised, and half precision costs
+        # nothing that matters while halving the footprint.
+        acc = np.zeros((ncls, bh, bw), np.float16)
+        wsum = np.zeros((bh, bw), np.float32)
+        n, done = len(cells), 0
+        db.update_job(job["id"], stats={"windows": n, "gsd": gsd, "model": "landcover"})
+
+        for (x, y, w, h) in cells:
+            if _cancelled(job["id"]):
+                return None
+            src_win = Window(x * scale, y * scale, w * scale, h * scale)
+            rgb, valid = _read_rgb(src, src_win, w, h)
+            done += 1
+            if valid.mean() < 0.02:
+                _progress(job["id"], 0.85 * done / n)
+                continue
+
+            p = np.asarray(_on_gpu(job["id"], lambda: lc.probabilities(rgb)), np.float32)
+
+            # Trust nothing within LANDCOVER_EDGE_PX of the survey's edge. On a
+            # window with no nodata in it this erosion is a no-op, so interior
+            # windows are untouched.
+            v = valid
+            if LANDCOVER_EDGE_PX > 0 and not valid.all():
+                v = cv2.erode(valid.astype(np.uint8), np.ones((3, 3), np.uint8),
+                              iterations=LANDCOVER_EDGE_PX).astype(bool)
+
+            # Linear ramp in from each window edge, as the road job does, so
+            # neighbours cross-fade instead of meeting at a step.
+            fy = np.minimum(np.arange(h), h - 1 - np.arange(h)).astype(np.float32)
+            fx = np.minimum(np.arange(w), w - 1 - np.arange(w)).astype(np.float32)
+            edge = max(1.0, OVERLAP / 2.0)
+            wgt = np.outer(np.clip(fy / edge, 0.02, 1.0), np.clip(fx / edge, 0.02, 1.0))
+            wgt = wgt * v
+
+            sy, sx = y - by0, x - bx0
+            acc[:, sy:sy + h, sx:sx + w] += (p * wgt).astype(np.float16)
+            wsum[sy:sy + h, sx:sx + w] += wgt
+            _progress(job["id"], 0.85 * done / n)
+
+        lab = acc.argmax(0).astype(np.uint8)
+        del acc
+        lab[wsum <= 1e-6] = 0            # never looked at, or entirely eroded
+        del wsum
+
+        bt = T * Affine.translation(bx0, by0)
+        # Outside the drawn polygon is not an answer. Cutting here, before the
+        # geometry, is what makes the raster areas and the vector areas agree.
+        if aoi is not None:
+            inside = geometry_mask([aoi], out_shape=(bh, bw), transform=bt,
+                                   invert=True, all_touched=True)
+            lab = np.where(inside, lab, 0).astype(np.uint8)
+            del inside
+
+        _progress(job["id"], 0.9)
+
+        prof = dict(driver="GTiff", width=bw, height=bh, count=1, dtype="uint8",
+                    crs=src.crs, transform=bt, tiled=True, blockxsize=512,
+                    blockysize=512, compress="deflate", nodata=0, BIGTIFF="IF_SAFER")
+        with rasterio.open(out_dir / "classes.tif", "w", **prof) as dst:
+            dst.write(lab, 1)
+            # Its own colour table, so it opens already styled in QGIS instead
+            # of as a grey 0-8 ramp someone has to classify by hand.
+            dst.write_colormap(1, {i: tuple(lc.COLORMAP[i]) for i in range(ncls)})
+
+        counts = np.bincount(lab.ravel(), minlength=ncls)
+        px_area = abs(bt.a * bt.e)
+
+        # Vectorised once, from the finished raster: a shape that used to be
+        # split across two windows is now a single polygon.
+        sink = _Sink(out_dir / "results.gpkg", src.crs)
+        totals = {}
+        for name in names:
+            cls = lc.CLASSES.index(name)
+            m = (lab == cls).astype(np.uint8)
+            if not m.any():
+                continue
+            m = cv2.morphologyEx(m, cv2.MORPH_OPEN, np.ones((3, 3), np.uint8))
+            geoms = [shapely.geometry.shape(g)
+                     for g, v in shapes(m, mask=m.astype(bool), transform=bt) if v == 1]
+            geoms = [g.simplify(gsd * 0.75) for g in geoms if g.area >= min_area]
+            geoms = [g for g in geoms if not g.is_empty]
+            if geoms:
+                sink.add(name, geoms, [{"class": name, "area_m2": round(g.area, 2)}
+                                       for g in geoms])
+                totals[name] = len(geoms)
+        _progress(job["id"], 1.0)
+
+    # Shares are of the classified pixels. Index 0 is everything outside the
+    # drawn polygon as well as the model declining, so counting it would make
+    # every share depend on the shape of the AOI's bounding grid.
+    total_px = int(counts[1:].sum())
+    return {
+        "layers": sink.counts,
+        "stats": {
+            "model": "landcover",
+            "work_gsd_m": gsd,
+            "windows": n,
+            "px_area_m2": px_area,
+            "classified_px": total_px,
+            "class_pixels": counts.tolist(),
+            "class_percent": {c: round(100.0 * int(counts[i]) / max(1, total_px), 2)
+                              for i, c in enumerate(lc.CLASSES) if i > 0},
+            "class_area_m2": {c: round(int(counts[i]) * px_area, 1)
+                              for i, c in enumerate(lc.CLASSES) if i > 0},
+            "features": totals,
+            "min_area_m2": min_area,
+            "edge_drop_px": LANDCOVER_EDGE_PX,
+            "blended": True,
+        },
+    }
+
+
 # ── worker ───────────────────────────────────────────────────────
 def _cancelled(jid):
     return (db.get_job(jid) or {}).get("status") == "cancelled"
@@ -742,6 +965,8 @@ def run_job(job):
             # else about the run differs.
             res = _run_roadnet(job, img, out_dir,
                                version="param")
+        elif job["task"] == "landcover":
+            res = _run_landcover(job, img, out_dir)
         elif job["task"] == "pothole":
             res = _run_pothole(job, img, out_dir)
         elif job["task"] == "refine":

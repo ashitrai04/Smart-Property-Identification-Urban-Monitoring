@@ -6,6 +6,7 @@ import { logActivity } from "../lib/activityLog";
 import { HF_MODEL_BASE, modelFetch, probeGpu } from "../lib/modelApi";
 import PotholePanel from "../components/PotholePanel";
 import BuildingsPanel from "../components/BuildingsPanel";
+import LandCoverPanel from "../components/LandCoverPanel";
 import { decodeClassMap, exportCSV, classMapToGeoJSON, exportGeoJSON, exportSHP, exportGeoTIFF } from "../utils/exporters";
 import { registerTour, unregisterTour, fetchFile as tourFetchFile } from "../tour/tourBus";
 
@@ -57,6 +58,9 @@ const ANALYSIS_TYPES = [
     // Second, not last: it is the only model trained on our own survey, and at the
     // bottom of the list it sat below the fold and went unnoticed.
     { id: "buildings", label: "Building Delineation", desc: "HiSup trained on our Ongole survey — individual footprints, not a mask · several images at once, nothing to configure" },
+    // Third, beside the other two own-model entries: it answers the question
+    // that comes before theirs — what the ground is being used for at all.
+    { id: "landcover", label: "Land-Use Classification", desc: "DINOv3 ViT-L/16 + UPerNet — nine land-cover classes (building / road / tree / water / agriculture / rangeland / bareland / developed) with per-class area" },
     { id: "change", label: "Building Change", desc: "New & demolished buildings between two dates (instance-matched)" },
     { id: "vegetation", label: "Vegetation Change", desc: "Green-cover gain & loss between two dates" },
     { id: "water", label: "Water Change", desc: "Water-body change & encroachment between two dates" },
@@ -638,7 +642,10 @@ export default function Upload() {
     const totalImages = files.filter(f => /\.(jpg|jpeg|png|tif|tiff)$/i.test(f.name)).length;
 
     // ── Check if submit button should be enabled ──
-    const canSubmit = (analysisType === "pothole" || analysisType === "buildings")
+    // These three run inside their own panel, which has its own Run button and
+    // its own file list. The page-level submit would have nothing to submit.
+    const canSubmit = (analysisType === "pothole" || analysisType === "buildings"
+                       || analysisType === "landcover")
         ? false
         : isCdType(analysisType)
             ? (cdPastFile && cdPresentFile && !processing)
@@ -656,6 +663,7 @@ export default function Upload() {
                     <span className="mono rounded-[4px] border border-[var(--line)] bg-[var(--surface-2)] px-1.5 py-[2px] text-[10px] text-[var(--text-dim)]">SegFormer-B5</span>
                     <span className="mono rounded-[4px] border border-[var(--line)] bg-[var(--surface-2)] px-1.5 py-[2px] text-[10px] text-[var(--text-dim)]">SAM2</span>
                     <span className="mono rounded-[4px] border border-[var(--line)] bg-[var(--surface-2)] px-1.5 py-[2px] text-[10px] text-[var(--text-dim)]">HiSup</span>
+                    <span className="mono rounded-[4px] border border-[var(--line)] bg-[var(--surface-2)] px-1.5 py-[2px] text-[10px] text-[var(--text-dim)]">DINOv3</span>
                     <span className="mono rounded-[4px] border border-[var(--line)] bg-[var(--surface-2)] px-1.5 py-[2px] text-[10px] text-[var(--text-dim)]">≤ 500 MB</span>
                 </div>
             </div>
@@ -669,6 +677,8 @@ export default function Upload() {
                         <PotholePanel />
                     ) : analysisType === "buildings" ? (
                         <BuildingsPanel />
+                    ) : analysisType === "landcover" ? (
+                        <LandCoverPanel />
                     ) : isCdType(analysisType) ? (
                         <div className="space-y-4" data-tour="cd-uploads">
                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -782,7 +792,7 @@ export default function Upload() {
                     )}
 
                     {/* File list (for non-change detection) */}
-                    {!isCdType(analysisType) && analysisType !== "pothole" && analysisType !== "buildings" && files.length > 0 && (
+                    {!isCdType(analysisType) && analysisType !== "pothole" && analysisType !== "buildings" && analysisType !== "landcover" && files.length > 0 && (
                         <div className="bg-[var(--surface)] rounded-[8px] border border-[var(--border-default)] p-4 shadow-sm">
                             <div className="flex items-center justify-between mb-3">
                                 <h3 className="text-sm font-semibold text-[var(--text-primary)]">Selected Files ({files.length})</h3>
@@ -1162,7 +1172,7 @@ export default function Upload() {
                         </div>
                     </div>
 
-                    {analysisType !== "pothole" && <button
+                    {analysisType !== "pothole" && analysisType !== "landcover" && <button
                         onClick={handleSubmit}
                         data-tour="run-btn"
                         disabled={!canSubmit}
@@ -1209,6 +1219,25 @@ export default function Upload() {
                             <p className="text-xs text-orange-400 font-medium">🔍 {ANALYSIS_TYPES.find(a => a.id === analysisType)?.label}</p>
                             <p className="text-xs text-[var(--text-muted)] leading-relaxed">
                                 Upload two images of the same area from different dates (PAST + PRESENT). SegFormer-B5 segments both; changes are found by {analysisType === "change" ? "instance-level footprint matching (accurate new/demolished buildings)" : analysisType === "vegetation" ? "comparing green-cover masks (gain / loss)" : "comparing water-body masks (encroachment / expansion)"}.
+                            </p>
+                        </div>
+                    ) : analysisType === "landcover" ? (
+                        <div className="bg-[var(--surface)] border border-[var(--line)] rounded-[8px] p-4 space-y-2.5">
+                            <p className="panel-title">Land-use classification</p>
+                            <p className="text-xs text-[var(--text-muted)] leading-relaxed">
+                                A frozen DINOv3 ViT-L/16, pretrained on satellite imagery, with a UPerNet head over
+                                four of its encoder layers. It labels every pixel as one of nine land-cover classes,
+                                so you get the land-use breakdown of a whole frame rather than one class of object.
+                            </p>
+                            <p className="text-[11px] text-[var(--text-muted)] leading-relaxed">
+                                Scored at <strong className="text-[var(--text-secondary)]">building IoU 0.77</strong> against
+                                2,146 hand-drawn polygons over 1 km² of Ongole. Upload a GeoTIFF and the areas come back
+                                in hectares; a plain JPG or PNG carries no ground resolution, so the server asks for one
+                                rather than guessing.
+                            </p>
+                            <p className="text-[11px] text-[var(--text-muted)] leading-relaxed">
+                                To run it over a drawn area of the city instead of an upload, use
+                                <strong className="text-[var(--text-secondary)]"> Land cover (9 class)</strong> on the Mapping page.
                             </p>
                         </div>
                     ) : analysisType === "pothole" ? (

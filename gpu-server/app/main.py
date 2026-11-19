@@ -10,6 +10,8 @@ the webapp can use this box first and fall back to Hugging Face when it is down:
   POST /change-detection              two-date change                     (form: past, present, mode)
   GET  /r2/presign  · POST /predict-url · /predict-fusion-url · /change-detection-url · /r2/delete
   GET  /pothole/health · POST /pothole/detect      YOLO road damage      (form: file, mode, conf)
+  GET  /landcover/health · /landcover/legend · POST /landcover/predict
+                                       DINOv3 + UPerNet, 9-class land cover  (form: file, gsd)
 
 Server-only (heavy imagery pipeline):
   GET  /imagery                        catalog (drone / satellite COGs)
@@ -47,11 +49,13 @@ os.environ.setdefault("POTHOLE_WEIGHTS", str(config.WEIGHTS / "final_best.pt"))
 import pothole  # noqa: E402  (reads POTHOLE_WEIGHTS at import)
 import buildings  # noqa: E402  (HiSup delineation; loads weights lazily)
 import roadnet  # noqa: E402  (DINOv3 road extraction; loads weights lazily)
+import landcover  # noqa: E402  (DINOv3 + UPerNet 9-class land cover; loads weights lazily)
 import height  # noqa: E402  (thin client for the DSM laptop; no local data)
 
 pothole._lock = gpu.GPU_LOCK      # one GPU queue for every model
 buildings._lock = gpu.GPU_LOCK
 roadnet._lock = gpu.GPU_LOCK
+landcover._lock = gpu.GPU_LOCK
 
 
 def _road_mask_for_pothole(rgb):
@@ -71,6 +75,7 @@ app.include_router(pothole.router)
 app.include_router(buildings.router)
 app.include_router(buildings.area_router)
 app.include_router(roadnet.router)
+app.include_router(landcover.router)
 app.include_router(height.router)
 
 print(f"[startup] device={seg.DEVICE} batch={seg.SEG_BATCH} fp16={seg.SEG_FP16} max_dim={seg.MAX_DIM} "
@@ -149,7 +154,11 @@ def health():
         "classes": seg.CLASS_NAMES, "weights": seg.LOAD_INFO, "r2": bool(R2_ACCOUNT and R2_KEY),
         "max_dim": seg.MAX_DIM,
         "capabilities": ["predict", "predict-fusion", "change-detection", "pothole",
-                         "hisup", "roadnet", "imagery", "jobs"],
+                         "hisup", "roadnet", "landcover", "imagery", "jobs"],
+        "landcover": {"present": os.path.exists(landcover.WEIGHTS),
+                      "weights": os.path.basename(landcover.WEIGHTS),
+                      "loaded": landcover.LOAD_INFO.get("loaded", False),
+                      "classes": landcover.CLASSES},
         "hisup": {"present": os.path.exists(buildings.WEIGHTS),
                   "weights": os.path.basename(buildings.WEIGHTS),
                   "loaded": buildings.LOAD_INFO.get("loaded", False)},
@@ -535,6 +544,17 @@ def result_layer(jid: str, layer: str, bbox: str = Query(None), limit: int = Que
 
 CLASS_COLORMAP = {0: (0, 0, 0, 0), 1: (239, 68, 68, 190), 2: (234, 179, 8, 210), 3: (59, 130, 246, 190), 4: (156, 163, 175, 160)}
 
+# Both tasks write a file called classes.tif, and they do NOT share a legend:
+# SegFormer's 5 classes and the land-cover model's 9 index entirely different
+# things. Colouring one with the other's table is silent — the tiles render,
+# they are simply wrong — so the table is chosen by the job's task rather than
+# being a single global.
+TASK_COLORMAPS = {"landcover": landcover.COLORMAP}
+
+
+def _colormap_for(job):
+    return TASK_COLORMAPS.get(job.get("task"), CLASS_COLORMAP)
+
 
 @app.get("/results/{jid}/classes/{z}/{x}/{y}.png")
 def result_class_tile(jid: str, z: int, x: int, y: int):
@@ -542,7 +562,48 @@ def result_class_tile(jid: str, z: int, x: int, y: int):
     p = os.path.join(j["result_dir"], "classes.tif")
     if not os.path.isfile(p):
         raise HTTPException(404, "no class map for this job")
-    data = imagery.tile(p, z, x, y, colormap=CLASS_COLORMAP)
+    data = imagery.tile(p, z, x, y, colormap=_colormap_for(j))
     if data is None:
         return Response(status_code=204)
     return Response(data, media_type="image/png", headers={"Cache-Control": "public, max-age=3600"})
+
+
+@app.get("/results/{jid}/classes.tif")
+def result_classes_tif(jid: str):
+    """The job's class raster itself, for QGIS.
+
+    It carries its own colour table, so it opens already styled rather than as
+    a grey 0-8 ramp that has to be classified by hand every time.
+    """
+    j = _done_job(jid)
+    p = os.path.join(j["result_dir"], "classes.tif")
+    if not os.path.isfile(p):
+        raise HTTPException(404, "no class map for this job")
+    return FileResponse(p, filename=f"{jid}_classes.tif", media_type="image/tiff")
+
+
+@app.get("/results/{jid}/legend")
+def result_legend(jid: str):
+    """The key for this job's class tiles, in the tiles' own colours.
+
+    The map asks for this instead of hard-coding a legend, so a palette change
+    on the server cannot leave the webapp drawing a key that disagrees with
+    the pixels underneath it.
+    """
+    j = _done_job(jid)
+    task = j.get("task")
+    if task == "landcover":
+        import json as _json
+        stats = j.get("stats")
+        if isinstance(stats, str):
+            try:
+                stats = _json.loads(stats)
+            except ValueError:
+                stats = None
+        counts = (stats or {}).get("class_pixels")
+        px_area = (stats or {}).get("px_area_m2")
+        return {"task": task, "classes": landcover.legend(counts, px_area_m2=px_area)}
+    return {"task": task,
+            "classes": [{"id": i, "name": n, "color": "#%02x%02x%02x" % CLASS_COLORMAP[i][:3],
+                         "alpha": CLASS_COLORMAP[i][3]}
+                        for i, n in sorted(seg.CLASS_NAMES.items()) if i in CLASS_COLORMAP]}

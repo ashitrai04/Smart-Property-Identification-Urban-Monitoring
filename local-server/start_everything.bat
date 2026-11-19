@@ -4,7 +4,8 @@ rem  Urbanly - one command, everything the webapp needs.
 rem
 rem    1. Ollama              answers the "Ask the survey" chat box
 rem    2. Qwen2.5-VL warm     so the first question is not the slow one
-rem    3. GPU model server    SegFormer, pothole, HiSup buildings
+rem    3. GPU model server    SegFormer, pothole, HiSup buildings, roads,
+rem                           9-class land cover
 rem    4. Data server         imagery, layers, /ask, + public tunnel
 rem
 rem  The data server is last and runs in the foreground: Ctrl+C here stops
@@ -186,6 +187,11 @@ rem so this reports the weight FILE on disk. A missing one shows up
 rem here, in a console someone is looking at, rather than as a 503 the first
 rem time it is picked on the map.
 for /f "delims=" %%r in ('curl -s -m 5 http://127.0.0.1:8800/roadnet/health') do echo       roads: %%r
+rem Land cover, same story as roads: lazy load, so this reports the FILE. It is
+rem a 1.28 GB DINOv3 ViT-L checkpoint that lives in gpu-server\weights\landcover
+rem and is gitignored, so on a fresh machine it is the one thing that has to be
+rem copied by hand - and this line is where you find that out.
+for /f "delims=" %%r in ('curl -s -m 5 http://127.0.0.1:8800/landcover/health') do echo       landcover: %%r
 if not "%HEIGHT_SERVER%"=="" (
     for /f "delims=" %%r in ('curl -s -m 8 http://127.0.0.1:8800/height/health') do echo       height: %%r
 )
