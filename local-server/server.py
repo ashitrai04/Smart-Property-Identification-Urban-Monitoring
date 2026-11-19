@@ -50,8 +50,8 @@ GPU_SERVER = os.environ.get("GPU_SERVER_URL", "http://127.0.0.1:8800").rstrip("/
 # This tuple is documentation. What actually routes a request to the model
 # server is the explicit @app.api_route list further down - adding a prefix
 # here and nowhere else gets a 404, which is exactly what happened to /height.
-GPU_PREFIXES = ("/hisup/", "/roadnet/", "/area", "/pothole/", "/predict",
-                "/change-detection", "/r2/", "/height")
+GPU_PREFIXES = ("/hisup/", "/roadnet/", "/landcover/", "/area", "/pothole/",
+                "/predict", "/change-detection", "/r2/", "/height")
 # A four-resolution pass over a large image is minutes, not seconds.
 GPU_TIMEOUT = float(os.environ.get("GPU_PROXY_TIMEOUT", "900"))
 
@@ -569,7 +569,28 @@ async def _proxy(request, path):
 # the DSM and DTM. Only this server is reachable from the webapp, so without a
 # route here the height calls 404 before they ever leave this process.
 @app.api_route("/height/{rest:path}", methods=["GET", "POST", "OPTIONS"])
+# Land cover: /landcover/health and /legend feed the map's key, and
+# /landcover/predict is the Analysis page. Exactly the /height story repeated -
+# the prefix was in GPU_PREFIXES but there was no route here, so every call
+# 404'd in this process and the webapp concluded the model did not exist.
+@app.api_route("/landcover/{rest:path}", methods=["GET", "POST", "OPTIONS"])
 async def _proxy_prefixed(request: Request, rest: str = ""):
+    return await _proxy(request, request.url.path)
+
+
+# A model job's raster outputs. These must be proxied, NOT answered here: the
+# /results handlers below serve this server's own GPKG store, keyed by its own
+# scanned job ids, so a model-server job id finds nothing and returns 404. That
+# is why a land-cover run that produced a perfectly good classes.tif drew
+# nothing on the map - the tiles were never reachable from the browser.
+#
+# Registered before the local /results routes, and narrow on purpose: only the
+# paths the model server owns. /results/{jid}/{layer}.geojson and
+# /results/{jid}/download stay local.
+@app.api_route("/results/{jid}/classes/{z}/{x}/{y}.png", methods=["GET", "OPTIONS"])
+@app.api_route("/results/{jid}/classes.tif", methods=["GET", "OPTIONS"])
+@app.api_route("/results/{jid}/legend", methods=["GET", "OPTIONS"])
+async def _proxy_results(request: Request, jid: str = "", z: str = "", x: str = "", y: str = ""):
     return await _proxy(request, request.url.path)
 
 

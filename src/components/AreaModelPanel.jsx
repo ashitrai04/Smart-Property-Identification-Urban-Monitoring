@@ -1028,7 +1028,20 @@ export default function AreaModelPanel({ map, aoiFeatures }) {
                 </div>
             )}
 
-            {done && count === 0 && !handoff && (
+            {/* Land cover has no features by design - it is a raster, so `count`
+                is always 0 and this said "nothing was found" over a perfectly
+                good class map. Only claim nothing was found when there is also
+                no raster result. */}
+            {/* Raster drawn but the key did not arrive: say so rather than
+                leaving the panel silent, because the overlay IS on the map. */}
+            {done && isLand && !lcLegend && (
+                <p className="text-[10px]" style={{ color: "var(--text-dim)" }}>
+                    Class map drawn on the map. The legend could not be loaded —
+                    check that the data server proxies /results/&#123;job&#125;/legend.
+                </p>
+            )}
+
+            {done && count === 0 && !handoff && !lcLegend && !isLand && (
                 <p className="text-[10px]" style={{ color: "var(--text-dim)" }}>
                     Finished, but nothing was found in that area.
                 </p>
