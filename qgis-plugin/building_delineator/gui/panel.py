@@ -18,7 +18,7 @@ import random
 from qgis.core import (QgsApplication, QgsCoordinateReferenceSystem, QgsCoordinateTransform,
                        QgsFeature, QgsField, QgsFillSymbol, QgsGeometry, QgsPointXY,
                        QgsLineSymbol, QgsProject, QgsVectorLayer)
-from qgis.core import QgsWkbTypes
+from qgis.core import QgsRasterLayer, QgsWkbTypes
 from qgis.gui import QgsRubberBand
 from qgis.PyQt.QtCore import Qt, QTimer
 from qgis.PyQt.QtGui import QColor, QIcon
@@ -47,6 +47,13 @@ SETTLE_MS = 700
 # The retired names stay here so a job queued under them is still shown
 # with road controls rather than building ones.
 ROAD_TASKS = ("roadnet", "roadnet_v2", "roadnet_param")
+
+# Tasks whose result is a raster, not vectors. Land cover classifies every
+# pixel into one of nine classes, so there is nothing to stream and nothing to
+# count - asking "how many buildings" of it is meaningless. The class GeoTIFF
+# is pulled at the end and added as a raster layer; it carries its own colour
+# table, so QGIS styles it without help.
+RASTER_TASKS = ("landcover",)
 
 # The road regularizer's modes, measured against the project's own labels.
 ROAD_REG = [("Smooth — follow the road edge (F1 0.786)", "smooth"),
@@ -249,7 +256,12 @@ class DelineatorPanel(QWidget):
     def _is_road(self):
         return (self.model.currentData() or "") in ROAD_TASKS
 
+    def _is_raster(self):
+        return (self.model.currentData() or "") in RASTER_TASKS
+
     def _noun(self):
+        if self._is_raster():
+            return "class map"
         return "roads" if self._is_road() else "buildings"
 
     def _model_changed(self):
@@ -261,18 +273,24 @@ class DelineatorPanel(QWidget):
         something, and it does not.
         """
         road = self._is_road()
+        raster = self._is_raster()
+        # Land cover reads none of the building controls, and the working
+        # resolution one is worse than useless there: it is sent as a floor the
+        # server may not coarsen, which is what made large AOIs fail. Hiding it
+        # and sending nothing lets the job size itself.
         for w in (self.quality, self.regularize, self.core, self.gsd):
-            w.setVisible(not road)
+            show = not road and not raster
+            w.setVisible(show)
             lbl = self._rows.labelForField(w)
             if lbl is not None:
-                lbl.setVisible(not road)
+                lbl.setVisible(show)
         self.road_reg.setVisible(road)
         lbl = self._rows.labelForField(self.road_reg)
         if lbl is not None:
             lbl.setVisible(road)
-        # Heights come from a DSM of rooftops; a road has none.
+        # Heights come from a DSM of rooftops; a road or a class map has none.
         if hasattr(self, "btn_height"):
-            self.btn_height.setVisible(not road)
+            self.btn_height.setVisible(not road and not raster)
         if self.layer is None:
             self.count.setText(f"0 {self._noun()}")
 
@@ -401,7 +419,15 @@ class DelineatorPanel(QWidget):
         # QGIS and the server share a machine.
         url = client.resolve(self.server.currentText())
         self.resolved = url
-        if self._is_road():
+        if self._is_raster():
+            # Nothing from the building controls applies, and work_gsd_m in
+            # particular must NOT be sent: the server treats an explicit value
+            # as a floor it may not coarsen, so passing this panel's 0.125 m
+            # made every AOI over ~0.2 km2 fail with "82 megapixels ... needs
+            # 1814 MB". Left unset, the job picks a resolution that fits and
+            # says in its message when it had to coarsen.
+            params = {}
+        elif self._is_road():
             mode = ROAD_REG[self.road_reg.currentIndex()][1]
             params = {"reg_mode": mode, "regularize": mode != "none"}
         else:
@@ -520,12 +546,60 @@ class DelineatorPanel(QWidget):
             self._log(f"{len(made)} {name.replace('_', ' ')}")
         return total
 
+    def _load_classes(self):
+        """Pull a finished land-cover job's class raster and add it to the map.
+
+        The GeoTIFF has its own colour table, so QGIS renders the nine classes
+        straight away. The legend call is best-effort: if it fails the raster
+        is still on the map, which is the part that matters.
+        """
+        import tempfile
+        if not self.job_id:
+            return 0
+        dest = os.path.join(tempfile.gettempdir(), "landcover_%s.tif" % self.job_id)
+        try:
+            client.download_classes(self.job_id, dest, server=self.resolved)
+        except Exception as e:
+            self._log("Could not fetch the class raster: %s" % str(e)[:140])
+            return 0
+        lyr = QgsRasterLayer(dest, "Land cover — %s" % self.job_id[:12])
+        if not lyr.isValid():
+            self._log("QGIS could not open %s" % dest)
+            return 0
+        QgsProject.instance().addMapLayer(lyr)
+        self.result_layers.append(lyr)
+        try:
+            rows = (client.result_legend(self.job_id, server=self.resolved) or {}).get("classes", [])
+            rows = [r for r in rows if r.get("name") != "unknown" and (r.get("percent") or 0) > 0.05]
+            rows.sort(key=lambda r: -(r.get("percent") or 0))
+            for r in rows:
+                ha = r.get("area_ha")
+                self._log("   %-12s %5.1f%%%s" % (r.get("name"), r.get("percent") or 0,
+                                                  ("  %.1f ha" % ha) if ha else ""))
+        except Exception:
+            pass
+        return 1
+
     def _done(self):
         self.bar.setVisible(False)
         self.btn_run.setVisible(True)
         self.btn_stop.setVisible(False)
         self.settle_timer.stop()
         self._settle(force=True)
+        if self._is_raster():
+            # No features by design; the result is the class raster.
+            n = self._load_classes()
+            if self.layer is not None and self.layer.featureCount() == 0:
+                QgsProject.instance().removeMapLayer(self.layer.id())
+                self.layer = None
+            self.btn_export.setEnabled(False)
+            self.count.setText("class map" if n else "no result")
+            self._log("Finished — class raster added to the map." if n
+                      else "Finished, but the class raster could not be loaded.")
+            if hasattr(self, "btn_height"):
+                self.btn_height.setEnabled(False)
+            self.task = None
+            return
         n = self.layer.featureCount() if self.layer else 0
         if n == 0:
             # Nothing streamed. Either the task publishes only at the end - the

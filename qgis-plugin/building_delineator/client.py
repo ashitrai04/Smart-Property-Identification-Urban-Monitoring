@@ -193,6 +193,27 @@ def area_result(jid, server=DEFAULT_SERVER):
     return _request(server, f"/area/{jid}/result.geojson", timeout=TIMEOUT)
 
 
+def download_classes(jid, dest, server=DEFAULT_SERVER, timeout=TIMEOUT):
+    """Fetch a land-cover job's class raster to `dest`.
+
+    Bytes, not JSON, so it cannot go through _request. The GeoTIFF carries its
+    own colour table, which is the point of pulling it rather than the tiles:
+    QGIS opens it already styled as the nine OpenEarthMap classes instead of a
+    grey 0-8 ramp someone has to classify by hand.
+    """
+    import shutil
+    url = _url(server, "/results/%s/classes.tif" % jid)
+    req = urllib.request.Request(url, headers={"accept": "image/tiff"})
+    with urllib.request.urlopen(req, timeout=timeout) as resp, open(dest, "wb") as fh:
+        shutil.copyfileobj(resp, fh)
+    return dest
+
+
+def result_legend(jid, server=DEFAULT_SERVER, timeout=30):
+    """The class key and each class's share of the drawn area."""
+    return _request(server, "/results/%s/legend" % jid, timeout=timeout)
+
+
 def height_health(server=DEFAULT_SERVER, timeout=8):
     """Is a DSM laptop reachable? Its absence is normal, not an error."""
     return _request(server, "/height/health", timeout=timeout)
