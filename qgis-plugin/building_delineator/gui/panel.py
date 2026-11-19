@@ -18,7 +18,7 @@ import random
 from qgis.core import (QgsApplication, QgsCoordinateReferenceSystem, QgsCoordinateTransform,
                        QgsFeature, QgsField, QgsFillSymbol, QgsGeometry, QgsPointXY,
                        QgsLineSymbol, QgsProject, QgsVectorLayer)
-from qgis.core import QgsRasterLayer, QgsWkbTypes
+from qgis.core import Qgis, QgsMessageLog, QgsRasterLayer, QgsWkbTypes
 from qgis.gui import QgsRubberBand
 from qgis.PyQt.QtCore import Qt, QTimer
 from qgis.PyQt.QtGui import QColor, QIcon
@@ -271,8 +271,6 @@ class DelineatorPanel(QWidget):
         return (self.model.currentData() or "") in RASTER_TASKS
 
     def _noun(self):
-        chosen_img = self.imagery.currentData() if hasattr(self, "imagery") else None
-
         if self._is_raster():
             return "class map"
         return "roads" if self._is_road() else "buildings"
@@ -505,25 +503,59 @@ class DelineatorPanel(QWidget):
         self.btn_stop.setVisible(True)
 
         self.job_id = None
-        if chosen_img:
-            params["imagery_id"] = chosen_img
-            self._log("Imagery: %s" % self.imagery.currentText())
 
-        self.task = AreaJobTask(url, self.model.currentData(), self._aoi_geojson(), params)
-        self.task.started_job.connect(self._job_started)
-        self.task.found.connect(self._add_buildings)
-        self.task.note.connect(self._log)
-        self.task.failed.connect(self._failed)
-        self.task.progressChanged.connect(lambda p: self.bar.setValue(int(p)))
-        self.task.taskCompleted.connect(self._done)
-        self.task.taskTerminated.connect(self._done)
-        self.settle_timer.start()
-        QgsApplication.taskManager().addTask(self.task)
+        # Everything from here to addTask runs AFTER the panel has switched
+        # itself into the running state, so anything that raises in between
+        # leaves a progress bar, a live Stop button and no task behind it -
+        # a panel that looks busy forever and a Stop that cannot work, because
+        # self.task is still None. That is exactly what a NameError in this
+        # block did. The job never started; the panel only looked like it had.
+        try:
+            # Which raster to run on. Blank means "let the server choose",
+            # which is the finest one covering the area - the behaviour
+            # before this control existed.
+            chosen_img = self.imagery.currentData() if hasattr(self, "imagery") else None
+            if chosen_img:
+                params["imagery_id"] = chosen_img
+                self._log("Imagery: %s" % self.imagery.currentText())
+
+            self.task = AreaJobTask(url, self.model.currentData(),
+                                    self._aoi_geojson(), params)
+            self.task.started_job.connect(self._job_started)
+            self.task.found.connect(self._add_buildings)
+            self.task.note.connect(self._log)
+            self.task.failed.connect(self._failed)
+            self.task.progressChanged.connect(lambda p: self.bar.setValue(int(p)))
+            self.task.taskCompleted.connect(self._done)
+            self.task.taskTerminated.connect(self._done)
+            self.settle_timer.start()
+            QgsApplication.taskManager().addTask(self.task)
+        except Exception as e:
+            import traceback
+            self._reset_run_ui()
+            self._log("Could not start the job: %s" % e)
+            QgsMessageLog.logMessage(traceback.format_exc(), "Building Delineator",
+                                     Qgis.Critical)
+            QMessageBox.warning(self, "Could not start", str(e))
+
+    def _reset_run_ui(self):
+        """Put the panel back to idle. Safe to call twice."""
+        self.settle_timer.stop()
+        self.bar.setVisible(False)
+        self.btn_run.setVisible(True)
+        self.btn_stop.setVisible(False)
+        self.task = None
 
     def stop(self):
         if self.task:
             self.task.cancel()
             self._log("Stopping…")
+            return
+        # No task: the panel is wedged in the running state rather than
+        # actually running something. Give the operator their buttons back
+        # instead of a Stop that does nothing.
+        self._reset_run_ui()
+        self._log("Nothing was running — panel reset.")
 
     def _job_started(self, jid):
         self.job_id = jid
