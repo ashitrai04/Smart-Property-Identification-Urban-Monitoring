@@ -174,6 +174,29 @@ def predict_file(path, server=DEFAULT_SERVER, gsd=None, timeout=TIMEOUT):
                     timeout=timeout, headers={"Content-Type": ctype})
 
 
+def landcover_predict(path, server=DEFAULT_SERVER, gsd=None, preview_max=0,
+                      want_overlay=False, timeout=TIMEOUT):
+    """Classify one image the server has never seen.
+
+    This is the path for a raster that is open in QGIS but not ingested: the
+    AOI is clipped locally and posted here, rather than the server streaming
+    it out of its own catalogue. The class map comes back as a base64 PNG in
+    the upload's own pixel grid, so the caller can georeference it with the
+    clip's transform.
+
+    preview_max=0 suppresses the RGB overlay, which is only a picture and
+    would otherwise be tens of megabytes of base64 for nothing.
+    """
+    fields = {"want_overlay": "true" if want_overlay else "false"}
+    if gsd:
+        fields["gsd"] = str(gsd)
+    if preview_max:
+        fields["preview_max"] = str(int(preview_max))
+    body, ctype = _multipart(fields, {"file": path})
+    return _request(server, "/landcover/predict", data=body, method="POST",
+                    timeout=timeout, headers={"Content-Type": ctype})
+
+
 def start_area(aoi_geojson, task="hisup", server=DEFAULT_SERVER, **params):
     payload = {"task": task, "aoi": aoi_geojson}
     payload.update({k: v for k, v in params.items() if v not in (None, "", [])})

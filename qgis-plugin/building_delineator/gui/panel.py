@@ -11,6 +11,7 @@ indistinguishable from one that has hung. Each building arrives as the
 detector drew it and is replaced by its regularized outline a moment later,
 which are the two stages the pipeline really has.
 """
+import base64
 import json
 import os
 import random
@@ -338,6 +339,166 @@ class DelineatorPanel(QWidget):
         self.server_note.setStyleSheet("color: #15803d;")
 
     # ── area ────────────────────────────────────────────────────
+    def _run_on_qgis_layer(self, layer_id, url):
+        """Classify the AOI out of a QGIS layer the server does not have.
+
+        Everything here is GDAL and Qt, deliberately: QGIS ships those, and
+        the plugin has no third-party dependencies to lean on. The clip is
+        written as a plain GeoTIFF, posted to /landcover/predict, and the
+        class map that comes back - in the clip's own pixel grid - is given
+        the clip's geotransform, so it lands exactly where it came from.
+
+        Only land cover takes this path. The other models answer with vectors
+        from a server-side job and have no equivalent upload endpoint.
+        """
+        import tempfile
+        from osgeo import gdal, osr
+
+        lyr = QgsProject.instance().mapLayer(layer_id)
+        if lyr is None:
+            self._reset_run_ui()
+            self._log("That QGIS layer is gone.")
+            return
+        if not self._is_raster():
+            self._reset_run_ui()
+            QMessageBox.information(
+                self, "Not supported for this model",
+                "Running on a QGIS layer is implemented for Land cover only. "
+                "For the other models, pick a Server entry, or ingest the "
+                "raster so it joins the server's catalogue.")
+            return
+
+        src = lyr.source().split("|")[0]
+        geom = self._aoi_geojson()
+        if not geom:
+            self._reset_run_ui()
+            self._log("Draw an area first.")
+            return
+
+        # The AOI is in EPSG:4326; the file is in its own CRS.
+        ring = geom["geometry"]["coordinates"][0]
+        wgs = QgsCoordinateReferenceSystem("EPSG:4326")
+        tr = QgsCoordinateTransform(wgs, lyr.crs(), QgsProject.instance())
+        xs, ys = [], []
+        for x, y in ring:
+            pt = tr.transform(QgsPointXY(float(x), float(y)))
+            xs.append(pt.x()); ys.append(pt.y())
+        ulx, uly, lrx, lry = min(xs), max(ys), max(xs), min(ys)
+
+        px = lyr.rasterUnitsPerPixelX() or 0.0
+        wpx = int(abs(lrx - ulx) / px) if px else 0
+        hpx = int(abs(uly - lry) / px) if px else 0
+        self._log("Clipping %s — %d x %d px at %.2f m" % (lyr.name(), wpx, hpx, px))
+
+        # The predict endpoint refuses anything over 8192 px a side, and a
+        # whole-scene clip would be far over. Downsample the clip rather than
+        # fail, and say so - the model works at ~0.2-0.3 m anyway.
+        opts = {"format": "GTiff", "projWin": [ulx, uly, lrx, lry],
+                "projWinSRS": lyr.crs().toWkt(), "bandList": [1, 2, 3],
+                "creationOptions": ["COMPRESS=DEFLATE"]}
+        cap = 8192
+        if wpx > cap or hpx > cap:
+            k = cap / float(max(wpx, hpx))
+            opts["width"] = max(1, int(wpx * k))
+            opts["height"] = max(1, int(hpx * k))
+            self._log("   too large for one request — resampled to %d x %d"
+                      % (opts["width"], opts["height"]))
+
+        clip = os.path.join(tempfile.gettempdir(), "urbanly_clip_%s.tif" % layer_id[:8])
+        try:
+            ds = gdal.Translate(clip, src, **opts)
+            if ds is None:
+                raise RuntimeError("GDAL could not clip that area out of the layer")
+            gt = ds.GetGeoTransform()
+            wkt = ds.GetProjection()
+            cw, ch = ds.RasterXSize, ds.RasterYSize
+            ds = None
+        except Exception as e:
+            self._reset_run_ui()
+            self._log("Clip failed: %s" % e)
+            return
+        self._log("   uploading %.1f MB…" % (os.path.getsize(clip) / 1e6))
+
+        try:
+            res = client.landcover_predict(clip, server=url, gsd=(px or None))
+        except Exception as e:
+            self._reset_run_ui()
+            self._log("The server refused the upload: %s" % str(e)[:200])
+            return
+
+        b64 = res.get("classes_png")
+        if not b64:
+            # An older server only returned the class map alongside the RGB
+            # overlay. Ask again the expensive way rather than fail: the
+            # overlay is wasted bytes here, but a result beats an error.
+            self._log("   server did not send a class map; retrying with overlay…")
+            try:
+                res = client.landcover_predict(clip, server=url, gsd=(px or None),
+                                               want_overlay=True, preview_max=256)
+            except Exception as e:
+                self._reset_run_ui()
+                self._log("Retry failed: %s" % str(e)[:200])
+                return
+            b64 = res.get("classes_png")
+        if not b64:
+            self._reset_run_ui()
+            self._log("The server returned no class map.")
+            return
+
+        png = os.path.splitext(clip)[0] + "_classes.png"
+        with open(png, "wb") as fh:
+            fh.write(base64.b64decode(b64))
+
+        # Give the class map the clip's geotransform. The model may have
+        # worked at a different size, so the pixel size is scaled by the
+        # ratio rather than copied - copying it is how a result ends up the
+        # right shape in the wrong place.
+        out_tif = os.path.splitext(clip)[0] + "_classes.tif"
+        png_ds = gdal.Open(png)
+        lw, lh = png_ds.RasterXSize, png_ds.RasterYSize
+        drv = gdal.GetDriverByName("GTiff")
+        dst = drv.Create(out_tif, lw, lh, 1, gdal.GDT_Byte, ["COMPRESS=DEFLATE"])
+        dst.SetGeoTransform((gt[0], gt[1] * cw / float(lw), gt[2],
+                             gt[3], gt[4], gt[5] * ch / float(lh)))
+        dst.SetProjection(wkt)
+        band = dst.GetRasterBand(1)
+        band.WriteArray(png_ds.GetRasterBand(1).ReadAsArray())
+        band.SetNoDataValue(0)
+        # Colours come from the legend the server just sent, not from a copy
+        # kept here. A second palette in the plugin is a second palette that
+        # can drift out of step with the pixels.
+        ct = gdal.ColorTable()
+        for r in (res.get("classes") or []):
+            h = (r.get("color") or "").lstrip("#")
+            if len(h) != 6:
+                continue
+            rgb = tuple(int(h[k:k + 2], 16) for k in (0, 2, 4))
+            ct.SetColorEntry(int(r.get("id", 0)),
+                             rgb + (int(r.get("alpha", 255)) if r.get("name") != "unknown" else 0,))
+        band.SetRasterColorTable(ct)
+        band = None; dst = None; png_ds = None
+
+        out = QgsRasterLayer(out_tif, "Land cover — %s" % lyr.name())
+        if not out.isValid():
+            self._reset_run_ui()
+            self._log("QGIS could not open %s" % out_tif)
+            return
+        QgsProject.instance().addMapLayer(out)
+        self.result_layers.append(out)
+        self.class_raster = out_tif
+        rows = [r for r in (res.get("classes") or [])
+                if r.get("name") != "unknown" and (r.get("percent") or 0) > 0.05]
+        rows.sort(key=lambda r: -(r.get("percent") or 0))
+        self.class_rows = rows
+        for r in rows:
+            ha = r.get("area_ha")
+            self._log("   %-12s %5.1f%%%s" % (r.get("name"), r.get("percent") or 0,
+                                              ("  %.1f ha" % ha) if ha else ""))
+        self._reset_run_ui()
+        self.btn_export.setEnabled(True)
+        self.count.setText("class map")
+        self._log("Finished — class raster from %s added to the map." % lyr.name())
+
     def _refresh_imagery(self, url):
         """Fill the Imagery box from the model server, keeping the selection.
 
@@ -355,13 +516,33 @@ class DelineatorPanel(QWidget):
         if not rows and self.imagery.count() > 1:
             return 0                    # keep what we have rather than empty it
         self.imagery.clear()
-        self.imagery.addItem("Auto — finest covering the area", None)
+        self.imagery.addItem("Auto — finest the server has over the area", None)
+
+        # Layers open in THIS QGIS project come first, because that is what an
+        # operator means by "the image I am looking at". They are not in the
+        # server's catalogue, so they cannot be run as an area job - the AOI is
+        # clipped out of the file here and uploaded instead. Only file-backed
+        # rasters qualify: a WMS or an in-memory layer has nothing to clip.
+        for lyr in QgsProject.instance().mapLayers().values():
+            if not isinstance(lyr, QgsRasterLayer) or not lyr.isValid():
+                continue
+            src = lyr.source().split("|")[0]
+            if not os.path.exists(src):
+                continue
+            try:
+                px = lyr.rasterUnitsPerPixelX()
+            except Exception:
+                px = 0
+            self.imagery.addItem(
+                "QGIS: %s%s" % (lyr.name(), (" — %.2f m" % px) if px else ""),
+                ("qgis", lyr.id()))
+
         for im in rows:
             gsd = im.get("gsd_m")
             self.imagery.addItem(
-                "%s — %s%s" % (im.get("name") or im.get("id"),
-                                im.get("kind") or "?",
-                                (", %.2f m" % gsd) if gsd else ""),
+                "Server: %s — %s%s" % (im.get("name") or im.get("id"),
+                                        im.get("kind") or "?",
+                                        (", %.2f m" % gsd) if gsd else ""),
                 im.get("id"))
         if want:
             i = self.imagery.findData(want)
@@ -536,6 +717,14 @@ class DelineatorPanel(QWidget):
                 # Check.
                 self._refresh_imagery(url)
             chosen_img = self.imagery.currentData() if hasattr(self, "imagery") else None
+
+            if isinstance(chosen_img, tuple) and chosen_img[0] == "qgis":
+                # A layer the server has never seen. Clip and upload instead
+                # of queuing an area job, which can only read the server's
+                # own catalogue.
+                self._run_on_qgis_layer(chosen_img[1], url)
+                return
+
             if chosen_img:
                 params["imagery_id"] = chosen_img
                 self._log("Imagery: %s" % self.imagery.currentText())

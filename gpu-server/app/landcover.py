@@ -441,22 +441,32 @@ async def predict(
         "classes": rows,
         "dominant": CLASSES[int(np.argmax(counts[1:]) + 1)] if counts[1:].sum() else "unknown",
     }
+    from PIL import Image
+
+    def _png64(arr, mode):
+        buf = io.BytesIO()
+        Image.fromarray(arr, mode=mode).save(buf, format="PNG", optimize=True)
+        return base64.b64encode(buf.getvalue()).decode("ascii")
+
+    # The class map is DATA and is always returned, never capped: a caller
+    # georeferences it with the upload's own transform, and resampling class
+    # ids with any interpolation would invent classes that were never
+    # predicted. It used to be gated behind want_overlay, which meant asking
+    # for no picture also threw away the answer - the QGIS plugin, which wants
+    # the raster and emphatically not 30 MB of base64 overlay, got nothing.
+    out["classes_png"] = _png64(lab, "L")
+    out["classes_size"] = [int(lab.shape[1]), int(lab.shape[0])]
+
     if want_overlay:
-        from PIL import Image
         ov = overlay(work, lab, alpha=float(np.clip(alpha, 0.0, 1.0)))
-        # The overlay is a picture to look at, so it is capped: a 5000 px square
-        # one is ~30 MB, and base64 of that in a browser tab is 40 MB of string
-        # for detail no screen shows. The class map is NOT capped — it is data
-        # that gets exported and georeferenced, and resampling class ids with
-        # anything would invent classes that were never predicted.
+        # The overlay IS only a picture, so it is capped: a 5000 px square one
+        # is ~30 MB, and base64 of that in a browser tab is 40 MB of string
+        # for detail no screen shows.
         cap = max(256, int(preview_max)) if preview_max else 0
         if cap and max(ov.shape[:2]) > cap:
-            s = cap / float(max(ov.shape[:2]))
-            ov = cv2.resize(ov, (max(1, int(ov.shape[1] * s)), max(1, int(ov.shape[0] * s))),
+            f2 = cap / float(max(ov.shape[:2]))
+            ov = cv2.resize(ov, (max(1, int(ov.shape[1] * f2)), max(1, int(ov.shape[0] * f2))),
                             interpolation=cv2.INTER_AREA)
-        for key, arr, mode in (("overlay_png", ov, "RGB"), ("classes_png", lab, "L")):
-            buf = io.BytesIO()
-            Image.fromarray(arr, mode=mode).save(buf, format="PNG", optimize=True)
-            out[key] = base64.b64encode(buf.getvalue()).decode("ascii")
+        out["overlay_png"] = _png64(ov, "RGB")
         out["overlay_size"] = [int(ov.shape[1]), int(ov.shape[0])]
     return out
