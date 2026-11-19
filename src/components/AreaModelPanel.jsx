@@ -189,12 +189,15 @@ export default function AreaModelPanel({ map, aoiFeatures }) {
     const [quality, setQuality] = useState("fast");
     const [roadReg, setRoadReg] = useState("smooth");
     const [saving, setSaving] = useState(false);
+    const [submitting, setSubmitting] = useState(false);
 
     const heightOkRef = useRef(false);
     const measuringRef = useRef(0);                   // batches still in flight
 
     const featsRef = useRef([]);          // every feature drawn so far
     const pollRef = useRef(null);
+    const submitRef = useRef(false);   // true between click and job id
+
     // The task the RUNNING job was started with, frozen at start rather than
     // following the select. The dropdown stays live while a job runs, so a
     // poll tick that read the current value would finish one model's job by
@@ -642,6 +645,16 @@ export default function AreaModelPanel({ map, aoiFeatures }) {
 
     const start = async () => {
         if (!hasAoi) return;
+        // Re-entry guard. `running` only becomes true once the POST comes back
+        // with a job id, two network round trips after the click, and the
+        // button stays live until then - so a second click in that window
+        // queued a second identical job. The history shows the damage: three
+        // jobs created in the same second, all classifying the same ground,
+        // competing for one 6 GB card. A ref, not state, because state would
+        // not have updated yet on the second click.
+        if (submitRef.current) return;
+        submitRef.current = true;
+        setSubmitting(true);
 
         // Stop the previous run's poll FIRST. It is otherwise cleared inside
         // poll(), which does not run until the new job exists - two network
@@ -693,6 +706,9 @@ export default function AreaModelPanel({ map, aoiFeatures }) {
             setErr(e.message === "GPU_OFFLINE"
                 ? "The GPU server is offline. Start it with start_everything.bat."
                 : e.message);
+        } finally {
+            submitRef.current = false;
+            setSubmitting(false);
         }
     };
 
@@ -840,8 +856,10 @@ export default function AreaModelPanel({ map, aoiFeatures }) {
                     Draw an area above first — the model runs inside it.
                 </p>
             ) : !running ? (
-                <Button variant="primary" className="w-full" onClick={start} disabled={!gpu.ok || !hasAoi}>
-                    <Play size={13} /> {done ? "Run again" : "Run on this area"}
+                <Button variant="primary" className="w-full" onClick={start}
+                        disabled={!gpu.ok || !hasAoi || submitting}>
+                    <Play size={13} /> {submitting ? "Starting…"
+                        : done ? "Run again" : "Run on this area"}
                 </Button>
             ) : (
                 <>

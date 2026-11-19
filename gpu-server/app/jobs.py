@@ -729,6 +729,11 @@ LANDCOVER_MIN_AREA_M2 = 20.0
 # megapixels; this one is in megabytes because nine channels is what makes it
 # bite, and the message can then name the remedy in the same units.
 LANDCOVER_MAX_MB = int(os.environ.get("LANDCOVER_JOB_MAX_MB", "900"))
+# Past this the job gives up instead of coarsening further. The backbone was
+# pretrained on 0.6 m imagery, so 1 m is already beyond where it earns its
+# keep; a request needing coarser than this wants a smaller AOI, not a worse
+# answer.
+LANDCOVER_MAX_GSD = float(os.environ.get("LANDCOVER_MAX_GSD", "1.0"))
 # How far inside the survey's nodata edge to stop trusting the answer. 16 px
 # is 3.2 m at the 0.20 m working grid - about the distance over which black
 # padding in the window still pulls the global-pooled context around.
@@ -774,44 +779,68 @@ def _run_landcover(job, img, out_dir):
         native = abs(src.transform.a)
         if not src.crs or not src.crs.is_projected:
             raise ValueError("this area tool needs a projected raster (metre CRS)")
-        target = float(params.get("work_gsd_m") or 0) or lc.WORK_GSD
-        # Only ever downsample: upsampling invents no detail and costs
-        # quadratically more windows for it.
-        scale = max(target / native, 1.0)
-        W, H = int(src.width / scale), int(src.height / scale)
-        T = src.transform * Affine.scale(scale)
-        gsd = abs(T.a)
-
         aoi = _aoi_in_crs(params.get("aoi"), src.crs)
         if aoi is not None and aoi.is_empty:
             raise ValueError("the drawn area is empty")
 
         win = int(params.get("window") or 1024)
         step = win - 2 * OVERLAP
-        cells = _aoi_cells(aoi, T, W, H, win, step)
-        if not cells:
-            raise ValueError("the drawn area does not overlap this imagery")
-
-        # The accumulator is the size of what was drawn, not of Ongole.
-        bx0 = min(c[0] for c in cells)
-        by0 = min(c[1] for c in cells)
-        bx1 = max(c[0] + c[2] for c in cells)
-        by1 = max(c[1] + c[3] for c in cells)
-        bw, bh = bx1 - bx0, by1 - by0
         ncls = len(lc.CLASSES)
+        asked = float(params.get("work_gsd_m") or 0) or lc.WORK_GSD
+        fixed_gsd = bool(params.get("work_gsd_m"))
 
-        # Nine channels, so the ceiling is nine times tighter than the road
-        # job's. Stated in megabytes because that is the real constraint, and
-        # refused up front with the remedy rather than discovered as a
-        # MemoryError twenty minutes into a run.
-        need_mb = bw * bh * (ncls * 2 + 4) / 1e6
+        # Work out the grid, and if the accumulator would not fit the memory
+        # budget, COARSEN rather than refuse.
+        #
+        # Refusing was the first version and it was wrong in practice: a drawn
+        # AOI is rarely axis-aligned, so its bounding box can be several times
+        # its own area - a 1.28 km^2 rotated rectangle came out as an 87
+        # megapixel box, 1.9 GB, and every such run failed outright. The
+        # operator sees "only small areas work" and has no idea why.
+        #
+        # Coarsening is sound here: this backbone was pretrained on 0.6 m
+        # imagery, and 0.20 m was chosen as the finest useful setting, not a
+        # required one - so dropping to 0.3 or 0.4 m on a big AOI costs little
+        # and is reported rather than done silently. An explicit work_gsd_m is
+        # honoured as a floor; only the automatic default gets coarsened.
+        target, note = asked, None
+        for _ in range(8):
+            scale = max(target / native, 1.0)
+            W, H = int(src.width / scale), int(src.height / scale)
+            T = src.transform * Affine.scale(scale)
+            gsd = abs(T.a)
+            cells = _aoi_cells(aoi, T, W, H, win, step)
+            if not cells:
+                raise ValueError("the drawn area does not overlap this imagery")
+            bx0 = min(c[0] for c in cells)
+            by0 = min(c[1] for c in cells)
+            bx1 = max(c[0] + c[2] for c in cells)
+            by1 = max(c[1] + c[3] for c in cells)
+            bw, bh = bx1 - bx0, by1 - by0
+            need_mb = bw * bh * (ncls * 2 + 4) / 1e6
+            if need_mb <= LANDCOVER_MAX_MB or fixed_gsd:
+                break
+            # sqrt because memory goes with area; 1.08 of slack so one pass is
+            # usually enough instead of creeping up on the budget.
+            target = target * math.sqrt(need_mb / LANDCOVER_MAX_MB) * 1.08
+            if target > LANDCOVER_MAX_GSD:
+                raise ValueError(
+                    f"that area needs a working resolution coarser than "
+                    f"{LANDCOVER_MAX_GSD:.2f} m/px to fit {LANDCOVER_MAX_MB} MB, "
+                    f"which is past the point where this model is useful. Draw a "
+                    f"smaller area.")
+            note = ("area too large at %.2f m/px - classified at %.2f m/px instead"
+                    % (asked, target))
+
         if need_mb > LANDCOVER_MAX_MB:
             raise ValueError(
                 f"that area is {bw * bh / 1e6:.0f} megapixels at {gsd:.2f} m/px, which "
-                f"needs {need_mb:.0f} MB to classify in one piece (the limit is "
-                f"{LANDCOVER_MAX_MB} MB). Draw a smaller area, or pass a coarser "
-                f"work_gsd_m - 0.4 instead of 0.2 covers four times the ground for "
-                f"the same memory.")
+                f"needs {need_mb:.0f} MB and the limit is {LANDCOVER_MAX_MB} MB. "
+                f"work_gsd_m was given explicitly so it was not coarsened - drop it "
+                f"to let the job pick a resolution that fits, or draw a smaller area.")
+        if note:
+            print("[landcover] " + note, flush=True)
+            db.update_job(job["id"], message=note)
 
         # float16: argmax is invariant to the shared scale factor, so the
         # accumulator never has to be normalised, and half precision costs
