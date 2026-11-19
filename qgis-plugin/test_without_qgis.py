@@ -420,8 +420,27 @@ def main():
         check("a dead URL is reported in plain words", dead_url)
 
         live = [t["id"] for t in client.tasks(server)]
-        check("the plugin's model list matches the server's",
-              lambda: _eq(live, [t[0] for t in alg._tasks]))
+        offered = [t[0] for t in alg._tasks]
+
+        # Subset, not equality. The Processing algorithm writes vector sinks,
+        # so a raster-only model like land cover deliberately does not appear
+        # there - offering it would hand back an empty sink, which is worse
+        # than not offering it. What must never happen is the reverse: the
+        # algorithm offering a model the server cannot run.
+        def offers_only_real_models():
+            missing = [t for t in offered if t not in live]
+            assert not missing, "algorithm offers models the server lacks: %s" % missing
+        check("every model the algorithm offers exists on the server",
+              offers_only_real_models)
+
+        def raster_models_are_panel_only():
+            raster_only = [t["id"] for t in client.tasks(server)
+                           if (t.get("kind") or "") == "raster"]
+            leaked = [t for t in raster_only if t in offered]
+            assert not leaked, ("raster-only models must stay out of the vector "
+                                "Processing algorithm: %s" % leaked)
+        check("raster-only models are not offered by the vector algorithm",
+              raster_models_are_panel_only)
 
     print()
     print(("FAILED: " + ", ".join(FAILS)) if FAILS else "all checks passed")
