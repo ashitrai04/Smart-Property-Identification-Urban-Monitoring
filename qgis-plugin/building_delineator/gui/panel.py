@@ -329,22 +329,7 @@ class DelineatorPanel(QWidget):
         for t in tasks:
             self.model.addItem(t["label"], t["id"])
 
-        # Imagery is a convenience, not a requirement: an older server has no
-        # /area/imagery and the job still runs with the server's own choice,
-        # so a failure here leaves just the Auto entry rather than an error.
-        self.imagery.clear()
-        self.imagery.addItem("Auto — finest covering the area", None)
-        try:
-            for im in client.imagery(url, timeout=10):
-                gsd = im.get("gsd_m")
-                self.imagery.addItem(
-                    "%s — %s%s" % (im.get("name") or im.get("id"),
-                                    im.get("kind") or "?",
-                                    (", %.2f m" % gsd) if gsd else ""),
-                    im.get("id"))
-        except Exception:
-            pass
-
+        self._refresh_imagery(url)
         self._model_changed()
         gpu = (h.get("gpu") or {}).get("name")
         where = f"\n{url}" if asked.lower() in ("", "auto") else ""
@@ -353,6 +338,37 @@ class DelineatorPanel(QWidget):
         self.server_note.setStyleSheet("color: #15803d;")
 
     # ── area ────────────────────────────────────────────────────
+    def _refresh_imagery(self, url):
+        """Fill the Imagery box from the model server, keeping the selection.
+
+        A convenience, not a requirement: a server without /area/imagery
+        leaves just the Auto entry and the job still runs with the server's
+        own choice. Separate from refresh_models so it can also be topped up
+        lazily - the route was added after some panels were already open, and
+        an operator should not have to know to press Check.
+        """
+        want = self.imagery.currentData() if self.imagery.count() else None
+        try:
+            rows = client.imagery(url, timeout=10)
+        except Exception:
+            rows = []
+        if not rows and self.imagery.count() > 1:
+            return 0                    # keep what we have rather than empty it
+        self.imagery.clear()
+        self.imagery.addItem("Auto — finest covering the area", None)
+        for im in rows:
+            gsd = im.get("gsd_m")
+            self.imagery.addItem(
+                "%s — %s%s" % (im.get("name") or im.get("id"),
+                                im.get("kind") or "?",
+                                (", %.2f m" % gsd) if gsd else ""),
+                im.get("id"))
+        if want:
+            i = self.imagery.findData(want)
+            if i >= 0:
+                self.imagery.setCurrentIndex(i)
+        return len(rows)
+
     def start_draw(self):
         self.prev_tool = self.canvas.mapTool()
         self.tool = DrawAOITool(self.canvas)
@@ -514,6 +530,11 @@ class DelineatorPanel(QWidget):
             # Which raster to run on. Blank means "let the server choose",
             # which is the finest one covering the area - the behaviour
             # before this control existed.
+            if hasattr(self, "imagery") and self.imagery.count() <= 1:
+                # The server may have gained /area/imagery since this panel
+                # loaded. One cheap GET beats telling the operator to press
+                # Check.
+                self._refresh_imagery(url)
             chosen_img = self.imagery.currentData() if hasattr(self, "imagery") else None
             if chosen_img:
                 params["imagery_id"] = chosen_img
