@@ -674,6 +674,42 @@ def area_tasks():
     return {"tasks": [dict(id=k, **v) for k, v in AREA_TASKS.items()]}
 
 
+@area_router.get("/imagery")
+def area_imagery():
+    """The rasters a job can be run on, so a client can offer a choice.
+
+    This duplicates /imagery on purpose. That route is NOT proxied by the data
+    server - both servers answer it from their own store and the data server's
+    answer is the right one for the map - but `imagery_id` has to be one of
+    THIS server's ids for _pick_imagery to find it. Living under /area, which
+    is proxied, is what makes the choice reachable from QGIS and the webapp.
+    Registered above /area/{jid} so "imagery" is not read as a job id.
+
+    Without this, every run silently takes the finest raster that intersects
+    the area - which with 3 cm drone cover means the satellite epochs can
+    never be selected at all, however much the operator wants to compare them.
+    """
+    import db
+    out = []
+    for row in db.list_imagery():
+        r = dict(row)
+        if r.get("status") != "ready":
+            continue
+        b = r.get("bounds")
+        if isinstance(b, str):
+            try:
+                b = json.loads(b)
+            except ValueError:
+                b = None
+        out.append({"id": r.get("id"), "name": r.get("name"),
+                    "kind": r.get("kind"), "gsd_m": r.get("gsd_m"),
+                    "bounds": b})
+    # Finest first: the same order _pick_imagery would choose in, so the top
+    # entry is what "auto" gives you.
+    out.sort(key=lambda r: (r.get("gsd_m") is None, r.get("gsd_m") or 9e9))
+    return {"imagery": out}
+
+
 @area_router.post("")
 @router.post("/area")
 async def area_start(payload: dict = Body(...)):

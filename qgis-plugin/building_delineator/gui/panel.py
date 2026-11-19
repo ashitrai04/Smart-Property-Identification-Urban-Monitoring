@@ -156,6 +156,17 @@ class DelineatorPanel(QWidget):
         self.model = QComboBox()
         f.addRow("Model", self.model)
 
+        # Which raster to run on. Without this the server silently takes the
+        # finest one that intersects the area, and with 3 cm drone cover that
+        # means a satellite epoch can never be chosen however much you want to
+        # compare against it.
+        self.imagery = QComboBox()
+        self.imagery.setToolTip(
+            "Which registered raster to run on. “Auto” takes the finest "
+            "one covering the area, which is what every run did before this "
+            "box existed.")
+        f.addRow("Imagery", self.imagery)
+
         self.quality = QComboBox()
         self.quality.addItems([q[0] for q in QUALITY])
         f.addRow("Quality", self.quality)
@@ -260,6 +271,8 @@ class DelineatorPanel(QWidget):
         return (self.model.currentData() or "") in RASTER_TASKS
 
     def _noun(self):
+        chosen_img = self.imagery.currentData() if hasattr(self, "imagery") else None
+
         if self._is_raster():
             return "class map"
         return "roads" if self._is_road() else "buildings"
@@ -317,6 +330,23 @@ class DelineatorPanel(QWidget):
             return
         for t in tasks:
             self.model.addItem(t["label"], t["id"])
+
+        # Imagery is a convenience, not a requirement: an older server has no
+        # /area/imagery and the job still runs with the server's own choice,
+        # so a failure here leaves just the Auto entry rather than an error.
+        self.imagery.clear()
+        self.imagery.addItem("Auto — finest covering the area", None)
+        try:
+            for im in client.imagery(url, timeout=10):
+                gsd = im.get("gsd_m")
+                self.imagery.addItem(
+                    "%s — %s%s" % (im.get("name") or im.get("id"),
+                                    im.get("kind") or "?",
+                                    (", %.2f m" % gsd) if gsd else ""),
+                    im.get("id"))
+        except Exception:
+            pass
+
         self._model_changed()
         gpu = (h.get("gpu") or {}).get("name")
         where = f"\n{url}" if asked.lower() in ("", "auto") else ""
@@ -475,6 +505,10 @@ class DelineatorPanel(QWidget):
         self.btn_stop.setVisible(True)
 
         self.job_id = None
+        if chosen_img:
+            params["imagery_id"] = chosen_img
+            self._log("Imagery: %s" % self.imagery.currentText())
+
         self.task = AreaJobTask(url, self.model.currentData(), self._aoi_geojson(), params)
         self.task.started_job.connect(self._job_started)
         self.task.found.connect(self._add_buildings)

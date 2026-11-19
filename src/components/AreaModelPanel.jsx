@@ -176,6 +176,8 @@ export default function AreaModelPanel({ map, aoiFeatures }) {
     const isRoad = task === "roadnet" || task === "roadnet_v2";
     const isLand = task === "landcover";
     const [lcLegend, setLcLegend] = useState(null);   // rows, with this run's shares
+    const [imagery, setImagery] = useState([]);      // rasters the server can run on
+    const [imageryId, setImageryId] = useState("");  // "" = let the server pick
     const [job, setJob] = useState(null);
     const [count, setCount] = useState(0);
     const [done, setDone] = useState(false);
@@ -219,6 +221,12 @@ export default function AreaModelPanel({ map, aoiFeatures }) {
             .then((r) => (r.ok ? r.json() : null))
             .then((d) => { if (!gone && d?.tasks?.length) setTasks(d.tasks); })
             .catch(() => { /* offline; the panel already says so */ });
+        // Which raster to run on. Optional: an older server has no
+        // /area/imagery, and the job still runs with the server's own choice.
+        gpuOnlyFetch("/area/imagery")
+            .then((r) => (r.ok ? r.json() : null))
+            .then((d) => { if (!gone && d?.imagery?.length) setImagery(d.imagery); })
+            .catch(() => { /* leave the Auto entry alone */ });
         return () => { gone = true; };
     }, [gpu.ok]);
 
@@ -690,6 +698,9 @@ export default function AreaModelPanel({ map, aoiFeatures }) {
                 method: "POST", headers: { "content-type": "application/json" },
                 body: JSON.stringify({
                     task, aoi,
+                    // Omitted entirely when blank, so the server keeps its own
+                    // rule: the finest raster that intersects the area.
+                    ...(imageryId ? { imagery_id: imageryId } : {}),
                     scales: q.scales, min_votes: q.votes,
                     // Only meaningful to the road model; the server hands each
                     // task the parameters it knows and ignores the rest.
@@ -815,6 +826,26 @@ export default function AreaModelPanel({ map, aoiFeatures }) {
                 {list.map((t) => <option key={t.id} value={t.id}>{t.label}</option>)}
             </select>
             {chosen?.note && <p className="text-[10px]" style={{ color: "var(--text-dim)" }}>{chosen.note}</p>}
+
+            {/* Which imagery. Hidden when the server offers only one, because a
+                choice of one is not a choice. "Auto" keeps the old behaviour:
+                the finest raster covering the area - which with 3 cm drone
+                cover means a satellite epoch could never be picked. */}
+            {imagery.length > 1 && (
+                <select value={imageryId} onChange={(e) => setImageryId(e.target.value)}
+                        disabled={running}
+                        className="w-full rounded-md px-2 py-1.5 text-[11px]"
+                        style={{ background: "var(--surface)", border: "1px solid var(--line)",
+                                 color: "var(--text-primary)" }}>
+                    <option value="">Imagery: auto — finest covering the area</option>
+                    {imagery.map((im) => (
+                        <option key={im.id} value={im.id}>
+                            {im.name || im.id} — {im.kind || "?"}
+                            {im.gsd_m ? `, ${Number(im.gsd_m).toFixed(2)} m` : ""}
+                        </option>
+                    ))}
+                </select>
+            )}
 
             {task === "hisup" && (
                 <>

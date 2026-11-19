@@ -153,6 +153,16 @@ def tasks(server=DEFAULT_SERVER, timeout=15):
     return _request(server, "/area/tasks", timeout=timeout).get("tasks", [])
 
 
+def imagery(server=DEFAULT_SERVER, timeout=15):
+    """Rasters the model server can run a job on, finest first.
+
+    /area/imagery, not /imagery: the data server answers /imagery from its own
+    store and does not proxy it, but imagery_id has to be one of the MODEL
+    server's ids for the job to find it.
+    """
+    return _request(server, "/area/imagery", timeout=timeout).get("imagery", [])
+
+
 def predict_file(path, server=DEFAULT_SERVER, gsd=None, timeout=TIMEOUT):
     """Delineate one image. A GeoTIFF carries its own resolution and location,
     so the result comes back in EPSG:4326 under `geo` and needs no help."""
