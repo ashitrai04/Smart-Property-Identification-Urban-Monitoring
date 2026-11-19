@@ -344,9 +344,28 @@ class DelineatorPanel(QWidget):
     def use_layer(self):
         layer = self.iface.activeLayer()
         if not isinstance(layer, QgsVectorLayer) or layer.geometryType() != 2:
-            QMessageBox.information(self, "Pick a polygon layer",
-                                    "Select a polygon layer in the Layers panel first.")
-            return
+            # The active layer is often the result just added - a raster for a
+            # land-cover run - so refusing outright and saying nothing else
+            # reads as a dead button. Fall back to the project's polygon
+            # layers: use the only one if there is only one, otherwise name
+            # them so the operator knows what to select.
+            polys = [l for l in QgsProject.instance().mapLayers().values()
+                     if isinstance(l, QgsVectorLayer) and l.geometryType() == 2]
+            if len(polys) == 1:
+                layer = polys[0]
+                self._log("Using the only polygon layer: %s" % layer.name())
+            elif polys:
+                QMessageBox.information(
+                    self, "Pick a polygon layer",
+                    "Select one of these in the Layers panel first:" + chr(10) + chr(10)
+                    + chr(10).join("  - " + l.name() for l in polys[:12]))
+                return
+            else:
+                QMessageBox.information(
+                    self, "Pick a polygon layer",
+                    "This project has no polygon layer to take an area from." + chr(10)
+                    + "Use “Draw on map” instead, or load a polygon layer.")
+                return
         feats = list(layer.selectedFeatures()) or list(layer.getFeatures())
         geoms = [f.geometry() for f in feats if not f.geometry().isEmpty()]
         if not geoms:
@@ -568,10 +587,13 @@ class DelineatorPanel(QWidget):
             return 0
         QgsProject.instance().addMapLayer(lyr)
         self.result_layers.append(lyr)
+        self.class_raster = dest
+        self.class_rows = []
         try:
             rows = (client.result_legend(self.job_id, server=self.resolved) or {}).get("classes", [])
             rows = [r for r in rows if r.get("name") != "unknown" and (r.get("percent") or 0) > 0.05]
             rows.sort(key=lambda r: -(r.get("percent") or 0))
+            self.class_rows = rows
             for r in rows:
                 ha = r.get("area_ha")
                 self._log("   %-12s %5.1f%%%s" % (r.get("name"), r.get("percent") or 0,
@@ -592,7 +614,7 @@ class DelineatorPanel(QWidget):
             if self.layer is not None and self.layer.featureCount() == 0:
                 QgsProject.instance().removeMapLayer(self.layer.id())
                 self.layer = None
-            self.btn_export.setEnabled(False)
+            self.btn_export.setEnabled(bool(n))
             self.count.setText("class map" if n else "no result")
             self._log("Finished — class raster added to the map." if n
                       else "Finished, but the class raster could not be loaded.")
@@ -792,6 +814,8 @@ class DelineatorPanel(QWidget):
             self.layer.triggerRepaint()
 
     def export(self):
+        if self._is_raster() or getattr(self, "class_raster", None):
+            return self._export_classes()
         if self.layer is None or self.layer.featureCount() == 0:
             return
         path, _ = QFileDialog.getSaveFileName(
@@ -810,6 +834,50 @@ class DelineatorPanel(QWidget):
             self._log(f"Exported to {path}")
         else:
             QMessageBox.warning(self, "Export failed", str(err))
+
+    def _export_classes(self):
+        """Save the class raster, and the class table beside it.
+
+        The GeoTIFF is copied rather than re-rendered: it already carries the
+        colour table and the CRS, so a copy is lossless and opens anywhere.
+        The CSV is written alongside because the per-class areas are the thing
+        a land-use survey actually reports, and re-deriving them from the
+        raster later means getting the pixel area right all over again.
+        """
+        import shutil
+        src = getattr(self, "class_raster", None)
+        if not src or not os.path.exists(src):
+            QMessageBox.information(self, "Nothing to export",
+                                    "Run the land-cover model first.")
+            return
+        default = "landcover_%s.tif" % (self.job_id or "result")
+        path, _ = QFileDialog.getSaveFileName(
+            self, "Export class map", default, "GeoTIFF (*.tif *.tiff)")
+        if not path:
+            return
+        if not os.path.splitext(path)[1]:
+            path += ".tif"
+        try:
+            shutil.copyfile(src, path)
+        except Exception as e:
+            QMessageBox.warning(self, "Export failed", str(e))
+            return
+        self._log("Exported class map to %s" % path)
+
+        rows = getattr(self, "class_rows", None) or []
+        if rows:
+            csv_path = os.path.splitext(path)[0] + "_classes.csv"
+            try:
+                with open(csv_path, "w", encoding="utf-8") as fh:
+                    fh.write("class,percent,area_m2,area_ha,colour\n")
+                    for r in rows:
+                        fh.write("%s,%s,%s,%s,%s\n" % (
+                            r.get("name", ""), r.get("percent", ""),
+                            r.get("area_m2", ""), r.get("area_ha", ""),
+                            r.get("color", "")))
+                self._log("Class areas written to %s" % csv_path)
+            except Exception as e:
+                self._log("Could not write the class table: %s" % str(e)[:120])
 
     def unload(self):
         if self.task:
