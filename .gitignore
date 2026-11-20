@@ -55,6 +55,10 @@ public/live_demo_samples/*.mp4
 
 # built QGIS plugin package — rebuild with qgis-plugin/package.py
 qgis-plugin/*.zip
+# ...except the released plugin, which IS the artefact the in-QGIS updater
+# downloads. qgis-plugin/plugins.xml points at its raw URL on this branch, so
+# if it is not committed there is nothing to upgrade to.
+!qgis-plugin/building_delineator.zip
 
 # Local machine config: the second laptop's address is per-machine, and this
 # repo is public.

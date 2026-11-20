@@ -88,6 +88,59 @@ def files():
             yield full, os.path.join(PKG, os.path.relpath(full, SRC)).replace(os.sep, "/")
 
 
+# The branch the plugin updates from. raw.githubusercontent serves whatever is
+# committed here, so a push IS a release - there is no separate upload step to
+# forget, and no version that exists only on someone's laptop.
+RAW_BASE = ("https://raw.githubusercontent.com/ashitrai04/"
+            "Smart-Property-Identification-Urban-Monitoring/main/qgis-plugin")
+XML = os.path.join(HERE, "plugins.xml")
+
+
+def write_repo_xml(version):
+    """Write the one-entry plugin repository QGIS reads to offer updates.
+
+    Generated from metadata.txt, never hand-written: QGIS compares the version
+    in this XML against the installed one, so the two disagreeing is the
+    failure that matters - a release that silently never offers itself, with
+    nothing on screen to say why.
+
+    Carries no email on purpose. metadata.txt has one because the plugin
+    format asks for it; a served XML does not need it, and a contact address
+    in a public file is one more place for it to be scraped from.
+    """
+    from xml.sax.saxutils import escape
+
+    cp = configparser.ConfigParser()
+    cp.read(os.path.join(SRC, "metadata.txt"), encoding="utf-8")
+
+    def g(key, default=""):
+        # metadata.txt allows a paragraph; XML elements want one line.
+        return " ".join(cp.get("general", key, fallback=default).split())
+
+    xml = f"""<?xml version="1.0" encoding="UTF-8"?>
+<plugins>
+  <pyqgis_plugin name="{escape(g('name'))}" version="{escape(version)}">
+    <description>{escape(g('description'))}</description>
+    <about>{escape(g('about'))}</about>
+    <version>{escape(version)}</version>
+    <qgis_minimum_version>{escape(g('qgisMinimumVersion', '3.22'))}</qgis_minimum_version>
+    <homepage>{escape(g('homepage'))}</homepage>
+    <file_name>{PKG}.zip</file_name>
+    <icon>{escape(g('icon', 'icon.svg'))}</icon>
+    <author_name>{escape(g('author'))}</author_name>
+    <download_url>{RAW_BASE}/{PKG}.zip</download_url>
+    <tracker>{escape(g('tracker'))}</tracker>
+    <repository>{escape(g('repository'))}</repository>
+    <tags>{escape(g('tags'))}</tags>
+    <experimental>{escape(g('experimental', 'False'))}</experimental>
+    <deprecated>{escape(g('deprecated', 'False'))}</deprecated>
+  </pyqgis_plugin>
+</plugins>
+"""
+    with open(XML, "w", encoding="utf-8") as fh:
+        fh.write(xml)
+
+
 def main():
     check_compiles()
     version, name = check_metadata()
@@ -111,11 +164,19 @@ def main():
         if bad:
             sys.exit(f"compiled files leaked in: {bad[:3]}")
 
+    write_repo_xml(version)
+
     size = os.path.getsize(OUT) / 1024
     print(f"{name} {version}")
     print(f"  {OUT}")
     print(f"  {n} files, {size:.0f} KB")
-    print("\nInstall: QGIS -> Plugins -> Manage and Install Plugins -> Install from ZIP")
+    print(f"  {XML}")
+    print("")
+    print("First time only - add the repository in QGIS:")
+    print("  Plugins -> Manage and Install Plugins -> Settings -> Add...")
+    print(f"  {RAW_BASE}/plugins.xml")
+    print("")
+    print("After that, Upgrade appears in the plugin manager on every release.")
 
 
 if __name__ == "__main__":

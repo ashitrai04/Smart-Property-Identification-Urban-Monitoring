@@ -197,3 +197,28 @@ inside the tool your customers already use.
   hand-drawn buildings the CrowdAI head start may now be worth very little.
 - **Quote F1 0.81**, the held-out number, never one measured inside the
   training footprint. A customer who discovers the difference will not return.
+
+## Install once, update from inside QGIS
+
+Add the repository once and QGIS handles every release after that - no more
+downloading a zip and reinstalling.
+
+1. Plugins -> Manage and Install Plugins -> **Settings**
+2. Under *Plugin Repositories*, **Add...**
+   - Name: `Urbanly`
+   - URL: `https://raw.githubusercontent.com/ashitrai04/Smart-Property-Identification-Urban-Monitoring/main/qgis-plugin/plugins.xml`
+3. Leave **Check for updates on startup** ticked.
+
+From then on a new release shows up under *Upgradeable* in the plugin
+manager, and QGIS tells you on startup that an update is available.
+
+### Releasing
+
+`python package.py` builds the zip **and** regenerates `plugins.xml` from
+`metadata.txt`, so the advertised version can never drift from the shipped
+one. Bump `version=` in `metadata.txt`, run it, commit both files, push.
+raw.githubusercontent serves what is on `main`, so the push is the release.
+
+One caveat: GitHub caches raw files for about five minutes, so an upgrade can
+take that long to appear. QGIS also caches the repository - "Reload all
+repositories" in the plugin manager forces a re-read.
