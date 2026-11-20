@@ -75,6 +75,41 @@ QUALITY = [
 ]
 
 
+
+def imagery_entries(is_raster, qgis_rasters, server_rows):
+    """What the Imagery box should offer. (label, data) pairs, in order.
+
+    Pure so it can be tested without QGIS, which is the whole point: this
+    decision has been got wrong twice by eye.
+
+    Land cover runs on an upload, so it offers ONLY rasters open in the
+    project - listing the server's catalogue beside them invites picking
+    something that is not on screen. Every other model is a server-side job
+    streaming from the server's own COGs; it cannot read a file on this
+    machine, so those offer the server's catalogue and never a QGIS layer.
+
+    qgis_rasters: (layer_id, name, pixel_size) tuples.
+    server_rows:  the /area/imagery dicts.
+    """
+    out = []
+    if is_raster:
+        for lid, name, px in qgis_rasters:
+            out.append(("%s%s" % (name, (" — %.2f m" % px) if px else ""),
+                        ("qgis", lid)))
+        if not out:
+            out.append(("No raster layer open in QGIS — add one", None))
+        return out
+
+    out.append(("Auto — finest the server has over the area", None))
+    for im in server_rows or []:
+        gsd = im.get("gsd_m")
+        out.append(("%s — %s%s" % (im.get("name") or im.get("id"),
+                                    im.get("kind") or "?",
+                                    (", %.2f m" % gsd) if gsd else ""),
+                    im.get("id")))
+    return out
+
+
 class DelineatorPanel(QWidget):
     def __init__(self, iface, parent=None):
         super().__init__(parent)
@@ -162,6 +197,7 @@ class DelineatorPanel(QWidget):
         # means a satellite epoch can never be chosen however much you want to
         # compare against it.
         self.imagery = QComboBox()
+        self._server_rows = []
         self.imagery.setToolTip(
             "Which registered raster to run on. “Auto” takes the finest "
             "one covering the area, which is what every run did before this "
@@ -286,6 +322,8 @@ class DelineatorPanel(QWidget):
         """
         road = self._is_road()
         raster = self._is_raster()
+        if hasattr(self, "imagery"):
+            self._fill_imagery()
         # Land cover reads none of the building controls, and the working
         # resolution one is worse than useless there: it is sent as a floor the
         # server may not coarsen, which is what made large AOIs fail. Hiding it
@@ -499,56 +537,54 @@ class DelineatorPanel(QWidget):
         self.count.setText("class map")
         self._log("Finished — class raster from %s added to the map." % lyr.name())
 
-    def _refresh_imagery(self, url):
-        """Fill the Imagery box from the model server, keeping the selection.
-
-        A convenience, not a requirement: a server without /area/imagery
-        leaves just the Auto entry and the job still runs with the server's
-        own choice. Separate from refresh_models so it can also be topped up
-        lazily - the route was added after some panels were already open, and
-        an operator should not have to know to press Check.
-        """
-        want = self.imagery.currentData() if self.imagery.count() else None
+    def _refresh_imagery(self, url=None):
+        """Re-read the server's catalogue, then rebuild the Imagery box."""
         try:
-            rows = client.imagery(url, timeout=10)
+            self._server_rows = client.imagery(url or self.resolved, timeout=10)
         except Exception:
-            rows = []
-        if not rows and self.imagery.count() > 1:
-            return 0                    # keep what we have rather than empty it
-        self.imagery.clear()
-        self.imagery.addItem("Auto — finest the server has over the area", None)
+            self._server_rows = getattr(self, "_server_rows", [])
+        self._fill_imagery()
+        return len(getattr(self, "_server_rows", []))
 
-        # Layers open in THIS QGIS project come first, because that is what an
-        # operator means by "the image I am looking at". They are not in the
-        # server's catalogue, so they cannot be run as an area job - the AOI is
-        # clipped out of the file here and uploaded instead. Only file-backed
-        # rasters qualify: a WMS or an in-memory layer has nothing to clip.
-        for lyr in QgsProject.instance().mapLayers().values():
+    def _qgis_rasters(self):
+        """File-backed raster layers open in this project, top of the tree first.
+
+        File-backed only: a WMS or an in-memory layer has no file to clip, so
+        offering it would be a choice that cannot be acted on.
+        """
+        out = []
+        root = QgsProject.instance().layerTreeRoot()
+        for node in root.findLayers():
+            lyr = node.layer()
             if not isinstance(lyr, QgsRasterLayer) or not lyr.isValid():
                 continue
             src = lyr.source().split("|")[0]
             if not os.path.exists(src):
                 continue
+            out.append(lyr)
+        return out
+
+    def _fill_imagery(self):
+        """Render imagery_entries() into the combo, keeping the selection."""
+        want = self.imagery.currentData() if self.imagery.count() else None
+        rasters = []
+        for lyr in self._qgis_rasters():
             try:
                 px = lyr.rasterUnitsPerPixelX()
             except Exception:
                 px = 0
-            self.imagery.addItem(
-                "QGIS: %s%s" % (lyr.name(), (" — %.2f m" % px) if px else ""),
-                ("qgis", lyr.id()))
-
-        for im in rows:
-            gsd = im.get("gsd_m")
-            self.imagery.addItem(
-                "Server: %s — %s%s" % (im.get("name") or im.get("id"),
-                                        im.get("kind") or "?",
-                                        (", %.2f m" % gsd) if gsd else ""),
-                im.get("id"))
-        if want:
+            rasters.append((lyr.id(), lyr.name(), px))
+        entries = imagery_entries(self._is_raster(), rasters,
+                                  getattr(self, "_server_rows", []))
+        self.imagery.blockSignals(True)
+        self.imagery.clear()
+        for label, data in entries:
+            self.imagery.addItem(label, data)
+        if want is not None:
             i = self.imagery.findData(want)
             if i >= 0:
                 self.imagery.setCurrentIndex(i)
-        return len(rows)
+        self.imagery.blockSignals(False)
 
     def start_draw(self):
         self.prev_tool = self.canvas.mapTool()
@@ -711,12 +747,26 @@ class DelineatorPanel(QWidget):
             # Which raster to run on. Blank means "let the server choose",
             # which is the finest one covering the area - the behaviour
             # before this control existed.
-            if hasattr(self, "imagery") and self.imagery.count() <= 1:
+            if (hasattr(self, "imagery") and not self._is_raster()
+                    and self.imagery.count() <= 1):
                 # The server may have gained /area/imagery since this panel
                 # loaded. One cheap GET beats telling the operator to press
-                # Check.
+                # Check. Only for server-side models - land cover's list comes
+                # from the open project and never needs the server.
                 self._refresh_imagery(url)
             chosen_img = self.imagery.currentData() if hasattr(self, "imagery") else None
+
+            if self._is_raster() and not (isinstance(chosen_img, tuple)
+                                          and chosen_img[0] == "qgis"):
+                # Land cover runs on an open QGIS raster. Falling through here
+                # would quietly queue a server job against whatever raster the
+                # server thinks is best - the opposite of choosing.
+                self._reset_run_ui()
+                QMessageBox.information(
+                    self, "No image selected",
+                    "Land cover runs on a raster layer open in QGIS. "
+                    "Add one to the project, then pick it in the Imagery box.")
+                return
 
             if isinstance(chosen_img, tuple) and chosen_img[0] == "qgis":
                 # A layer the server has never seen. Clip and upload instead

@@ -419,6 +419,43 @@ def main():
             raise AssertionError("a dead server should have been reported")
         check("a dead URL is reported in plain words", dead_url)
 
+        # ---- what the Imagery box offers -------------------------------
+        # Got wrong twice by eye, so it is a pure function and it is tested.
+        from building_delineator.gui.panel import imagery_entries
+
+        QGIS_RASTERS = [("l1", "ongole_2026_sat", 0.30),
+                        ("l2", "Ongole_ORI_V3_jpeg92", 0.03)]
+        SERVER_ROWS = [{"id": "img_a", "name": "Ongole drone survey",
+                        "kind": "drone", "gsd_m": 0.03},
+                       {"id": "img_b", "name": "Ongole 2026 satellite",
+                        "kind": "satellite", "gsd_m": 0.30}]
+
+        def landcover_lists_only_qgis():
+            e = imagery_entries(True, QGIS_RASTERS, SERVER_ROWS)
+            data = [d for _, d in e]
+            assert data == [("qgis", "l1"), ("qgis", "l2")], data
+            labels = " ".join(l for l, _ in e)
+            assert "Auto" not in labels, labels
+            assert "drone survey" not in labels, "a server raster leaked in: " + labels
+        check("land cover offers the open QGIS rasters and nothing else",
+              landcover_lists_only_qgis)
+
+        def landcover_with_no_layers_says_so():
+            e = imagery_entries(True, [], SERVER_ROWS)
+            assert len(e) == 1 and e[0][1] is None, e
+            assert "No raster layer" in e[0][0], e[0][0]
+        check("land cover with no open raster says so instead of offering the server",
+              landcover_with_no_layers_says_so)
+
+        def server_models_never_offer_qgis_layers():
+            e = imagery_entries(False, QGIS_RASTERS, SERVER_ROWS)
+            data = [d for _, d in e]
+            assert data[0] is None, "first entry should be Auto"
+            assert data[1:] == ["img_a", "img_b"], data
+            assert not any(isinstance(d, tuple) for d in data),                 "a QGIS layer leaked into a server-side model's list"
+        check("server-side models offer the server catalogue, never a QGIS layer",
+              server_models_never_offer_qgis_layers)
+
         live = [t["id"] for t in client.tasks(server)]
         offered = [t[0] for t in alg._tasks]
 

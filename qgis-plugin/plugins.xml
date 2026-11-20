@@ -1,9 +1,9 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <plugins>
-  <pyqgis_plugin name="Building Delineator" version="0.8.0">
+  <pyqgis_plugin name="Building Delineator" version="0.8.1">
     <description>Individual building footprints from drone or satellite imagery, delineated by a model trained on Indian low-rise urban fabric.</description>
     <about>Sends imagery or a drawn area to an Urbanly model server and returns one polygon per building - not a semantic mask. Built for dense terraced housing, where neighbours share walls and a mask merges a whole block into one shape. Footprints are returned already regularized to rectilinear outlines. The plugin itself contains no model: inference runs on the server you point it at, so QGIS needs no PyTorch and no GPU.</about>
-    <version>0.8.0</version>
+    <version>0.8.1</version>
     <qgis_minimum_version>3.22</qgis_minimum_version>
     <homepage>https://github.com/ashitrai04/Smart-Property-Identification-Urban-Monitoring</homepage>
     <file_name>building_delineator.zip</file_name>
