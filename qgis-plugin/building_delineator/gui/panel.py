@@ -500,11 +500,18 @@ class DelineatorPanel(QWidget):
                              gt[3], gt[4], gt[5] * ch / float(lh)))
         dst.SetProjection(wkt)
         band = dst.GetRasterBand(1)
-        band.WriteArray(png_ds.GetRasterBand(1).ReadAsArray())
-        band.SetNoDataValue(0)
-        # Colours come from the legend the server just sent, not from a copy
-        # kept here. A second palette in the plugin is a second palette that
-        # can drift out of step with the pixels.
+
+        # Colour table BEFORE the pixels, and this order is not a style
+        # preference. A palette sets the TIFF PhotometricInterpretation tag,
+        # which libtiff will not let you change once data has been written -
+        # the other order dies with
+        #   TIFFSetField: Cannot modify tag "PhotometricInterpretation"
+        #                 while writing
+        # and loses the whole result at the last step. Reproduced both ways in
+        # QGIS's own GDAL before fixing.
+        #
+        # The colours come from the legend in the response, not a copy kept
+        # here: a second palette is a second palette that can drift.
         ct = gdal.ColorTable()
         for r in (res.get("classes") or []):
             h = (r.get("color") or "").lstrip("#")
@@ -512,8 +519,11 @@ class DelineatorPanel(QWidget):
                 continue
             rgb = tuple(int(h[k:k + 2], 16) for k in (0, 2, 4))
             ct.SetColorEntry(int(r.get("id", 0)),
-                             rgb + (int(r.get("alpha", 255)) if r.get("name") != "unknown" else 0,))
+                             rgb + (0 if r.get("name") == "unknown"
+                                    else int(r.get("alpha", 255)),))
         band.SetRasterColorTable(ct)
+        band.SetNoDataValue(0)
+        band.WriteArray(png_ds.GetRasterBand(1).ReadAsArray())
         band = None; dst = None; png_ds = None
 
         out = QgsRasterLayer(out_tif, "Land cover — %s" % lyr.name())

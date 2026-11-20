@@ -3,7 +3,7 @@ name=Building Delineator
 qgisMinimumVersion=3.22
 description=Individual building footprints from drone or satellite imagery, delineated by a model trained on Indian low-rise urban fabric.
 about=Sends imagery or a drawn area to an Urbanly model server and returns one polygon per building - not a semantic mask. Built for dense terraced housing, where neighbours share walls and a mask merges a whole block into one shape. Footprints are returned already regularized to rectilinear outlines. The plugin itself contains no model: inference runs on the server you point it at, so QGIS needs no PyTorch and no GPU.
-version=0.8.1
+version=0.8.2
 author=Urbanly
 email=tarunsurya890@gmail.com
 tracker=https://github.com/ashitrai04/Smart-Property-Identification-Urban-Monitoring/issues
@@ -11,7 +11,9 @@ repository=https://github.com/ashitrai04/Smart-Property-Identification-Urban-Mon
 homepage=https://github.com/ashitrai04/Smart-Property-Identification-Urban-Monitoring
 category=Analysis
 changelog=
-  0.8.1  Land cover lists only the rasters open in QGIS, never the
+  0.8.2  Fix the class raster failing to write at the last step:
+         GDAL will not set a palette after pixels are written.
+    0.8.1  Land cover lists only the rasters open in QGIS, never the
          server catalogue, and refuses to run when none is open.
     0.8.0  Land cover (9 class) as a raster task: the class GeoTIFF is added
          to the map with its own colour table, exported with a CSV of class
