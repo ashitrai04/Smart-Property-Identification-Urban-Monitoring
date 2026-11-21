@@ -159,6 +159,62 @@ def main():
     print("\n  Running. Press Ctrl+C to stop.\n")
     stop = threading.Event()
 
+    # ── keep the published address true ──────────────────────────────
+    # The address was published once, above, and nothing ever checked it
+    # again. A Cloudflare quick tunnel can lose its DNS record while
+    # cloudflared keeps running and still reports the hostname as its own -
+    # measured: the process held one edge connection instead of four and
+    # claimed smoke-patch-timeline-releases, while Cloudflare's own
+    # authoritative DNS answered NXDOMAIN for that name. The webapp was sent
+    # there for 99 minutes and simply showed no server data, because nothing
+    # here could tell "cloudflared is alive" from "the URL works".
+    #
+    # So the check is made from OUTSIDE, over the public address. That is the
+    # only test that matches what a browser does.
+    state = {"url": url, "proc": proc}
+
+    def watch_tunnel():
+        import urllib.request
+        fails = 0
+        while not stop.is_set():
+            stop.wait(60)
+            if stop.is_set() or not state["url"]:
+                continue
+            try:
+                req = urllib.request.Request(state["url"].rstrip("/") + "/health")
+                req.add_header("Accept-Encoding", "identity")
+                with urllib.request.urlopen(req, timeout=20) as r:
+                    ok = r.status == 200
+            except Exception:
+                ok = False
+            if ok:
+                fails = 0
+                continue
+            fails += 1
+            # Three minutes of failure, not one. A blip on the home
+            # connection is not a reason to take a working tunnel down and
+            # hand every client a new address.
+            print("  ! public address did not answer (%d/3)" % fails)
+            if fails < 3:
+                continue
+            print("  ! replacing the tunnel")
+            try:
+                if state["proc"]:
+                    state["proc"].terminate()
+            except Exception:
+                pass
+            np_, nu = start_tunnel(a.port)
+            if nu:
+                state["proc"], state["url"] = np_, nu
+                publish(nu, e)
+                print("  public      : %s   (replaced)" % nu)
+                fails = 0
+            else:
+                print("  ! no replacement tunnel yet; will try again")
+
+    if url and not url.startswith("http://localhost"):
+        threading.Thread(target=watch_tunnel, daemon=True).start()
+
     def bye(*_):
         stop.set()
     signal.signal(signal.SIGINT, bye)
@@ -170,7 +226,9 @@ def main():
         print("\n  stopping…")
         if url or (a.no_tunnel and not a.no_publish):
             publish(None, e, clear=True)
-        if proc:
+        if state.get("proc"):
+            state["proc"].terminate()
+        elif proc:
             proc.terminate()
         srv.should_exit = True
         time.sleep(0.6)
