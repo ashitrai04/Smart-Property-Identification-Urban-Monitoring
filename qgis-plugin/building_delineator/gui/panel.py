@@ -230,7 +230,7 @@ class DelineatorPanel(QWidget):
             "Which registered raster to run on. “Auto” takes the finest "
             "one covering the area, which is what every run did before this "
             "box existed.")
-        self.row_imagery = f.addRow("Imagery", self.imagery) or self.imagery
+        f.addRow("Imagery", self.imagery)
 
         # The second epoch. Water change needs two images and the question is
         # "which two", so both come from the layers open in QGIS - the same
