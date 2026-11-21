@@ -46,12 +46,29 @@ router = APIRouter(prefix="/waterchange", tags=["waterchange"])
 NONE, RETAINED, ENCROACHED, RECEDED, GAINED, LOST_OTHER = 0, 1, 2, 3, 4, 5
 
 CHANGE = {
-    NONE:       ("no water",      "#000000",   0, "neither epoch had water here"),
-    RETAINED:   ("retained",      "#0045FF", 170, "water in both epochs"),
-    ENCROACHED: ("encroached",    "#E3000F", 235, "water replaced by building, road or developed ground"),
-    RECEDED:    ("receded",       "#FF8A00", 215, "water replaced by bare soil, scrub, tree or crop"),
-    GAINED:     ("gained",        "#00E5FF", 200, "water where there was none"),
-    LOST_OTHER: ("lost_unclear",  "#A000A0", 200, "water gone, replacing class not decided"),
+    NONE:       ("no water",      "#000000",   0, "no water on either date"),
+    RETAINED:   ("retained",      "#0045FF", 170, "water on both dates - the water body that stayed"),
+    ENCROACHED: ("encroached",    "#E3000F", 235, "water on the earlier date, built over by the later one"),
+    RECEDED:    ("receded",       "#FF8A00", 215, "water on the earlier date, now bare ground or plants - a level drop"),
+    GAINED:     ("gained",        "#00E5FF", 200, "water on the later date where there was none before"),
+    LOST_OTHER: ("lost_unclear",  "#A000A0", 200, "water has gone, but what took its place is not clear"),
+}
+
+# What each class is CALLED on screen, as opposed to what it is called in
+# code. The two had been one thing, run through .title(), which is how
+# "lost_unclear" reached a user's legend as "Lost Unclear" - and how the
+# rest read as jargon: "Retained" and "Receded" next to a coloured square
+# do not tell anyone what happened to the water.
+#
+# Each label is a short sentence about the water, so the legend can be read
+# without the key beside it. The longer `note` stays as the tooltip.
+LABELS = {
+    NONE:       "No water either year",
+    RETAINED:   "Water in both years",
+    ENCROACHED: "Water built over",
+    RECEDED:    "Water dried up",
+    GAINED:     "Water gained",
+    LOST_OTHER: "Water gone, cause unclear",
 }
 
 # What counts as having been built over, and what counts as having dried.
@@ -171,7 +188,7 @@ def legend(stats=None):
     rows = []
     for i in sorted(CHANGE):
         name, colour, a, note = CHANGE[i]
-        row = {"id": i, "name": name, "label": name.replace("_", " ").title(),
+        row = {"id": i, "name": name, "label": LABELS.get(i, name),
                "color": colour, "alpha": a, "note": note}
         if stats:
             row.update(stats.get("classes", {}).get(name, {}))
