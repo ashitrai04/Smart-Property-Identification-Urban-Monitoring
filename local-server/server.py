@@ -465,41 +465,67 @@ def _public(d):
     return {k: v for k, v in d.items() if not k.startswith("_")}
 
 
-_GPU_LAST = {"at": 0.0, "data": None}
+_GPU_LAST = {"at": 0.0, "data": None, "ok": False}
 # How long a last-known-good health answer stays usable when a probe times
 # out. Long enough to ride out a busy model server, short enough that a real
 # crash still shows up promptly.
 GPU_HEALTH_GRACE = float(os.environ.get("GPU_HEALTH_GRACE", "45"))
 
 
-def _gpu_health(timeout=8.0):
-    """What the model server reports, or None when it is not up.
+# How long an answer counts as fresh enough to hand straight back without
+# asking the model server again. One probe per this many seconds, no matter
+# how many clients ask.
+GPU_HEALTH_FRESH = float(os.environ.get("GPU_HEALTH_FRESH", "10"))
+_GPU_PROBING = threading.Lock()
 
-    The timeout was 3 s with no memory, and that made the webapp's "GPU
-    offline" badge flicker during every job. The model server runs its work in
-    a worker thread, but numpy and torch hold the GIL in long stretches, so
-    the asyncio loop is starved and /api/health can take several seconds while
-    a window is being classified. A busy server was being reported as a dead
-    one, and the operator sees the stack dropping out at random.
 
-    So: a longer timeout, and the last good answer is reused for
-    GPU_HEALTH_GRACE seconds when a probe fails. A server that is genuinely
-    down stops answering for longer than that and still reads as offline.
-    """
+def _gpu_probe_now(timeout=8.0):
+    """Ask the model server, and remember the answer. Blocks."""
     import httpx
     try:
         r = httpx.get(f"{GPU_SERVER}/api/health", timeout=timeout)
         if r.status_code == 200:
             d = r.json()
-            _GPU_LAST.update(at=time.time(), data=d)
+            _GPU_LAST.update(at=time.time(), data=d, ok=True)
             return d
     except Exception:
         pass
-    if _GPU_LAST["data"] is not None and (time.time() - _GPU_LAST["at"]) < GPU_HEALTH_GRACE:
-        # Mark it, so a caller that cares can tell a cached answer from a fresh
-        # one rather than being quietly misled.
-        return dict(_GPU_LAST["data"], stale=True,
-                    stale_for_s=round(time.time() - _GPU_LAST["at"], 1))
+    _GPU_LAST["ok"] = False
+    return None
+
+
+def _gpu_health(timeout=8.0):
+    """What the model server reports, or None when it is not up.
+
+    This must never block. It used to wait up to 8 s for the model server,
+    which is fine when that server is idle and wrong when it is working: a
+    land-cover or water-change run keeps the GIL busy in long stretches, so
+    its /api/health can take seconds. The webapp gives up on a health probe
+    after 4 s and then marks the whole stack down for a minute - so running a
+    job made the server appear to go offline, which is exactly backwards.
+
+    So the answer is served from the last probe, and a new probe is taken on a
+    background thread. A caller never waits on the model server; the worst
+    case is an answer a few seconds old. A server that is genuinely down stops
+    answering for longer than GPU_HEALTH_GRACE and still reads as offline.
+    """
+    age = time.time() - _GPU_LAST["at"]
+    if _GPU_LAST["data"] is None and _GPU_LAST["at"] == 0.0:
+        # Nothing known yet - the very first call has to wait, once.
+        return _gpu_probe_now(timeout)
+
+    if age >= GPU_HEALTH_FRESH and not _GPU_PROBING.locked():
+        def refresh_bg():
+            with _GPU_PROBING:
+                _gpu_probe_now(timeout)
+        threading.Thread(target=refresh_bg, daemon=True).start()
+
+    if _GPU_LAST["data"] is not None and age < GPU_HEALTH_GRACE:
+        if age <= GPU_HEALTH_FRESH:
+            return _GPU_LAST["data"]
+        # Mark it, so a caller that cares can tell a cached answer from a
+        # fresh one rather than being quietly misled.
+        return dict(_GPU_LAST["data"], stale=True, stale_for_s=round(age, 1))
     return None
 
 

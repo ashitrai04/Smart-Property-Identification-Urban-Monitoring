@@ -3,7 +3,7 @@ name=Building Delineator
 qgisMinimumVersion=3.22
 description=Individual building footprints from drone or satellite imagery, delineated by a model trained on Indian low-rise urban fabric.
 about=Sends imagery or a drawn area to an Urbanly model server and returns one polygon per building - not a semantic mask. Built for dense terraced housing, where neighbours share walls and a mask merges a whole block into one shape. Footprints are returned already regularized to rectilinear outlines. The plugin itself contains no model: inference runs on the server you point it at, so QGIS needs no PyTorch and no GPU.
-version=0.9.0
+version=0.9.1
 author=Urbanly
 email=tarunsurya890@gmail.com
 tracker=https://github.com/ashitrai04/Smart-Property-Identification-Urban-Monitoring/issues
@@ -11,7 +11,12 @@ repository=https://github.com/ashitrai04/Smart-Property-Identification-Urban-Mon
 homepage=https://github.com/ashitrai04/Smart-Property-Identification-Urban-Monitoring
 category=Analysis
 changelog=
-  0.9.0  Water change (2 epochs): pick the earlier image and the one to
+  0.9.1  Water change shows a legend and obeys the opacity slider. The
+         slider only ever drove the vector layer, so raster results sat
+         opaque with no way to see through them, and the class key was
+         filtered on a percentage that water change does not report, so
+         every row was dropped and nothing said what the colours meant.
+    0.9.0  Water change (2 epochs): pick the earlier image and the one to
          compare it with, both from the rasters open in QGIS. Both are
          clipped to the drawn area and sent together, so the server puts
          them on one grid. Water built over reads as encroachment, water

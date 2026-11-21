@@ -179,6 +179,11 @@ export default function AreaModelPanel({ map, aoiFeatures }) {
     // Both draw their result as a class raster rather than vectors.
     const isRasterTask = isLand || isWater;
     const [lcLegend, setLcLegend] = useState(null);   // rows, with this run's shares
+    // Whether a class/change raster is on the map. Kept apart from the legend
+    // on purpose: the overlay can be drawn and readable while its key is
+    // still in flight or has failed, and losing the opacity slider in that
+    // case leaves an overlay that cannot be turned down to see underneath.
+    const [lcShown, setLcShown] = useState(false);
     const [imagery, setImagery] = useState([]);      // rasters the server can run on
     const [imageryId, setImageryId] = useState("");  // "" = let the server pick
     const [imageryIdB, setImageryIdB] = useState(""); // water change: the second epoch
@@ -406,6 +411,7 @@ export default function AreaModelPanel({ map, aoiFeatures }) {
         try { map.getSource(LC_SRC) && map.removeSource(LC_SRC); } catch { /* gone */ }
         featsRef.current = [];
         setLcLegend(null);
+        setLcShown(false);
     }, [map]);
 
     /*
@@ -428,6 +434,7 @@ export default function AreaModelPanel({ map, aoiFeatures }) {
             tiles: [`${base}/results/${id}/classes/{z}/{x}/{y}.png`],
             tileSize: 256,
         });
+        setLcShown(true);
         map.addLayer({
             id: LC_LAYER, type: "raster", source: LC_SRC,
             // No fade: a class map is data, and cross-fading one zoom level
@@ -443,8 +450,16 @@ export default function AreaModelPanel({ map, aoiFeatures }) {
             const r = await gpuOnlyFetch(`/results/${id}/legend`);
             if (r.ok) {
                 const d = await r.json();
-                setLcLegend((d.classes || []).filter((c) => c.name !== "unknown" && (c.percent ?? 0) > 0.05)
-                                             .sort((a, b) => (b.percent || 0) - (a.percent || 0)));
+                // Land cover reports a SHARE of the area; water change reports
+                // an AREA, because "12% of the drawn box is encroachment" is
+                // not the sentence anyone wants. Filtering on percent alone
+                // discarded every water-change row, which took the key and the
+                // opacity slider with it and left a map of unexplained colour.
+                const rows = (d.classes || [])
+                    .filter((c) => c.name !== "unknown" && c.name !== "no water")
+                    .filter((c) => (c.percent ?? 0) > 0.05 || (c.area_m2 ?? 0) > 0)
+                    .sort((a, b) => (b.percent ?? b.area_m2 ?? 0) - (a.percent ?? a.area_m2 ?? 0));
+                setLcLegend(rows);
             }
         } catch { /* the tiles are drawn; only the key is missing */ }
     }, [map, opacity]);
@@ -958,11 +973,13 @@ export default function AreaModelPanel({ map, aoiFeatures }) {
             {/* Land cover: a raster result, so there is no feature count to show.
                 What there is, is the share of the drawn area each class takes —
                 which is the answer a land-use survey wanted in the first place. */}
-            {lcLegend && lcLegend.length > 0 && (
+            {(lcShown || (lcLegend && lcLegend.length > 0)) && (
                 <div className="space-y-2 rounded-md p-2"
                      style={{ background: "var(--surface-2)", border: "1px solid var(--line)" }}>
                     <div className="flex items-center justify-between text-[11px]">
-                        <span style={{ color: "var(--text-primary)" }}>Land cover</span>
+                        <span style={{ color: "var(--text-primary)" }}>
+                            {isWater ? "Water change" : "Land cover"}
+                        </span>
                         <div className="flex items-center gap-1.5">
                             <a className="text-[10px] underline" style={{ color: "var(--text-dim)" }}
                                href={`${gpuBase()}/results/${job?.id}/classes.tif`}>GeoTIFF</a>
@@ -971,17 +988,28 @@ export default function AreaModelPanel({ map, aoiFeatures }) {
                         </div>
                     </div>
                     <div className="space-y-1">
-                        {lcLegend.map((c) => (
+                        {(lcLegend || []).map((c) => (
                             <div key={c.name} className="flex items-center gap-2 text-[10px]" title={c.note}>
                                 <span className="inline-block h-2.5 w-4 shrink-0 rounded-[2px]"
                                       style={{ background: c.color, border: "1px solid var(--line)" }} />
                                 <span style={{ color: "var(--text-dim)" }}>{c.label || c.name}</span>
                                 <span className="mono ml-auto" style={{ color: "var(--text-mute)" }}>
-                                    {(c.percent ?? 0).toFixed(1)}%
-                                    {c.area_ha != null && <span className="ml-1.5">{c.area_ha.toFixed(1)} ha</span>}
+                                    {c.percent != null && <span>{c.percent.toFixed(1)}%</span>}
+                                    {c.area_ha != null && (
+                                        <span className={c.percent != null ? "ml-1.5" : ""}>
+                                            {c.area_ha >= 0.1 ? `${c.area_ha.toFixed(2)} ha`
+                                                              : `${Math.round(c.area_m2 ?? 0)} m²`}
+                                        </span>
+                                    )}
                                 </span>
                             </div>
                         ))}
+                        {lcShown && (!lcLegend || lcLegend.length === 0) && (
+                            <p className="text-[10px]" style={{ color: "var(--text-mute)" }}>
+                                The key did not load. The colours above the map are still the
+                                model's own — reload to fetch it again.
+                            </p>
+                        )}
                     </div>
                     <label className="block">
                         <div className="flex items-center justify-between text-[10px]" style={{ color: "var(--text-dim)" }}>

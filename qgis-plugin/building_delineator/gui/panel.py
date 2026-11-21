@@ -582,6 +582,56 @@ class DelineatorPanel(QWidget):
         band = None; dst = None; png_ds = None
         return out_tif
 
+    def _style_class_raster(self, layer, rows):
+        """Give a class raster a paletted renderer with labelled classes.
+
+        A GeoTIFF colour table makes QGIS draw the right colours, but its
+        legend entry is just the raster name - the Layers panel shows no key,
+        so nothing on screen says which colour is "encroached" and which is
+        "receded". A paletted renderer carries a LABEL per value, and that is
+        what QGIS prints in the legend, in the print layout and in the map
+        export.
+
+        Falls back silently to the colour table if this QGIS cannot build the
+        renderer: a drawn-but-unlabelled layer beats an exception.
+        """
+        try:
+            from qgis.core import (QgsPalettedRasterRenderer,
+                                   QgsRasterShader, QgsColorRampShader)
+        except ImportError:
+            return False
+        classes = []
+        for r in (rows or []):
+            try:
+                v = int(r.get("id", -1))
+            except (TypeError, ValueError):
+                continue
+            # Value 0 is "nothing here" in both models and is drawn
+            # transparent; listing it would put a meaningless row at the top
+            # of every legend.
+            if v <= 0:
+                continue
+            h = (r.get("color") or "").lstrip("#")
+            if len(h) != 6:
+                continue
+            col = QColor(int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16))
+            name = r.get("label") or r.get("name") or str(v)
+            area = r.get("area_ha")
+            if isinstance(area, (int, float)) and area > 0:
+                name = "%s  (%.2f ha)" % (name, area)
+            elif isinstance(r.get("percent"), (int, float)):
+                name = "%s  (%.1f%%)" % (name, r["percent"])
+            classes.append(QgsPalettedRasterRenderer.Class(v, col, name))
+        if not classes:
+            return False
+        try:
+            layer.setRenderer(QgsPalettedRasterRenderer(
+                layer.dataProvider(), 1, classes))
+            layer.triggerRepaint()
+            return True
+        except Exception:
+            return False
+
     def _run_on_qgis_layer(self, layer_id, url):
         """Classify the AOI out of a QGIS layer the server does not have."""
         if not self._is_raster():
@@ -638,6 +688,8 @@ class DelineatorPanel(QWidget):
             self._reset_run_ui()
             self._log("QGIS could not open %s" % out_tif)
             return
+        self._style_class_raster(out, rows_all)
+        out.setOpacity(self.opacity.value() / 100.0)
         QgsProject.instance().addMapLayer(out)
         self.result_layers.append(out)
         self.class_raster = out_tif
@@ -707,6 +759,8 @@ class DelineatorPanel(QWidget):
             self._reset_run_ui()
             self._log("QGIS could not open %s" % out_tif)
             return
+        self._style_class_raster(out, rows_all)
+        out.setOpacity(self.opacity.value() / 100.0)
         QgsProject.instance().addMapLayer(out)
         self.result_layers.append(out)
         self.class_raster = out_tif
@@ -1150,31 +1204,49 @@ class DelineatorPanel(QWidget):
         import tempfile
         if not self.job_id:
             return 0
-        dest = os.path.join(tempfile.gettempdir(), "landcover_%s.tif" % self.job_id)
+        two = self._is_two_epoch()
+        kind = "waterchange" if two else "landcover"
+        title = "Water change" if two else "Land cover"
+        dest = os.path.join(tempfile.gettempdir(), "%s_%s.tif" % (kind, self.job_id))
         try:
             client.download_classes(self.job_id, dest, server=self.resolved)
         except Exception as e:
             self._log("Could not fetch the class raster: %s" % str(e)[:140])
             return 0
-        lyr = QgsRasterLayer(dest, "Land cover — %s" % self.job_id[:12])
+        lyr = QgsRasterLayer(dest, "%s — %s" % (title, self.job_id[:12]))
         if not lyr.isValid():
             self._log("QGIS could not open %s" % dest)
             return 0
+        self.class_rows = []
+        rows = []
+        try:
+            rows = (client.result_legend(self.job_id, server=self.resolved) or {}).get("classes", [])
+            # Land cover reports a SHARE of the area, water change reports an
+            # AREA. Filtering on percent alone dropped every water-change row,
+            # so the run finished with a coloured raster and no key at all.
+            rows = [r for r in rows
+                    if r.get("name") not in ("unknown", "no water")
+                    and ((r.get("percent") or 0) > 0.05 or (r.get("area_m2") or 0) > 0)]
+            rows.sort(key=lambda r: -(r.get("percent") or r.get("area_m2") or 0))
+            self.class_rows = rows
+            for r in rows:
+                pct, ha = r.get("percent"), r.get("area_ha")
+                bits = []
+                if isinstance(pct, (int, float)):
+                    bits.append("%5.1f%%" % pct)
+                if isinstance(ha, (int, float)) and ha:
+                    bits.append("%.2f ha" % ha)
+                self._log("   %-13s %s" % (r.get("label") or r.get("name"),
+                                           "  ".join(bits)))
+        except Exception:
+            pass
+        # Labelled classes, so the Layers panel says what each colour means,
+        # and the panel's own opacity slider applies from the start.
+        self._style_class_raster(lyr, rows)
+        lyr.setOpacity(self.opacity.value() / 100.0)
         QgsProject.instance().addMapLayer(lyr)
         self.result_layers.append(lyr)
         self.class_raster = dest
-        self.class_rows = []
-        try:
-            rows = (client.result_legend(self.job_id, server=self.resolved) or {}).get("classes", [])
-            rows = [r for r in rows if r.get("name") != "unknown" and (r.get("percent") or 0) > 0.05]
-            rows.sort(key=lambda r: -(r.get("percent") or 0))
-            self.class_rows = rows
-            for r in rows:
-                ha = r.get("area_ha")
-                self._log("   %-12s %5.1f%%%s" % (r.get("name"), r.get("percent") or 0,
-                                                  ("  %.1f ha" % ha) if ha else ""))
-        except Exception:
-            pass
         return 1
 
     def _done(self):
@@ -1190,9 +1262,10 @@ class DelineatorPanel(QWidget):
                 QgsProject.instance().removeMapLayer(self.layer.id())
                 self.layer = None
             self.btn_export.setEnabled(bool(n))
-            self.count.setText("class map" if n else "no result")
-            self._log("Finished — class raster added to the map." if n
-                      else "Finished, but the class raster could not be loaded.")
+            noun = "change map" if self._is_two_epoch() else "class map"
+            self.count.setText(noun if n else "no result")
+            self._log(("Finished — %s added to the map." % noun) if n
+                      else "Finished, but the raster could not be loaded.")
             if hasattr(self, "btn_height"):
                 self.btn_height.setEnabled(False)
             self.task = None
@@ -1384,9 +1457,23 @@ class DelineatorPanel(QWidget):
         self.pending = still
 
     def _set_opacity(self, value):
+        """Drive whatever this run produced - vectors OR the class raster.
+
+        It only ever reached self.layer, which is the vector result, so for
+        land cover and water change the slider moved and nothing happened:
+        the overlay sat at full strength over the imagery with no way to see
+        through it.
+        """
+        o = value / 100.0
         if self.layer is not None:
-            self.layer.setOpacity(value / 100.0)
+            self.layer.setOpacity(o)
             self.layer.triggerRepaint()
+        for lyr in list(getattr(self, "result_layers", [])):
+            try:
+                lyr.setOpacity(o)
+                lyr.triggerRepaint()
+            except (AttributeError, RuntimeError):
+                pass          # layer removed from the project under us
 
     def export(self):
         if self._is_raster() or getattr(self, "class_raster", None):
