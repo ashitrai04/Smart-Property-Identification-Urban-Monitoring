@@ -7,6 +7,7 @@ import { HF_MODEL_BASE, modelFetch, probeGpu } from "../lib/modelApi";
 import PotholePanel from "../components/PotholePanel";
 import BuildingsPanel from "../components/BuildingsPanel";
 import LandCoverPanel from "../components/LandCoverPanel";
+import WaterChangePanel from "../components/WaterChangePanel";
 import { decodeClassMap, exportCSV, classMapToGeoJSON, exportGeoJSON, exportSHP, exportGeoTIFF } from "../utils/exporters";
 import { registerTour, unregisterTour, fetchFile as tourFetchFile } from "../tour/tourBus";
 
@@ -63,7 +64,10 @@ const ANALYSIS_TYPES = [
     { id: "landcover", label: "Land-Use Classification", desc: "DINOv3 ViT-L/16 + UPerNet — nine land-cover classes (building / road / tree / water / agriculture / rangeland / bareland / developed) with per-class area" },
     { id: "change", label: "Building Change", desc: "New & demolished buildings between two dates (instance-matched)" },
     { id: "vegetation", label: "Vegetation Change", desc: "Green-cover gain & loss between two dates" },
-    { id: "water", label: "Water Change", desc: "Water-body change & encroachment between two dates" },
+    { id: "water", label: "Water Change", desc: "Water-body change & encroachment between two dates · SegFormer masks" },
+    // Same question as the entry above, answered from the land-cover model:
+    // it knows what replaced the water, so encroachment and recession separate.
+    { id: "waterchange", label: "Water Change & Encroachment", desc: "DINOv3 land cover differenced across two dates — built-over water separated from water that simply receded" },
     { id: "pothole", label: "Pothole Detection", desc: "YOLO road-damage detector — potholes & cracks on drone imagery" },
 ];
 
@@ -645,7 +649,7 @@ export default function Upload() {
     // These three run inside their own panel, which has its own Run button and
     // its own file list. The page-level submit would have nothing to submit.
     const canSubmit = (analysisType === "pothole" || analysisType === "buildings"
-                       || analysisType === "landcover")
+                       || analysisType === "landcover" || analysisType === "waterchange")
         ? false
         : isCdType(analysisType)
             ? (cdPastFile && cdPresentFile && !processing)
@@ -679,6 +683,8 @@ export default function Upload() {
                         <BuildingsPanel />
                     ) : analysisType === "landcover" ? (
                         <LandCoverPanel />
+                    ) : analysisType === "waterchange" ? (
+                        <WaterChangePanel />
                     ) : isCdType(analysisType) ? (
                         <div className="space-y-4" data-tour="cd-uploads">
                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -1172,7 +1178,7 @@ export default function Upload() {
                         </div>
                     </div>
 
-                    {analysisType !== "pothole" && analysisType !== "landcover" && <button
+                    {analysisType !== "pothole" && analysisType !== "landcover" && analysisType !== "waterchange" && <button
                         onClick={handleSubmit}
                         data-tour="run-btn"
                         disabled={!canSubmit}
@@ -1238,6 +1244,31 @@ export default function Upload() {
                             <p className="text-[11px] text-[var(--text-muted)] leading-relaxed">
                                 To run it over a drawn area of the city instead of an upload, use
                                 <strong className="text-[var(--text-secondary)]"> Land cover (9 class)</strong> on the Mapping page.
+                            </p>
+                        </div>
+                    ) : analysisType === "waterchange" ? (
+                        <div className="bg-[var(--surface)] border border-[var(--line)] rounded-[8px] p-4 space-y-2.5">
+                            <p className="panel-title">Water change &amp; encroachment</p>
+                            <p className="text-xs text-[var(--text-muted)] leading-relaxed">
+                                The same DINOv3 land-cover model, run on both dates and differenced. It needs no
+                                second set of weights, and it improves whenever land cover does.
+                            </p>
+                            <p className="text-[11px] text-[var(--text-muted)] leading-relaxed">
+                                What it adds over a gain/loss mask is <strong className="text-[var(--text-secondary)]">what replaced the water</strong>.
+                                Water that became building, road or developed ground is reported as
+                                <strong className="text-[var(--text-secondary)]"> encroachment</strong>; water that became bare soil
+                                or vegetation is <strong className="text-[var(--text-secondary)]">recession</strong> — a level drop,
+                                often seasonal. The same square metres, but a very different finding.
+                            </p>
+                            <p className="text-[11px] text-[var(--text-muted)] leading-relaxed">
+                                Both uploads must cover the same ground; they are resampled onto one grid at the
+                                coarser of the two resolutions before anything is compared. Upload GeoTIFFs — a plain
+                                JPG or PNG carries no ground resolution, so areas cannot be computed.
+                            </p>
+                            <p className="text-[11px] text-[var(--text-muted)] leading-relaxed">
+                                To run it over a drawn area against the imagery already on the server (2017 satellite,
+                                2022 drone, 2026 satellite), use
+                                <strong className="text-[var(--text-secondary)]"> Water change</strong> on the Mapping page.
                             </p>
                         </div>
                     ) : analysisType === "pothole" ? (

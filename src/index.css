@@ -90,6 +90,15 @@
   --red: var(--critical);
   --red-dim: var(--critical-dim);
   --red-glow: var(--critical-glow);
+  /* Used by the model panels (Buildings, Land cover, Water change), which were
+     written against these names. Undefined vars silently drop the whole
+     declaration, so a missing one is an invisible bug, not a fallback. */
+  --danger: var(--critical);
+  --danger-dim: var(--critical-dim);
+  --warn: var(--alert);
+  --warn-dim: var(--alert-dim);
+  --surface-1: var(--surface);
+  --border-subtle: var(--line-soft);
   --radius-sm: var(--r-sm);
   --radius-md: var(--r-md);
   --radius-lg: var(--r-lg);

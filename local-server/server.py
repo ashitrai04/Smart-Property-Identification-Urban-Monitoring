@@ -50,8 +50,9 @@ GPU_SERVER = os.environ.get("GPU_SERVER_URL", "http://127.0.0.1:8800").rstrip("/
 # This tuple is documentation. What actually routes a request to the model
 # server is the explicit @app.api_route list further down - adding a prefix
 # here and nowhere else gets a 404, which is exactly what happened to /height.
-GPU_PREFIXES = ("/hisup/", "/roadnet/", "/landcover/", "/area", "/pothole/",
-                "/predict", "/change-detection", "/r2/", "/height")
+GPU_PREFIXES = ("/hisup/", "/roadnet/", "/landcover/", "/waterchange/",
+                "/area", "/pothole/", "/predict", "/change-detection",
+                "/r2/", "/height")
 # A four-resolution pass over a large image is minutes, not seconds.
 GPU_TIMEOUT = float(os.environ.get("GPU_PROXY_TIMEOUT", "900"))
 
@@ -602,6 +603,10 @@ async def _proxy(request, path):
 # the prefix was in GPU_PREFIXES but there was no route here, so every call
 # 404'd in this process and the webapp concluded the model did not exist.
 @app.api_route("/landcover/{rest:path}", methods=["GET", "POST", "OPTIONS"])
+# Water change: /waterchange/legend is the key on both pages and
+# /waterchange/predict is the two-upload comparison on the Analysis page. Same
+# route needed for the same reason - see the two comments above.
+@app.api_route("/waterchange/{rest:path}", methods=["GET", "POST", "OPTIONS"])
 async def _proxy_prefixed(request: Request, rest: str = ""):
     return await _proxy(request, request.url.path)
 

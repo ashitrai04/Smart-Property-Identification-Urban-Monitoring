@@ -175,9 +175,13 @@ export default function AreaModelPanel({ map, aoiFeatures }) {
     // versions in every branch - that is how a v3 ends up with no controls.
     const isRoad = task === "roadnet" || task === "roadnet_v2";
     const isLand = task === "landcover";
+    const isWater = task === "waterchange";
+    // Both draw their result as a class raster rather than vectors.
+    const isRasterTask = isLand || isWater;
     const [lcLegend, setLcLegend] = useState(null);   // rows, with this run's shares
     const [imagery, setImagery] = useState([]);      // rasters the server can run on
     const [imageryId, setImageryId] = useState("");  // "" = let the server pick
+    const [imageryIdB, setImageryIdB] = useState(""); // water change: the second epoch
     const [job, setJob] = useState(null);
     const [count, setCount] = useState(0);
     const [done, setDone] = useState(false);
@@ -639,7 +643,8 @@ export default function AreaModelPanel({ map, aoiFeatures }) {
                         // Land cover's result is the class raster, not vectors:
                         // loadResult would fetch an empty collection and the
                         // panel would report a finished job with nothing drawn.
-                        if (taskRef.current === "landcover") await showLandcover(id);
+                        if (["landcover", "waterchange"].includes(taskRef.current))
+                            await showLandcover(id);
                         // Nothing streamed means this task writes its result at
                         // the end rather than per window. Fetch it.
                         else if (!featsRef.current.length) await loadResult(id);
@@ -701,6 +706,7 @@ export default function AreaModelPanel({ map, aoiFeatures }) {
                     // Omitted entirely when blank, so the server keeps its own
                     // rule: the finest raster that intersects the area.
                     ...(imageryId ? { imagery_id: imageryId } : {}),
+                    ...(isWater && imageryIdB ? { imagery_id_b: imageryIdB } : {}),
                     scales: q.scales, min_votes: q.votes,
                     // Only meaningful to the road model; the server hands each
                     // task the parameters it knows and ignores the rest.
@@ -837,7 +843,9 @@ export default function AreaModelPanel({ map, aoiFeatures }) {
                         className="w-full rounded-md px-2 py-1.5 text-[11px]"
                         style={{ background: "var(--surface)", border: "1px solid var(--line)",
                                  color: "var(--text-primary)" }}>
-                    <option value="">Imagery: auto — finest covering the area</option>
+                    <option value="">
+                        {isWater ? "Earlier epoch — pick one" : "Imagery: auto — finest covering the area"}
+                    </option>
                     {imagery.map((im) => (
                         <option key={im.id} value={im.id}>
                             {im.name || im.id} — {im.kind || "?"}
@@ -845,6 +853,34 @@ export default function AreaModelPanel({ map, aoiFeatures }) {
                         </option>
                     ))}
                 </select>
+            )}
+
+            {/* Water change needs two dates. The second list excludes whatever
+                the first is set to: comparing a scene with itself is not a
+                comparison, and the server refuses it anyway - better to make
+                it unpickable than to explain the refusal afterwards. */}
+            {isWater && imagery.length > 1 && (
+                <>
+                    <select value={imageryIdB} onChange={(e) => setImageryIdB(e.target.value)}
+                            disabled={running}
+                            className="w-full rounded-md px-2 py-1.5 text-[11px]"
+                            style={{ background: "var(--surface)", border: "1px solid var(--line)",
+                                     color: "var(--text-primary)" }}>
+                        <option value="">Later epoch — pick one</option>
+                        {imagery.filter((im) => im.id !== imageryId).map((im) => (
+                            <option key={im.id} value={im.id}>
+                                {im.name || im.id} — {im.kind || "?"}
+                                {im.gsd_m ? `, ${Number(im.gsd_m).toFixed(2)} m` : ""}
+                            </option>
+                        ))}
+                    </select>
+                    {(!imageryId || !imageryIdB) && (
+                        <p className="text-[10px]" style={{ color: "var(--text-dim)" }}>
+                            Pick both dates. The comparison runs at the coarser of the
+                            two resolutions, on one shared grid.
+                        </p>
+                    )}
+                </>
             )}
 
             {task === "hisup" && (
@@ -888,7 +924,8 @@ export default function AreaModelPanel({ map, aoiFeatures }) {
                 </p>
             ) : !running ? (
                 <Button variant="primary" className="w-full" onClick={start}
-                        disabled={!gpu.ok || !hasAoi || submitting}>
+                        disabled={!gpu.ok || !hasAoi || submitting
+                                  || (isWater && (!imageryId || !imageryIdB))}>
                     <Play size={13} /> {submitting ? "Starting…"
                         : done ? "Run again" : "Run on this area"}
                 </Button>
@@ -1083,14 +1120,14 @@ export default function AreaModelPanel({ map, aoiFeatures }) {
                 no raster result. */}
             {/* Raster drawn but the key did not arrive: say so rather than
                 leaving the panel silent, because the overlay IS on the map. */}
-            {done && isLand && !lcLegend && (
+            {done && isRasterTask && !lcLegend && (
                 <p className="text-[10px]" style={{ color: "var(--text-dim)" }}>
                     Class map drawn on the map. The legend could not be loaded —
                     check that the data server proxies /results/&#123;job&#125;/legend.
                 </p>
             )}
 
-            {done && count === 0 && !handoff && !lcLegend && !isLand && (
+            {done && count === 0 && !handoff && !lcLegend && !isRasterTask && (
                 <p className="text-[10px]" style={{ color: "var(--text-dim)" }}>
                     Finished, but nothing was found in that area.
                 </p>

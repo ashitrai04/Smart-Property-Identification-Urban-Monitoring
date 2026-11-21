@@ -50,6 +50,7 @@ import pothole  # noqa: E402  (reads POTHOLE_WEIGHTS at import)
 import buildings  # noqa: E402  (HiSup delineation; loads weights lazily)
 import roadnet  # noqa: E402  (DINOv3 road extraction; loads weights lazily)
 import landcover  # noqa: E402  (DINOv3 + UPerNet 9-class land cover; loads weights lazily)
+import waterchange  # noqa: E402  (two-epoch water change; reuses the land-cover model)
 import height  # noqa: E402  (thin client for the DSM laptop; no local data)
 
 pothole._lock = gpu.GPU_LOCK      # one GPU queue for every model
@@ -76,6 +77,7 @@ app.include_router(buildings.router)
 app.include_router(buildings.area_router)
 app.include_router(roadnet.router)
 app.include_router(landcover.router)
+app.include_router(waterchange.router)
 app.include_router(height.router)
 
 print(f"[startup] device={seg.DEVICE} batch={seg.SEG_BATCH} fp16={seg.SEG_FP16} max_dim={seg.MAX_DIM} "
@@ -154,7 +156,7 @@ def health():
         "classes": seg.CLASS_NAMES, "weights": seg.LOAD_INFO, "r2": bool(R2_ACCOUNT and R2_KEY),
         "max_dim": seg.MAX_DIM,
         "capabilities": ["predict", "predict-fusion", "change-detection", "pothole",
-                         "hisup", "roadnet", "landcover", "imagery", "jobs"],
+                         "hisup", "roadnet", "landcover", "waterchange", "imagery", "jobs"],
         "landcover": {"present": os.path.exists(landcover.WEIGHTS),
                       "weights": os.path.basename(landcover.WEIGHTS),
                       "loaded": landcover.LOAD_INFO.get("loaded", False),
@@ -549,7 +551,8 @@ CLASS_COLORMAP = {0: (0, 0, 0, 0), 1: (239, 68, 68, 190), 2: (234, 179, 8, 210),
 # things. Colouring one with the other's table is silent — the tiles render,
 # they are simply wrong — so the table is chosen by the job's task rather than
 # being a single global.
-TASK_COLORMAPS = {"landcover": landcover.COLORMAP}
+TASK_COLORMAPS = {"landcover": landcover.COLORMAP,
+                  "waterchange": waterchange.COLORMAP}
 
 
 def _colormap_for(job):
@@ -592,6 +595,15 @@ def result_legend(jid: str):
     """
     j = _done_job(jid)
     task = j.get("task")
+    if task == "waterchange":
+        import json as _json
+        st = j.get("stats")
+        if isinstance(st, str):
+            try:
+                st = _json.loads(st)
+            except ValueError:
+                st = None
+        return {"task": task, "classes": waterchange.legend(st)}
     if task == "landcover":
         import json as _json
         stats = j.get("stats")

@@ -47,11 +47,20 @@ export function Card({ children, className = "", style, ...rest }) {
 }
 
 /* ── Section header inside rails/panels ─────────────────────── */
-export function SectionHeader({ children, right }) {
+export function SectionHeader({ children, right, title, sub }) {
+    // Two shapes, because both are already in use: the rails pass the heading
+    // as children, the model panels pass title + a one-line explanation.
+    // Before `title`/`sub` were honoured here they were dropped as unknown
+    // props, so three panels rendered with no heading at all.
     return (
-        <div className="flex items-center justify-between px-3 py-2">
-            <span className="panel-title">{children}</span>
-            {right}
+        <div className="flex items-start justify-between gap-3 px-3 py-2">
+            <div className="min-w-0">
+                <span className="panel-title">{title ?? children}</span>
+                {sub && (
+                    <p className="mt-0.5 text-[11px] leading-snug text-[var(--text-muted)]">{sub}</p>
+                )}
+            </div>
+            {right && <div className="shrink-0">{right}</div>}
         </div>
     );
 }
@@ -139,7 +148,16 @@ export function Empty({ children }) {
 }
 
 /* ── Small pill ─────────────────────────────────────────────── */
-export function Pill({ children, colour, mono, className = "" }) {
+// Named tones, so a caller can say what a pill means rather than pick a hex.
+const PILL_TONE = {
+    ok: "var(--ok)",
+    warn: "var(--alert)",
+    danger: "var(--critical)",
+    info: "var(--signal)",
+};
+
+export function Pill({ children, colour, tone, mono, className = "" }) {
+    colour = colour ?? PILL_TONE[tone];
     return (
         <span
             className={`inline-flex items-center gap-1 rounded-[4px] px-1.5 py-[2px] text-[10px] font-medium ${mono ? "mono" : ""} ${className}`}

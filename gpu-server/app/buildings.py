@@ -659,6 +659,14 @@ AREA_TASKS = {
                           "overlay, downloadable as a GeoTIFF with its own colour "
                           "table. No vectors - pass vectorize:[...] to get a "
                           "GeoPackage as well."},
+    "waterchange": {"label": "Water change (2 epochs)", "kind": "raster",
+                    "needs": ["imagery_id", "imagery_id_b"],
+                    "note": "Water gained, lost, encroached or receded between two "
+                            "dates. Both epochs go through the same land-cover model "
+                            "on one shared grid, and what REPLACED the water decides "
+                            "the verdict: built over is encroachment, bare or "
+                            "vegetated is recession. Draws as a coloured overlay; "
+                            "each finding also comes out as a polygon."},
     "segment": {"label": "Land-use segmentation", "kind": "vector",
                 "note": "buildings / roads / water / open ground"},
     "fusion":  {"label": "Segmentation + SAM", "kind": "vector",
@@ -726,7 +734,8 @@ async def area_start(payload: dict = Body(...)):
     # reg_mode and threshold belong to the road model; the others to HiSup.
     # Both are carried on the same job row, and each task reads what it knows.
     for k in ("scales", "min_votes", "core", "lo", "work_gsd_m", "window",
-              "reg_mode", "threshold", "vectorize", "min_area_m2"):
+              "reg_mode", "threshold", "vectorize", "min_area_m2",
+              "imagery_id_b", "min_water_m2", "min_change_m2"):
         if payload.get(k) not in (None, "", []):
             params[k] = payload[k]
 

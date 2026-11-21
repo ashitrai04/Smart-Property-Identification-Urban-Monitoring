@@ -956,6 +956,209 @@ def _run_landcover(job, img, out_dir):
     }
 
 
+# ── task: water change (two epochs) ──────────────────────────────
+# Vector layers worth having: each is a place someone might be sent to look.
+# "retained" is context, not a finding, so it stays in the raster only.
+WATERCHANGE_VECTOR = ("encroached", "receded", "gained")
+
+
+def _epoch_labels(path, crs, transform, W, H, cells, job, lc, weight_of, phase):
+    """Land-cover labels for one epoch, on a grid that is NOT its own.
+
+    The two epochs have different CRSs and resolutions, so each is warped
+    onto one shared grid before anything is classified. Differencing maps
+    that are not aligned measures the misalignment - with a 0.3 m pixel and
+    a 2 m registration error, a shoreline moves seven pixels and every one
+    of them reads as change.
+
+    Returns uint8 labels. The float16 probability stack is freed before the
+    caller asks for the second epoch, so only one is ever resident.
+    """
+    from rasterio.vrt import WarpedVRT
+
+    ncls = len(lc.CLASSES)
+    acc = np.zeros((ncls, H, W), np.float16)
+    wsum = np.zeros((H, W), np.float32)
+    n, done = len(cells), 0
+
+    with rasterio.open(path) as src0, WarpedVRT(
+            src0, crs=crs, transform=transform, width=W, height=H,
+            resampling=Resampling.average) as src:
+        for (x, y, w, h) in cells:
+            if _cancelled(job["id"]):
+                return None
+            # Not _read_rgb: it reads boundless, and a WarpedVRT refuses
+            # that. The VRT is exactly this grid, so every window is inside
+            # it and boundless was never needed.
+            win_ = Window(x, y, w, h)
+            idx = [1, 2, 3] if src.count >= 3 else [1, 1, 1]
+            arr = src.read(idx, window=win_, out_shape=(3, h, w),
+                           resampling=Resampling.average)
+            valid = src.dataset_mask(window=win_, out_shape=(h, w),
+                                     resampling=Resampling.nearest) > 0
+            if arr.dtype != np.uint8:
+                f = arr.astype(np.float32)
+                sel = f[:, valid] if valid.any() else f.reshape(3, -1)
+                lo, hi = np.percentile(sel, 2), np.percentile(sel, 98)
+                arr = np.clip((f - lo) * 255.0 / max(hi - lo, 1e-6), 0, 255).astype(np.uint8)
+            rgb = np.ascontiguousarray(arr.transpose(1, 2, 0))
+            done += 1
+            if valid.mean() < 0.02:
+                _progress(job["id"], phase(done / n))
+                continue
+            p = np.asarray(_on_gpu(job["id"], lambda: lc.probabilities(rgb)), np.float32)
+            v = valid
+            if LANDCOVER_EDGE_PX > 0 and not valid.all():
+                v = cv2.erode(valid.astype(np.uint8), np.ones((3, 3), np.uint8),
+                              iterations=LANDCOVER_EDGE_PX).astype(bool)
+            wgt = weight_of(h, w) * v
+            acc[:, y:y + h, x:x + w] += (p * wgt).astype(np.float16)
+            wsum[y:y + h, x:x + w] += wgt
+            _progress(job["id"], phase(done / n))
+
+    lab = acc.argmax(0).astype(np.uint8)
+    del acc
+    lab[wsum <= 1e-6] = 0
+    del wsum
+    return lab
+
+
+def _run_waterchange(job, img, out_dir):
+    """Water gained, lost, encroached or receded between two epochs.
+
+    Both epochs go through the same land-cover model on the same grid, so the
+    comparison is symmetric. Using a better water detector on only one epoch -
+    NDWI on the one that happens to have a near-infrared band, say - would
+    manufacture apparent change wherever the two methods simply disagree.
+    """
+    import landcover as lc
+    import waterchange as wc
+    from rasterio.transform import from_origin
+
+    params = job.get("params") or {}
+    other_id = params.get("imagery_id_b")
+    if not other_id:
+        raise ValueError("water change needs two epochs: pass imagery_id_b")
+    other = db.get_imagery(other_id)
+    if not other or other["status"] != "ready":
+        raise ValueError("the second epoch (%s) is not ready" % other_id)
+    if other["id"] == img["id"]:
+        raise ValueError("both epochs are the same imagery")
+
+    want_vectors = params.get("vectorize")
+    names = (list(WATERCHANGE_VECTOR) if want_vectors is None
+             else [] if want_vectors in (False, 0, "none", [])
+             else [str(n) for n in want_vectors])
+    min_area = float(params.get("min_area_m2") or LANDCOVER_MIN_AREA_M2)
+
+    with rasterio.open(img["cog_path"]) as a0, rasterio.open(other["cog_path"]) as b0:
+        if not a0.crs or not a0.crs.is_projected:
+            raise ValueError("this tool needs a projected raster (metre CRS)")
+        crs = a0.crs
+        native = max(abs(a0.transform.a), abs(b0.transform.a))
+        # The coarser epoch sets the floor: upsampling the coarser one would
+        # invent detail and then attribute the invention to change.
+        target = max(float(params.get("work_gsd_m") or 0) or lc.WORK_GSD, native)
+
+        aoi = _aoi_in_crs(params.get("aoi"), crs)
+        if aoi is None or aoi.is_empty:
+            raise ValueError("draw an area first - comparing two whole scenes is "
+                             "not something you want to wait for")
+        bx0, by0, bx1, by1 = aoi.bounds
+
+        win = int(params.get("window") or 1024)
+        step = win - 2 * OVERLAP
+        ncls = len(lc.CLASSES)
+
+        for _ in range(8):
+            W = max(1, int((bx1 - bx0) / target))
+            H = max(1, int((by1 - by0) / target))
+            need_mb = W * H * (ncls * 2 + 4) / 1e6
+            if need_mb <= LANDCOVER_MAX_MB:
+                break
+            target *= math.sqrt(need_mb / LANDCOVER_MAX_MB) * 1.08
+            if target > LANDCOVER_MAX_GSD:
+                raise ValueError("that area needs a resolution coarser than %.2f m "
+                                 "to fit %d MB - draw a smaller area"
+                                 % (LANDCOVER_MAX_GSD, LANDCOVER_MAX_MB))
+        T = from_origin(bx0, by1, target, target)
+        px_area = target * target
+
+        cells = []
+        for yy in _grid(H, win, step):
+            for xx in _grid(W, win, step):
+                cells.append((xx, yy, min(win, W - xx), min(win, H - yy)))
+        db.update_job(job["id"], stats={"windows": len(cells), "gsd": target,
+                                        "model": "waterchange"})
+
+        def weight_of(h, w):
+            fy = np.minimum(np.arange(h), h - 1 - np.arange(h)).astype(np.float32)
+            fx = np.minimum(np.arange(w), w - 1 - np.arange(w)).astype(np.float32)
+            edge = max(1.0, OVERLAP / 2.0)
+            return np.outer(np.clip(fy / edge, 0.02, 1.0), np.clip(fx / edge, 0.02, 1.0))
+
+        lab_a = _epoch_labels(img["cog_path"], crs, T, W, H, cells, job, lc,
+                              weight_of, lambda f: 0.45 * f)
+        if lab_a is None:
+            return None
+        lab_b = _epoch_labels(other["cog_path"], crs, T, W, H, cells, job, lc,
+                              weight_of, lambda f: 0.45 + 0.45 * f)
+        if lab_b is None:
+            return None
+
+    chg, stats = wc.compare(lab_a, lab_b, px_area,
+                            params.get("min_water_m2"), params.get("min_change_m2"))
+    del lab_a
+
+    inside = geometry_mask([aoi], out_shape=(H, W), transform=T,
+                           invert=True, all_touched=True)
+    chg = np.where(inside, chg, 0).astype(np.uint8)
+    del inside
+    _progress(job["id"], 0.92)
+
+    prof = dict(driver="GTiff", width=W, height=H, count=1, dtype="uint8", crs=crs,
+                transform=T, tiled=True, blockxsize=512, blockysize=512,
+                compress="deflate", nodata=0, BIGTIFF="IF_SAFER")
+    with rasterio.open(out_dir / "classes.tif", "w", **prof) as dst:
+        dst.write(chg, 1)
+        dst.write_colormap(1, {i: tuple(wc.COLORMAP[i]) for i in sorted(wc.CHANGE)})
+
+    sink = _Sink(out_dir / "results.gpkg", crs)
+    totals = {}
+    by_name = {wc.CHANGE[i][0]: i for i in sorted(wc.CHANGE)}
+    for name in names:
+        k = by_name.get(name)
+        if k is None:
+            continue
+        m = (chg == k).astype(np.uint8)
+        if not m.any():
+            continue
+        m = cv2.morphologyEx(m, cv2.MORPH_OPEN, np.ones((3, 3), np.uint8))
+        geoms = [shapely.geometry.shape(g)
+                 for g, v in shapes(m, mask=m.astype(bool), transform=T) if v == 1]
+        geoms = [g.simplify(target * 0.75) for g in geoms if g.area >= min_area]
+        geoms = [g for g in geoms if not g.is_empty]
+        if geoms:
+            sink.add(name, geoms,
+                     [{"change": name, "area_m2": round(g.area, 2),
+                       "note": wc.CHANGE[k][3]} for g in geoms])
+            totals[name] = len(geoms)
+    _progress(job["id"], 1.0)
+
+    counts = np.bincount(chg.ravel(), minlength=len(wc.CHANGE))
+    stats.update({
+        "model": "waterchange",
+        "work_gsd_m": target,
+        "windows": len(cells),
+        "epoch_a": {"id": img["id"], "name": img["name"]},
+        "epoch_b": {"id": other["id"], "name": other["name"]},
+        "change_pixels": counts.tolist(),
+        "features": totals,
+        "min_area_m2": min_area,
+    })
+    return {"layers": sink.counts, "stats": stats}
+
+
 # ── worker ───────────────────────────────────────────────────────
 def _cancelled(jid):
     return (db.get_job(jid) or {}).get("status") == "cancelled"
@@ -996,6 +1199,8 @@ def run_job(job):
                                version="param")
         elif job["task"] == "landcover":
             res = _run_landcover(job, img, out_dir)
+        elif job["task"] == "waterchange":
+            res = _run_waterchange(job, img, out_dir)
         elif job["task"] == "pothole":
             res = _run_pothole(job, img, out_dir)
         elif job["task"] == "refine":
