@@ -54,7 +54,13 @@ ROAD_TASKS = ("roadnet", "roadnet_v2", "roadnet_param")
 # count - asking "how many buildings" of it is meaningless. The class GeoTIFF
 # is pulled at the end and added as a raster layer; it carries its own colour
 # table, so QGIS styles it without help.
-RASTER_TASKS = ("landcover",)
+RASTER_TASKS = ("landcover", "waterchange")
+
+# Tasks that compare two dates and therefore need TWO images chosen, not one.
+# Water change runs the same land-cover model over both and differences the
+# water class, so "which two" is the whole question the operator is asking -
+# it cannot be inferred from the area the way a single-epoch job's can.
+TWO_EPOCH_TASKS = ("waterchange",)
 
 # The road regularizer's modes, measured against the project's own labels.
 ROAD_REG = [("Smooth — follow the road edge (F1 0.786)", "smooth"),
@@ -107,6 +113,28 @@ def imagery_entries(is_raster, qgis_rasters, server_rows):
                                     im.get("kind") or "?",
                                     (", %.2f m" % gsd) if gsd else ""),
                     im.get("id")))
+    return out
+
+
+def epoch_b_entries(qgis_rasters, exclude_layer_id=None):
+    """What the "Compare with" box should offer: the other open rasters.
+
+    Pure, for the same reason imagery_entries is - this is a decision worth
+    testing without standing up QGIS.
+
+    The layer already chosen as the earlier epoch is left out. Comparing a
+    raster with itself returns "nothing changed" after several minutes of
+    GPU time, which looks exactly like a broken model rather than a silly
+    question, so it is better not to be offerable at all.
+    """
+    out = []
+    for lid, name, px in qgis_rasters:
+        if exclude_layer_id is not None and lid == exclude_layer_id:
+            continue
+        out.append(("%s%s" % (name, (" - %.2f m" % px) if px else ""),
+                    ("qgis", lid)))
+    if not out:
+        out.append(("Add a second raster to QGIS to compare against", None))
     return out
 
 
@@ -202,7 +230,17 @@ class DelineatorPanel(QWidget):
             "Which registered raster to run on. “Auto” takes the finest "
             "one covering the area, which is what every run did before this "
             "box existed.")
-        f.addRow("Imagery", self.imagery)
+        self.row_imagery = f.addRow("Imagery", self.imagery) or self.imagery
+
+        # The second epoch. Water change needs two images and the question is
+        # "which two", so both come from the layers open in QGIS - the same
+        # list, so the two boxes cannot be describing different worlds.
+        self.imagery_b = QComboBox()
+        self.imagery_b.setToolTip(
+            "The later date, compared against the one above. Both are read "
+            "from the rasters open in this project, clipped to the drawn "
+            "area and uploaded - the server never has to hold either of them.")
+        f.addRow("Compare with", self.imagery_b)
 
         self.quality = QComboBox()
         self.quality.addItems([q[0] for q in QUALITY])
@@ -250,6 +288,9 @@ class DelineatorPanel(QWidget):
         self._rows = f
         v.addWidget(opt)
         self.model.currentIndexChanged.connect(self._model_changed)
+        # Changing the earlier epoch has to rebuild the later one's list, or
+        # the layer just chosen stays offered as its own comparison.
+        self.imagery.currentIndexChanged.connect(self._fill_imagery_b)
 
         # run
         self.btn_run = QPushButton(QIcon(ICON), "Run on this area")
@@ -307,7 +348,12 @@ class DelineatorPanel(QWidget):
     def _is_raster(self):
         return (self.model.currentData() or "") in RASTER_TASKS
 
+    def _is_two_epoch(self):
+        return (self.model.currentData() or "") in TWO_EPOCH_TASKS
+
     def _noun(self):
+        if self._is_two_epoch():
+            return "change map"
         if self._is_raster():
             return "class map"
         return "roads" if self._is_road() else "buildings"
@@ -322,8 +368,20 @@ class DelineatorPanel(QWidget):
         """
         road = self._is_road()
         raster = self._is_raster()
+        two = self._is_two_epoch()
         if hasattr(self, "imagery"):
             self._fill_imagery()
+        # The second epoch box only makes sense for a two-date comparison.
+        # Leaving it visible for the others would be a control that silently
+        # does nothing, which is the same mistake as the spinner below.
+        if hasattr(self, "imagery_b"):
+            self.imagery_b.setVisible(two)
+            lbl = self._rows.labelForField(self.imagery_b)
+            if lbl is not None:
+                lbl.setVisible(two)
+            lbl = self._rows.labelForField(self.imagery)
+            if lbl is not None:
+                lbl.setText("Earlier date" if two else "Imagery")
         # Land cover reads none of the building controls, and the working
         # resolution one is worse than useless there: it is sent as a floor the
         # server may not coarsen, which is what made large AOIs fail. Hiding it
@@ -377,41 +435,39 @@ class DelineatorPanel(QWidget):
         self.server_note.setStyleSheet("color: #15803d;")
 
     # ── area ────────────────────────────────────────────────────
-    def _run_on_qgis_layer(self, layer_id, url):
-        """Classify the AOI out of a QGIS layer the server does not have.
+    # ── running on a raster that is open in QGIS, not on the server ─────
+    #
+    # Land cover and water change both take this path: the AOI is clipped out
+    # of the layer here, posted as an upload, and the raster that comes back
+    # is georeferenced with the clip's own transform. The other models answer
+    # with vectors from a server-side job and have no equivalent endpoint.
+    #
+    # The three steps below are shared rather than copied. The first draft of
+    # water change duplicated them, and a copy of the colour-table ordering
+    # rule is a copy that can be fixed in one place and left wrong in the
+    # other.
 
-        Everything here is GDAL and Qt, deliberately: QGIS ships those, and
-        the plugin has no third-party dependencies to lean on. The clip is
-        written as a plain GeoTIFF, posted to /landcover/predict, and the
-        class map that comes back - in the clip's own pixel grid - is given
-        the clip's geotransform, so it lands exactly where it came from.
+    def _clip_to_aoi(self, layer_id, what="image"):
+        """Clip one open QGIS raster to the drawn AOI.
 
-        Only land cover takes this path. The other models answer with vectors
-        from a server-side job and have no equivalent upload endpoint.
+        Returns a dict with the clip's path and geotransform, or None - having
+        already reset the run UI and said why, so the caller just returns.
         """
         import tempfile
-        from osgeo import gdal, osr
+        from osgeo import gdal
 
         lyr = QgsProject.instance().mapLayer(layer_id)
         if lyr is None:
             self._reset_run_ui()
             self._log("That QGIS layer is gone.")
-            return
-        if not self._is_raster():
-            self._reset_run_ui()
-            QMessageBox.information(
-                self, "Not supported for this model",
-                "Running on a QGIS layer is implemented for Land cover only. "
-                "For the other models, pick a Server entry, or ingest the "
-                "raster so it joins the server's catalogue.")
-            return
+            return None
 
         src = lyr.source().split("|")[0]
         geom = self._aoi_geojson()
         if not geom:
             self._reset_run_ui()
             self._log("Draw an area first.")
-            return
+            return None
 
         # The AOI is in EPSG:4326; the file is in its own CRS.
         ring = geom["geometry"]["coordinates"][0]
@@ -426,9 +482,10 @@ class DelineatorPanel(QWidget):
         px = lyr.rasterUnitsPerPixelX() or 0.0
         wpx = int(abs(lrx - ulx) / px) if px else 0
         hpx = int(abs(uly - lry) / px) if px else 0
-        self._log("Clipping %s — %d x %d px at %.2f m" % (lyr.name(), wpx, hpx, px))
+        self._log("Clipping %s (%s) — %d x %d px at %.2f m"
+                  % (lyr.name(), what, wpx, hpx, px))
 
-        # The predict endpoint refuses anything over 8192 px a side, and a
+        # The predict endpoints refuse anything over 8192 px a side, and a
         # whole-scene clip would be far over. Downsample the clip rather than
         # fail, and say so - the model works at ~0.2-0.3 m anyway.
         opts = {"format": "GTiff", "projWin": [ulx, uly, lrx, lry],
@@ -442,63 +499,51 @@ class DelineatorPanel(QWidget):
             self._log("   too large for one request — resampled to %d x %d"
                       % (opts["width"], opts["height"]))
 
-        clip = os.path.join(tempfile.gettempdir(), "urbanly_clip_%s.tif" % layer_id[:8])
+        clip = os.path.join(tempfile.gettempdir(),
+                            "urbanly_clip_%s_%s.tif" % (what, layer_id[:8]))
         try:
             ds = gdal.Translate(clip, src, **opts)
             if ds is None:
                 raise RuntimeError("GDAL could not clip that area out of the layer")
-            gt = ds.GetGeoTransform()
-            wkt = ds.GetProjection()
-            cw, ch = ds.RasterXSize, ds.RasterYSize
+            out = {"path": clip, "gt": ds.GetGeoTransform(),
+                   "wkt": ds.GetProjection(), "cw": ds.RasterXSize,
+                   "ch": ds.RasterYSize, "px": px, "layer": lyr}
             ds = None
         except Exception as e:
             self._reset_run_ui()
             self._log("Clip failed: %s" % e)
-            return
+            return None
         self._log("   uploading %.1f MB…" % (os.path.getsize(clip) / 1e6))
+        return out
 
-        try:
-            res = client.landcover_predict(clip, server=url, gsd=(px or None))
-        except Exception as e:
-            self._reset_run_ui()
-            self._log("The server refused the upload: %s" % str(e)[:200])
-            return
+    def _georeference(self, b64, clip, rows, out_name):
+        """Give a returned class/change PNG the clip's position, and write it.
 
-        b64 = res.get("classes_png")
-        if not b64:
-            # An older server only returned the class map alongside the RGB
-            # overlay. Ask again the expensive way rather than fail: the
-            # overlay is wasted bytes here, but a result beats an error.
-            self._log("   server did not send a class map; retrying with overlay…")
-            try:
-                res = client.landcover_predict(clip, server=url, gsd=(px or None),
-                                               want_overlay=True, preview_max=256)
-            except Exception as e:
-                self._reset_run_ui()
-                self._log("Retry failed: %s" % str(e)[:200])
-                return
-            b64 = res.get("classes_png")
-        if not b64:
-            self._reset_run_ui()
-            self._log("The server returned no class map.")
-            return
+        Returns the GeoTIFF's path, or None (having already said why).
+        """
+        from osgeo import gdal
 
-        png = os.path.splitext(clip)[0] + "_classes.png"
+        png = os.path.splitext(clip["path"])[0] + "_%s.png" % out_name
         with open(png, "wb") as fh:
             fh.write(base64.b64decode(b64))
 
-        # Give the class map the clip's geotransform. The model may have
-        # worked at a different size, so the pixel size is scaled by the
-        # ratio rather than copied - copying it is how a result ends up the
-        # right shape in the wrong place.
-        out_tif = os.path.splitext(clip)[0] + "_classes.tif"
+        # The model may have worked at a different size, so the pixel size is
+        # scaled by the ratio rather than copied - copying it is how a result
+        # ends up the right shape in the wrong place. Water change makes that
+        # the normal case rather than the exception: its shared grid is the
+        # COARSER of the two epochs, so the result rarely matches either clip.
+        out_tif = os.path.splitext(clip["path"])[0] + "_%s.tif" % out_name
+        gt = clip["gt"]
         png_ds = gdal.Open(png)
+        if png_ds is None:
+            self._log("Could not read the raster the server sent back.")
+            return None
         lw, lh = png_ds.RasterXSize, png_ds.RasterYSize
         drv = gdal.GetDriverByName("GTiff")
         dst = drv.Create(out_tif, lw, lh, 1, gdal.GDT_Byte, ["COMPRESS=DEFLATE"])
-        dst.SetGeoTransform((gt[0], gt[1] * cw / float(lw), gt[2],
-                             gt[3], gt[4], gt[5] * ch / float(lh)))
-        dst.SetProjection(wkt)
+        dst.SetGeoTransform((gt[0], gt[1] * clip["cw"] / float(lw), gt[2],
+                             gt[3], gt[4], gt[5] * clip["ch"] / float(lh)))
+        dst.SetProjection(clip["wkt"])
         band = dst.GetRasterBand(1)
 
         # Colour table BEFORE the pixels, and this order is not a style
@@ -511,22 +556,84 @@ class DelineatorPanel(QWidget):
         # QGIS's own GDAL before fixing.
         #
         # The colours come from the legend in the response, not a copy kept
-        # here: a second palette is a second palette that can drift.
+        # here: a second palette is a second palette that can drift. Class 0
+        # is transparent in both models - "unknown" for land cover, "no water"
+        # for water change - so the imagery stays visible underneath.
+        #
+        # The per-class alpha below is set but does NOT survive the write: a
+        # TIFF ColorMap tag is RGB only, so everything except the nodata class
+        # reads back opaque. Measured, not assumed - a round trip through
+        # QGIS's own GDAL returns 255 for a class written as 235. It is left
+        # in because it costs nothing and is right if the format ever carries
+        # it; what actually keeps the result readable as an overlay is class 0
+        # being nodata, which is most of the raster.
         ct = gdal.ColorTable()
-        for r in (res.get("classes") or []):
+        for r in (rows or []):
             h = (r.get("color") or "").lstrip("#")
             if len(h) != 6:
                 continue
             rgb = tuple(int(h[k:k + 2], 16) for k in (0, 2, 4))
             ct.SetColorEntry(int(r.get("id", 0)),
-                             rgb + (0 if r.get("name") == "unknown"
+                             rgb + (0 if r.get("name") in ("unknown", "no water")
                                     else int(r.get("alpha", 255)),))
         band.SetRasterColorTable(ct)
         band.SetNoDataValue(0)
         band.WriteArray(png_ds.GetRasterBand(1).ReadAsArray())
         band = None; dst = None; png_ds = None
+        return out_tif
 
-        out = QgsRasterLayer(out_tif, "Land cover — %s" % lyr.name())
+    def _run_on_qgis_layer(self, layer_id, url):
+        """Classify the AOI out of a QGIS layer the server does not have."""
+        if not self._is_raster():
+            self._reset_run_ui()
+            QMessageBox.information(
+                self, "Not supported for this model",
+                "Running on a QGIS layer is implemented for Land cover and "
+                "Water change only. For the other models, pick a Server "
+                "entry, or ingest the raster so it joins the server's "
+                "catalogue.")
+            return
+
+        clip = self._clip_to_aoi(layer_id)
+        if clip is None:
+            return
+
+        try:
+            res = client.landcover_predict(clip["path"], server=url,
+                                           gsd=(clip["px"] or None))
+        except Exception as e:
+            self._reset_run_ui()
+            self._log("The server refused the upload: %s" % str(e)[:200])
+            return
+
+        b64 = res.get("classes_png")
+        if not b64:
+            # An older server only returned the class map alongside the RGB
+            # overlay. Ask again the expensive way rather than fail: the
+            # overlay is wasted bytes here, but a result beats an error.
+            self._log("   server did not send a class map; retrying with overlay…")
+            try:
+                res = client.landcover_predict(clip["path"], server=url,
+                                               gsd=(clip["px"] or None),
+                                               want_overlay=True, preview_max=256)
+            except Exception as e:
+                self._reset_run_ui()
+                self._log("Retry failed: %s" % str(e)[:200])
+                return
+            b64 = res.get("classes_png")
+        if not b64:
+            self._reset_run_ui()
+            self._log("The server returned no class map.")
+            return
+
+        rows_all = res.get("classes") or []
+        out_tif = self._georeference(b64, clip, rows_all, "classes")
+        if out_tif is None:
+            self._reset_run_ui()
+            return
+
+        name = clip["layer"].name()
+        out = QgsRasterLayer(out_tif, "Land cover — %s" % name)
         if not out.isValid():
             self._reset_run_ui()
             self._log("QGIS could not open %s" % out_tif)
@@ -534,7 +641,7 @@ class DelineatorPanel(QWidget):
         QgsProject.instance().addMapLayer(out)
         self.result_layers.append(out)
         self.class_raster = out_tif
-        rows = [r for r in (res.get("classes") or [])
+        rows = [r for r in rows_all
                 if r.get("name") != "unknown" and (r.get("percent") or 0) > 0.05]
         rows.sort(key=lambda r: -(r.get("percent") or 0))
         self.class_rows = rows
@@ -545,7 +652,89 @@ class DelineatorPanel(QWidget):
         self._reset_run_ui()
         self.btn_export.setEnabled(True)
         self.count.setText("class map")
-        self._log("Finished — class raster from %s added to the map." % lyr.name())
+        self._log("Finished — class raster from %s added to the map." % name)
+
+    def _run_waterchange_on_qgis_layers(self, layer_a_id, layer_b_id, url):
+        """Compare two open QGIS rasters over the drawn AOI.
+
+        Both epochs are clipped to the same area and posted together, so the
+        server puts them on one grid and classifies both with the same model.
+        Sending them as two separate land-cover runs and differencing here
+        would be the same arithmetic over two independently chosen working
+        resolutions, which measures the resampling as much as the water.
+        """
+        clip_a = self._clip_to_aoi(layer_a_id, "earlier")
+        if clip_a is None:
+            return
+        clip_b = self._clip_to_aoi(layer_b_id, "later")
+        if clip_b is None:
+            return
+
+        name_a = clip_a["layer"].name()
+        name_b = clip_b["layer"].name()
+        self._log("Comparing %s → %s — the model runs over both, so give it "
+                  "a minute or two." % (name_a, name_b))
+
+        # gsd is deliberately not sent: it applies to BOTH images, so forcing
+        # one layer's pixel size onto the other would be a lie about the
+        # coarser one and every area would come out wrong. A clip out of a
+        # QGIS layer is a GeoTIFF and carries its own.
+        try:
+            res = client.waterchange_predict(clip_a["path"], clip_b["path"],
+                                             server=url)
+        except Exception as e:
+            self._reset_run_ui()
+            self._log("The server refused the upload: %s" % str(e)[:200])
+            return
+
+        b64 = res.get("change_png")
+        if not b64:
+            self._reset_run_ui()
+            self._log("The server returned no change map.")
+            return
+
+        rows_all = res.get("classes") or []
+        # The change map comes back on the SHARED grid, which may match
+        # neither clip. _georeference scales by the ratio, so either clip
+        # places it correctly - they were cut from one AOI.
+        out_tif = self._georeference(b64, clip_a, rows_all, "waterchange")
+        if out_tif is None:
+            self._reset_run_ui()
+            return
+
+        out = QgsRasterLayer(out_tif, "Water change — %s → %s" % (name_a, name_b))
+        if not out.isValid():
+            self._reset_run_ui()
+            self._log("QGIS could not open %s" % out_tif)
+            return
+        QgsProject.instance().addMapLayer(out)
+        self.result_layers.append(out)
+        self.class_raster = out_tif
+
+        st = res.get("stats") or {}
+        a_m2 = st.get("water_area_a_m2") or 0
+        b_m2 = st.get("water_area_b_m2") or 0
+        pct = st.get("net_change_pct")
+        self._log("   water %.2f ha → %.2f ha   %+.2f ha%s"
+                  % (a_m2 / 1e4, b_m2 / 1e4, (b_m2 - a_m2) / 1e4,
+                     ("  (%+.1f%%)" % pct) if pct is not None else ""))
+        rows = [r for r in rows_all
+                if r.get("name") != "no water" and (r.get("area_m2") or 0) > 0]
+        self.class_rows = rows
+        for r in rows:
+            self._log("   %-13s %9.0f m2  %6.2f ha"
+                      % (r.get("label") or r.get("name"),
+                         r.get("area_m2") or 0, r.get("area_ha") or 0))
+        # Worth saying every run rather than hoping it is remembered: a thin
+        # rim of change along a shoreline is the two dates not lining up, and
+        # a bund exposed by falling water classifies as built ground, so real
+        # recession can read as encroachment.
+        self._log("   Check encroachment along a shoreline against the "
+                  "imagery before reporting it.")
+        self._reset_run_ui()
+        self.btn_export.setEnabled(True)
+        self.count.setText("change map")
+        self._log("Finished — change raster added to the map.")
 
     def _refresh_imagery(self, url=None):
         """Re-read the server's catalogue, then rebuild the Imagery box."""
@@ -595,6 +784,31 @@ class DelineatorPanel(QWidget):
             if i >= 0:
                 self.imagery.setCurrentIndex(i)
         self.imagery.blockSignals(False)
+        self._fill_imagery_b()
+
+    def _fill_imagery_b(self):
+        """Render epoch_b_entries() into the second combo, keeping the choice."""
+        if not hasattr(self, "imagery_b"):
+            return
+        want = self.imagery_b.currentData() if self.imagery_b.count() else None
+        chosen = self.imagery.currentData() if self.imagery.count() else None
+        exclude = chosen[1] if isinstance(chosen, tuple) and chosen[0] == "qgis" else None
+        rasters = []
+        for lyr in self._qgis_rasters():
+            try:
+                px = lyr.rasterUnitsPerPixelX()
+            except Exception:
+                px = 0
+            rasters.append((lyr.id(), lyr.name(), px))
+        self.imagery_b.blockSignals(True)
+        self.imagery_b.clear()
+        for label, data in epoch_b_entries(rasters, exclude):
+            self.imagery_b.addItem(label, data)
+        if want is not None:
+            i = self.imagery_b.findData(want)
+            if i >= 0:
+                self.imagery_b.setCurrentIndex(i)
+        self.imagery_b.blockSignals(False)
 
     def start_draw(self):
         self.prev_tool = self.canvas.mapTool()
@@ -766,19 +980,44 @@ class DelineatorPanel(QWidget):
                 self._refresh_imagery(url)
             chosen_img = self.imagery.currentData() if hasattr(self, "imagery") else None
 
-            if self._is_raster() and not (isinstance(chosen_img, tuple)
-                                          and chosen_img[0] == "qgis"):
-                # Land cover runs on an open QGIS raster. Falling through here
+            is_qgis = isinstance(chosen_img, tuple) and chosen_img[0] == "qgis"
+            if self._is_raster() and not is_qgis:
+                # These models run on an open QGIS raster. Falling through here
                 # would quietly queue a server job against whatever raster the
                 # server thinks is best - the opposite of choosing.
                 self._reset_run_ui()
                 QMessageBox.information(
                     self, "No image selected",
-                    "Land cover runs on a raster layer open in QGIS. "
-                    "Add one to the project, then pick it in the Imagery box.")
+                    "%s runs on a raster layer open in QGIS. Add one to the "
+                    "project, then pick it in the %s box."
+                    % (self.model.currentText(),
+                       "Earlier date" if self._is_two_epoch() else "Imagery"))
                 return
 
-            if isinstance(chosen_img, tuple) and chosen_img[0] == "qgis":
+            if self._is_two_epoch():
+                # Two dates, both chosen here. Checked before any clipping so
+                # a missing second epoch costs a dialog, not several minutes.
+                chosen_b = self.imagery_b.currentData()
+                if not (isinstance(chosen_b, tuple) and chosen_b[0] == "qgis"):
+                    self._reset_run_ui()
+                    QMessageBox.information(
+                        self, "No second image",
+                        "%s compares two dates. Pick the later one in the "
+                        "“Compare with” box - it has to be a raster "
+                        "open in this project too."
+                        % self.model.currentText())
+                    return
+                if chosen_b[1] == chosen_img[1]:
+                    self._reset_run_ui()
+                    QMessageBox.information(
+                        self, "Same image twice",
+                        "Both boxes name the same layer, so there is nothing "
+                        "to compare. Pick a different later date.")
+                    return
+                self._run_waterchange_on_qgis_layers(chosen_img[1], chosen_b[1], url)
+                return
+
+            if is_qgis:
                 # A layer the server has never seen. Clip and upload instead
                 # of queuing an area job, which can only read the server's
                 # own catalogue.
@@ -1182,13 +1421,20 @@ class DelineatorPanel(QWidget):
         """
         import shutil
         src = getattr(self, "class_raster", None)
+        two = self._is_two_epoch()
         if not src or not os.path.exists(src):
-            QMessageBox.information(self, "Nothing to export",
-                                    "Run the land-cover model first.")
+            QMessageBox.information(
+                self, "Nothing to export",
+                "Run %s first." % ("the water-change model" if two
+                                   else "the land-cover model"))
             return
-        default = "landcover_%s.tif" % (self.job_id or "result")
+        # Named for the model that made it. A water-change raster saved as
+        # landcover_*.tif is a file that will be misread a month from now.
+        default = "%s_%s.tif" % ("waterchange" if two else "landcover",
+                                 self.job_id or "result")
         path, _ = QFileDialog.getSaveFileName(
-            self, "Export class map", default, "GeoTIFF (*.tif *.tiff)")
+            self, "Export %s" % ("change map" if two else "class map"),
+            default, "GeoTIFF (*.tif *.tiff)")
         if not path:
             return
         if not os.path.splitext(path)[1]:
@@ -1198,11 +1444,13 @@ class DelineatorPanel(QWidget):
         except Exception as e:
             QMessageBox.warning(self, "Export failed", str(e))
             return
-        self._log("Exported class map to %s" % path)
+        self._log("Exported %s to %s"
+                  % ("change map" if two else "class map", path))
 
         rows = getattr(self, "class_rows", None) or []
         if rows:
-            csv_path = os.path.splitext(path)[0] + "_classes.csv"
+            csv_path = os.path.splitext(path)[0] + (
+                "_change.csv" if two else "_classes.csv")
             try:
                 with open(csv_path, "w", encoding="utf-8") as fh:
                     fh.write("class,percent,area_m2,area_ha,colour\n")

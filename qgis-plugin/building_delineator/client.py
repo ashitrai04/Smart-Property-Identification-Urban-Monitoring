@@ -197,6 +197,36 @@ def landcover_predict(path, server=DEFAULT_SERVER, gsd=None, preview_max=0,
                     timeout=timeout, headers={"Content-Type": ctype})
 
 
+def waterchange_predict(past, present, server=DEFAULT_SERVER, gsd=None,
+                        min_water_m2=None, min_change_m2=None,
+                        want_overlay=False, preview_max=0, timeout=TIMEOUT):
+    """Compare two images of the same ground that the server has never seen.
+
+    Two uploads, not one, and that is the whole point of this endpoint: both
+    epochs go through the same land-cover model on one shared grid, so the
+    comparison cannot be thrown off by the two sides being classified under
+    different settings.
+
+    `gsd` applies to BOTH images, so send it only when neither carries its
+    own - a clip out of a QGIS layer normally does. The change map comes
+    back as a base64 PNG in the shared grid, which is the coarser of the two
+    inputs, so the caller scales the clip's transform to it rather than
+    copying it.
+    """
+    fields = {"want_overlay": "true" if want_overlay else "false"}
+    if gsd:
+        fields["gsd"] = str(gsd)
+    if min_water_m2 is not None:
+        fields["min_water_m2"] = str(float(min_water_m2))
+    if min_change_m2 is not None:
+        fields["min_change_m2"] = str(float(min_change_m2))
+    if preview_max:
+        fields["preview_max"] = str(int(preview_max))
+    body, ctype = _multipart(fields, {"past": past, "present": present})
+    return _request(server, "/waterchange/predict", data=body, method="POST",
+                    timeout=timeout, headers={"Content-Type": ctype})
+
+
 def start_area(aoi_geojson, task="hisup", server=DEFAULT_SERVER, **params):
     payload = {"task": task, "aoi": aoi_geojson}
     payload.update({k: v for k, v in params.items() if v not in (None, "", [])})

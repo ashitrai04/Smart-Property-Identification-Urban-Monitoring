@@ -421,7 +421,8 @@ def main():
 
         # ---- what the Imagery box offers -------------------------------
         # Got wrong twice by eye, so it is a pure function and it is tested.
-        from building_delineator.gui.panel import imagery_entries
+        from building_delineator.gui.panel import (epoch_b_entries,
+                                                    imagery_entries)
 
         QGIS_RASTERS = [("l1", "ongole_2026_sat", 0.30),
                         ("l2", "Ongole_ORI_V3_jpeg92", 0.03)]
@@ -455,6 +456,36 @@ def main():
             assert not any(isinstance(d, tuple) for d in data),                 "a QGIS layer leaked into a server-side model's list"
         check("server-side models offer the server catalogue, never a QGIS layer",
               server_models_never_offer_qgis_layers)
+
+        # ---- the second epoch box, for water change --------------------
+        def epoch_b_offers_the_other_layers():
+            e = epoch_b_entries(QGIS_RASTERS, "l1")
+            data = [d for _, d in e]
+            assert data == [("qgis", "l2")], data
+        check("the compare-with box leaves out the layer already chosen",
+              epoch_b_offers_the_other_layers)
+
+        def epoch_b_offers_all_when_nothing_chosen():
+            e = epoch_b_entries(QGIS_RASTERS, None)
+            data = [d for _, d in e]
+            assert data == [("qgis", "l1"), ("qgis", "l2")], data
+        check("the compare-with box offers every open raster before a choice is made",
+              epoch_b_offers_all_when_nothing_chosen)
+
+        def epoch_b_never_offers_the_server():
+            e = epoch_b_entries(QGIS_RASTERS, None)
+            labels = " ".join(l for l, _ in e)
+            assert "drone survey" not in labels, "a server raster leaked in: " + labels
+            assert not any(isinstance(d, str) for _, d in e), e
+        check("the compare-with box reads QGIS, never the server catalogue",
+              epoch_b_never_offers_the_server)
+
+        def epoch_b_with_one_layer_says_so():
+            e = epoch_b_entries([QGIS_RASTERS[0]], "l1")
+            assert len(e) == 1 and e[0][1] is None, e
+            assert "second raster" in e[0][0], e[0][0]
+        check("one open raster cannot be compared with itself, and the box says so",
+              epoch_b_with_one_layer_says_so)
 
         live = [t["id"] for t in client.tasks(server)]
         offered = [t[0] for t in alg._tasks]
